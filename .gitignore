@@ -1,0 +1,91 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+foundry
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.out
+
+# Dependency directories
+vendor/
+
+# Go workspace file
+go.work
+
+# Environment and config files (from DESIGN.md)
+.foundryvars
+
+# Build output
+bin/
+dist/
+build/
+
+# IDE - VSCode
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.code-workspace
+.history/
+
+# IDE - GoLand / IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# IDE - Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# IDE - Vim
+*.swp
+*.swo
+*~
+.vim/
+
+# IDE - Emacs
+*~
+\#*\#
+.\#*
+
+# OS Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+*.log
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Test coverage
+coverage.txt
+coverage.html
+coverage.out
+*.cover
+
+# Debug files
+__debug_bin
+
+# Air live reload (if used for Go development)
+tmp/
+
+# Local configuration files (not the stack configs in ~/.foundry/)
+*.local.yaml
+*.local.yml
+
+# CI/CD cache
+.cache/
