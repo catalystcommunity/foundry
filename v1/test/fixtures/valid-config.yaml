@@ -1,0 +1,33 @@
+version: "1.0"
+cluster:
+  name: production
+  domain: example.com
+  nodes:
+    - hostname: node1.example.com
+      role: control-plane
+    - hostname: node2.example.com
+      role: worker
+
+components:
+  openbao:
+    version: "2.1.0"
+    hosts:
+      - openbao.example.com
+
+  k3s:
+    version: "v1.28.5+k3s1"
+    ha: true
+
+  zot:
+    version: "2.0.0"
+
+observability:
+  prometheus:
+    retention: 30d
+  loki:
+    retention: 90d
+
+storage:
+  truenas:
+    api_url: https://truenas.example.com
+    api_key: ${secret:foundry-core/truenas:api_key}
