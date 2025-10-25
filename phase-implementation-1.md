@@ -452,25 +452,26 @@ This allows `foundry config validate` to check syntax without needing actual sec
 #### Tasks:
 - [x] Implement `internal/ssh/keygen.go`:
   ```go
-  func GenerateKeyPair(bits int) (*KeyPair, error)
+  func GenerateKeyPair() (*KeyPair, error)
   func (kp *KeyPair) PublicKeyString() string  // OpenSSH format
-  func (kp *KeyPair) PrivateKeyPEM() ([]byte, error)
+  func (kp *KeyPair) PrivateKeyPEM() []byte
   ```
-- [ ] Use `crypto/ed25519` (modern, secure, fast)
-- [ ] Generate key pair
-- [ ] Encode private key as PEM
-- [ ] Format public key as OpenSSH authorized_keys format
-- [ ] Write unit tests
+- [x] Use `crypto/ed25519` (modern, secure, fast)
+- [x] Generate key pair
+- [x] Encode private key as PEM
+- [x] Format public key as OpenSSH authorized_keys format
+- [x] Write unit tests
 
 **Test Criteria**:
-- [ ] Can generate valid key pair
-- [ ] Public key is in correct format
-- [ ] Private key is valid PEM
-- [ ] Tests verify key validity
+- [x] Can generate valid key pair
+- [x] Public key is in correct format
+- [x] Private key is valid PEM
+- [x] Tests verify key validity
+- [x] All tests pass
 
 **Files Created**:
-- `internal/ssh/keygen.go`
-- `internal/ssh/keygen_test.go`
+- `v1/internal/ssh/keygen.go`
+- `v1/internal/ssh/keygen_test.go`
 
 ---
 
