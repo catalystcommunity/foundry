@@ -1,0 +1,10 @@
+cluster:
+  name: production
+  domain: example.com
+  nodes:
+    - hostname: node1.example.com
+      role: control-plane
+
+components:
+  k3s:
+    version: "v1.28.5+k3s1"

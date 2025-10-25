@@ -1,0 +1,11 @@
+version: "1.0"
+cluster:
+  name: production
+  domain: example.com
+  nodes:
+    - hostname: node1.example.com
+      role: invalid-role
+
+components:
+  k3s:
+    version: "v1.28.5+k3s1"

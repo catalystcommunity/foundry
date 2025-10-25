@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Version information
+VERSION="${VERSION:-$(git describe --tags --always --dirty 2>/dev/null || echo "dev")}"
+GIT_COMMIT="${GIT_COMMIT:-$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")}"
+BUILD_DATE="${BUILD_DATE:-$(date -u +"%Y-%m-%dT%H:%M:%SZ")}"
+
+# Build flags
+LDFLAGS="-X main.Version=${VERSION} -X main.GitCommit=${GIT_COMMIT} -X main.BuildDate=${BUILD_DATE}"
+
+# Binary name
+BINARY="foundry"
+
+cmd_build() {
+    echo "Building ${BINARY}..."
+    go build -ldflags "${LDFLAGS}" -o "${BINARY}" ./cmd/foundry
+}
+
+cmd_build_static() {
+    echo "Building static ${BINARY}..."
+    CGO_ENABLED=0 go build -ldflags "${LDFLAGS} -s -w" -o "${BINARY}" ./cmd/foundry
+}
+
+cmd_test() {
+    echo "Running tests..."
+    go test -v ./...
+}
+
+cmd_test_integration() {
+    echo "Running integration tests..."
+    go test -v -tags=integration ./...
+}
+
+cmd_coverage() {
+    echo "Running tests with coverage..."
+    go test -cover -coverprofile=coverage.out ./...
+    go tool cover -html=coverage.out -o coverage.html
+    echo "Coverage report generated: coverage.html"
+}
+
+cmd_lint() {
+    echo "Running linters..."
+    gofmt -l -s .
+    go vet ./...
+}
+
+cmd_clean() {
+    echo "Cleaning..."
+    rm -f "${BINARY}"
+    rm -f coverage.out coverage.html
+}
+
+cmd_install() {
+    echo "Installing ${BINARY}..."
+    go install -ldflags "${LDFLAGS}" ./cmd/foundry
+}
+
+cmd_help() {
+    cat << EOF
+Foundry Development Tools
+
+Usage: ./tools <command>
+
+Commands:
+    build              Build the foundry binary
+    build-static       Build a static foundry binary
+    test               Run unit tests
+    test-integration   Run integration tests
+    coverage           Run tests with coverage report
+    lint               Run linters (gofmt, go vet)
+    clean              Remove build artifacts
+    install            Install foundry to GOPATH/bin
+    help               Show this help message
+
+EOF
+}
+
+# Main command dispatcher
+case "${1:-help}" in
+    build)
+        cmd_build
+        ;;
+    build-static)
+        cmd_build_static
+        ;;
+    test)
+        cmd_test
+        ;;
+    test-integration)
+        cmd_test_integration
+        ;;
+    coverage)
+        cmd_coverage
+        ;;
+    lint)
+        cmd_lint
+        ;;
+    clean)
+        cmd_clean
+        ;;
+    install)
+        cmd_install
+        ;;
+    help|--help|-h)
+        cmd_help
+        ;;
+    *)
+        echo "Unknown command: $1"
+        echo ""
+        cmd_help
+        exit 1
+        ;;
+esac

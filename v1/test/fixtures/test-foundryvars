@@ -1,0 +1,15 @@
+# Foundry variables for testing
+# Format: instance/path/to/secret:key=value
+
+myapp-prod/database/main:password=prod-secret-123
+myapp-stable/database/main:password=stable-secret-456
+foundry-core/truenas:api_key=truenas-key-789
+foundry-core/openbao:token=root-token
+
+# Test with underscores and special paths
+my-service_test/deep/nested/secret:value=nested-value
+
+# Empty lines and comments should be ignored
+
+# Another comment
+external/github:api_token=ghp_test_token_123

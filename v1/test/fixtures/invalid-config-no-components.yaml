@@ -1,0 +1,9 @@
+version: "1.0"
+cluster:
+  name: production
+  domain: example.com
+  nodes:
+    - hostname: node1.example.com
+      role: control-plane
+
+components: {}
