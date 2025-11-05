@@ -33,12 +33,6 @@ func TestLoad(t *testing.T) {
 			errMsg:  "config file not found",
 		},
 		{
-			name:    "invalid config - missing version",
-			path:    filepath.Join(fixturesDir, "invalid-config-missing-version.yaml"),
-			wantErr: true,
-			errMsg:  "config validation failed",
-		},
-		{
 			name:    "invalid config - invalid role",
 			path:    filepath.Join(fixturesDir, "invalid-config-invalid-role.yaml"),
 			wantErr: true,
@@ -62,7 +56,6 @@ func TestLoad(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 				require.NotNil(t, config)
-				assert.NotEmpty(t, config.Version)
 				assert.NotEmpty(t, config.Cluster.Name)
 			}
 		})
@@ -155,7 +148,6 @@ func TestLoad_ValidConfigFile(t *testing.T) {
 	require.NotNil(t, config)
 
 	// Verify some key fields
-	assert.Equal(t, "1.0", config.Version)
 	assert.Equal(t, "production", config.Cluster.Name)
 	assert.Equal(t, "example.com", config.Cluster.Domain)
 	assert.Len(t, config.Cluster.Nodes, 2)

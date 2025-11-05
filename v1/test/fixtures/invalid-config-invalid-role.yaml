@@ -1,4 +1,3 @@
-version: "1.0"
 cluster:
   name: production
   domain: example.com

@@ -15,7 +15,7 @@ Each task is designed to result in a working, testable state. Tests should be wr
 **Working State**: Go project compiles and runs, outputs version information
 
 #### Tasks:
-- [x] Initialize Go module: `go mod init github.com/catalystcommunity/foundry`
+- [x] Initialize Go module: `go mod init github.com/catalystcommunity/foundry/v1`
 - [x] Create directory structure (v1/ version for future-proofing)
 - [x] Create `cmd/foundry/main.go` with basic CLI scaffold using urfave/cli v3
 - [x] Implement `--version` flag that outputs version info

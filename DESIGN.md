@@ -11,6 +11,16 @@ Foundry is a single-binary CLI tool that serves two primary purposes:
 
 The goal is to give developers the simplest way to manage their infrastructure without maintenance burden, allowing them to focus on code and version control rather than infrastructure complexity.
 
+### Primary User Experience
+
+**`foundry setup`** - A progressive, stateful wizard that guides users through the entire stack installation process. This wizard:
+- Tracks progress and resumes if interrupted
+- Validates each step before proceeding
+- Handles network planning, DNS configuration, and component installation
+- Is the recommended way to set up Foundry for the first time
+
+Individual commands (`foundry component install`, `foundry network plan`, etc.) remain available for advanced users who prefer granular control.
+
 ### Core Philosophy
 
 - **Sane Defaults, Advanced Configuration**: Prioritize simplicity through intelligent defaults; power users can configure deeply
@@ -70,8 +80,9 @@ All Foundry-managed resources use consistent namespacing:
 ### 5. Progressive Disclosure
 
 Start simple, reveal complexity only when needed:
-- `foundry stack install` - one command to set up everything
-- `foundry component install openbao --version 2.1.0` - granular control when desired
+- `foundry setup` - interactive wizard for complete setup (recommended for beginners)
+- `foundry stack install` - non-interactive full installation (for automation)
+- `foundry component install openbao` - granular control when desired
 - Interactive prompts guide through complex setups
 - Dry-run mode available for all operational commands
 
@@ -117,10 +128,51 @@ Foundry is location-agnostic:
 **Structure**:
 ```yaml
 # ~/.foundry/stack.yaml
-version: "1.0"
+
+network:
+  gateway: 192.168.1.1
+  netmask: 255.255.255.0
+  dhcp_range:
+    start: 192.168.1.50
+    end: 192.168.1.200
+
+  # Infrastructure host IPs (can be lists for HA in future)
+  openbao_hosts:
+    - 192.168.1.10
+  dns_hosts:
+    - 192.168.1.10  # Can be same as OpenBAO
+  zot_hosts:
+    - 192.168.1.10
+  truenas_hosts:
+    - 192.168.1.15  # Optional
+
+  # K3s VIP (must be unique)
+  k8s_vip: 192.168.1.100
+
+dns:
+  # Infrastructure zones (.local for private, public domain for split-horizon)
+  infrastructure_zones:
+    - name: infraexample.com
+      public: true
+      public_cname: home.example.com  # DDNS hostname
+
+  # Kubernetes zones
+  kubernetes_zones:
+    - name: k8sexample.com
+      public: true
+      public_cname: home.example.com
+
+  forwarders:
+    - 8.8.8.8
+    - 1.1.1.1
+
+  backend: sqlite
+  api_key: ${secret:foundry-core/dns:api_key}
+
 cluster:
   name: production
   domain: example.com
+  k8s_vip: 192.168.1.100
   nodes:
     - hostname: node1.example.com
       role: control-plane
@@ -129,23 +181,23 @@ cluster:
 
 components:
   openbao:
-    version: "2.1.0"  # Pin version, or omit for latest
-    hosts:
-      - openbao.example.com  # Runs on VM, not k8s
+    # Runs on network.openbao_hosts[0]
+    # DNS: openbao.infraexample.com
 
-  k3s:
-    version: "v1.28.5+k3s1"
-    ha: true
+  dns:
+    # Runs on network.dns_hosts[0]
+    # DNS: dns.infraexample.com
+    image_tag: "49"  # PowerDNS version
 
   zot:
-    version: "2.0.0"
-    storage:
-      backend: truenas
-      path: ${secret:foundry/zot:storage_path}
+    # Runs on network.zot_hosts[0]
+    # DNS: zot.infraexample.com
+
+  k3s:
+    tag: "v1.28.5+k3s1"
 
   grafana:
-    # version omitted - use latest
-    admin_password: ${secret:foundry/grafana:admin_password}
+    admin_password: ${secret:foundry-core/grafana:admin_password}
 
 observability:
   prometheus:
@@ -155,8 +207,20 @@ observability:
 
 storage:
   truenas:
-    api_url: https://truenas.example.com
-    api_key: ${secret:foundry/truenas:api_key}
+    # DNS: truenas.infraexample.com
+    api_url: https://truenas.infraexample.com
+    api_key: ${secret:foundry-core/truenas:api_key}
+
+# Setup state (managed by 'foundry setup')
+_setup_state:
+  network_planned: true
+  network_validated: true
+  openbao_installed: true
+  dns_installed: true
+  dns_zones_created: true
+  zot_installed: false
+  k8s_installed: false
+  stack_complete: false
 ```
 
 **Multi-Config Support**:
@@ -252,6 +316,87 @@ Users and service accounts are managed in OpenBAO:
 - Permissions tied to K8s namespaces via OIDC integration
 - Requires the executing user to have cluster-admin permissions; will check and warn if insufficient
 - Read-only, admin, or custom roles per namespace
+
+## DNS and Network Planning
+
+### PowerDNS Integration
+
+**Purpose**: Authoritative DNS server for infrastructure and Kubernetes services
+
+**Key Features**:
+- **Split-horizon DNS**: Same hostnames work locally (fast) and externally (via public IP)
+- **DNS delegation**: PowerDNS is authoritative for user's subdomains via NS records
+- **Recursive resolver**: Forwards non-authoritative queries to upstream DNS (8.8.8.8, etc.)
+- **Dynamic updates**: External-DNS manages K8s service records via PowerDNS API
+
+### DNS Zone Strategy
+
+**Infrastructure Zones**:
+- Purpose: Static infrastructure (OpenBAO, PowerDNS, Zot, TrueNAS, K8s VIP)
+- Examples: `infraexample.com` (public), `infra.local` (private only)
+- Records: Static A records managed by Foundry
+- Naming: `openbao.infraexample.com`, `zot.infraexample.com`
+
+**Kubernetes Zones**:
+- Purpose: Dynamic K8s services and ingresses
+- Examples: `k8sexample.com` (public), `k8s.local` (private only)
+- Records: Dynamic A records managed by External-DNS
+- Naming: `grafana.k8sexample.com`, `myapp.k8sexample.com`
+
+**`.local` TLD Rule**:
+- Always private only - never publicly accessible
+- No split-horizon configuration
+- Use when you never want external access
+
+**Split-Horizon for Public Domains**:
+- Use same zone for internal AND external access
+- Don't create separate private + public zones
+- Example: Use `infraexample.com` (split-horizon), not both `infra.local` + `infrapublic.com`
+
+### DNS Resolution Flow
+
+**Internal Queries** (from local network):
+```
+Query: zot.infraexample.com
+PowerDNS: A 192.168.1.10 (local IP, fast)
+```
+
+**External Queries** (from internet):
+```
+Query: zot.infraexample.com
+  → Public DNS: NS home.example.com (DDNS hostname)
+  → Router (public IP) forwards DNS to PowerDNS
+PowerDNS: CNAME home.example.com
+  → Resolves to router's public IP
+  → Router forwards port 5000 → 192.168.1.10:5000
+```
+
+**User Delegation** (for external access):
+1. User configures Dynamic DNS on router: `home.example.com` → router's public IP
+2. User adds NS records in DNS provider:
+   - `infraexample.com NS home.example.com`
+   - `k8sexample.com NS home.example.com`
+3. Router port-forwards DNS (53) → PowerDNS
+4. PowerDNS returns local IPs internally, CNAME externally
+
+### Static IP Requirements
+
+**Minimum Deployment** (2 IPs):
+1. **Infrastructure host**: OpenBAO + PowerDNS + Zot containers (e.g., 192.168.1.10)
+2. **K3s VIP**: Virtual IP for Kubernetes API (e.g., 192.168.1.100) - **must be unique**
+
+**With TrueNAS** (3 IPs):
+3. **TrueNAS**: Separate device/VM (e.g., 192.168.1.15)
+
+**IP Configuration Options**:
+- **DHCP reservations** (recommended): Configure MAC → IP bindings in router
+- **Static IPs**: Foundry can configure static IPs directly on hosts
+- User's choice - Foundry provides tools for both approaches
+
+**Network Planning**:
+- `foundry network plan` - Interactive wizard for IP allocation
+- `foundry network detect-macs` - Detect MAC addresses for DHCP reservations
+- `foundry network validate` - Verify network configuration before installation
 
 ## Command Structure
 
@@ -438,6 +583,82 @@ foundry config list
   # Show available config files in ~/.foundry/
 ```
 
+#### Setup Wizard
+
+Progressive, stateful setup wizard (recommended for first-time setup).
+
+```bash
+foundry setup [--config PATH] [--resume] [--reset]
+  # Interactive wizard that guides through entire stack setup
+  # - Tracks progress in config file (_setup_state)
+  # - Automatically resumes if interrupted
+  # - Validates each step before proceeding
+  # - Handles network planning, DNS configuration, component installation
+
+  --resume    # Resume from last checkpoint (default)
+  --reset     # Start over from beginning
+```
+
+#### Network Planning
+
+Network configuration and IP management.
+
+```bash
+foundry network plan [--config PATH]
+  # Interactive network planning wizard
+  # - Prompts for gateway, subnet, DHCP range
+  # - Suggests IP allocations
+  # - Detects MACs via SSH
+  # - Shows DHCP reservation requirements
+  # - Updates config file
+
+foundry network detect-macs [--config PATH]
+  # Connect to configured hosts
+  # Detect primary interface and MAC address
+  # Show current IP vs desired IP
+  # Output MAC→IP mappings for DHCP reservations
+
+foundry network validate [--config PATH]
+  # Validate network configuration
+  # - All required IPs are set
+  # - K8s VIP is unique
+  # - IPs outside DHCP range (if configured)
+  # - Hosts are reachable
+  # - DNS resolution works (if PowerDNS installed)
+```
+
+#### DNS Management
+
+PowerDNS zone and record operations.
+
+```bash
+foundry dns zone list
+  # List all zones in PowerDNS
+
+foundry dns zone create <zone-name> [--type NATIVE] [--public] [--public-cname HOSTNAME]
+  # Create new DNS zone
+  # --public: Enable split-horizon
+  # --public-cname: DDNS hostname for external queries
+
+foundry dns zone delete <zone-name>
+  # Delete zone and all records
+
+foundry dns record add <zone> <name> <type> <value> [--ttl 3600]
+  # Add record to zone
+  # Types: A, AAAA, CNAME, MX, TXT, NS, etc.
+
+foundry dns record list <zone>
+  # List all records in zone
+
+foundry dns record delete <zone> <name> <type>
+  # Delete specific record
+
+foundry dns test <hostname>
+  # Query PowerDNS to verify resolution
+  # Shows which zone answered
+  # Shows if split-horizon is working
+```
+
 ## Bootstrap & Installation Flow
 
 ### New Stack Setup (Greenfield)
@@ -446,80 +667,116 @@ foundry config list
 - Fresh Debian/Ubuntu server(s) with OpenSSH (can be a single VM or multiple)
 - Non-root admin user created on each
 - Network connectivity from wherever Foundry is run
-- DNS configuration (TBD - requirements to be determined)
+- (Optional) Domain name and Dynamic DNS configured for external access
 
-**Workflow**:
+**Recommended Workflow** (using setup wizard):
 
 ```bash
-# 1. Initialize config
+# Single command - wizard handles everything
+foundry setup
+
+# The wizard will:
+# 1. Plan network (IPs, DHCP ranges, MAC detection)
+# 2. Configure DNS zones (infrastructure and kubernetes)
+# 3. Detect host MACs and guide DHCP reservation setup
+# 4. Install and initialize OpenBAO
+# 5. Install and configure PowerDNS
+# 6. Create DNS zones and records
+# 7. Install Zot registry
+# 8. Install K3s cluster with VIP
+# 9. Install networking components (Contour, cert-manager)
+# 10. Validate entire stack
+
+# If interrupted, resume where you left off:
+foundry setup --resume
+```
+
+**Advanced Workflow** (manual/automated):
+
+```bash
+# 1. Initialize config (or create manually)
 foundry config init --interactive
   # Prompts for:
-  # - Cluster name and domain
-  # - Host address(es) - single server or multiple
-  # - Which components to install
+  # - Network configuration (gateway, subnet, DHCP range)
+  # - DNS zones (infrastructure and kubernetes)
+  # - IP allocations (infrastructure host, K3s VIP, TrueNAS)
+  # - Cluster configuration
   # Creates ~/.foundry/<name>.yaml
 
-# 2. Install stack
+# 2. Validate configuration
+foundry stack validate
+
+# 3. Install stack (non-interactive)
 foundry stack install --config ~/.foundry/<name>.yaml
   # Execution order:
-  # a. Verify SSH access to all hosts (prompt for passwords)
-  # b. Generate and install SSH keys
-  # c. Install OpenBAO on designated host(s)
-  # d. Initialize OpenBAO (interactive root token generation)
-  # e. Store Foundry's OpenBAO auth token
-  # f. Install K3s (control plane first, then workers if multi-node)
-  # g. Install Zot (OCI registry)
-  # h. Configure K3s to use Zot as registry and pull-through cache
-  # i. Install remaining components (Grafana, Loki, etc.)
-  # j. Configure storage backends
-  # k. Verify all components healthy
+  # a. Validate network configuration
+  # b. Verify SSH access to all hosts
+  # c. Generate and install SSH keys
+  # d. Install OpenBAO container
+  # e. Initialize OpenBAO (interactive root token generation)
+  # f. Store Foundry's OpenBAO auth token
+  # g. Install PowerDNS container
+  # h. Create infrastructure DNS zone (openbao.infraexample.com, etc.)
+  # i. Create kubernetes DNS zone (*.k8sexample.com)
+  # j. Install Zot container
+  # k. Install K3s cluster (with VIP, configured to use PowerDNS)
+  # l. Install Contour and cert-manager
+  # m. Verify all components healthy
 
-# 3. Create first user
+# 4. (Optional) Create first user
 foundry rbac user create admin --role cluster-admin
-  # Prompts for password
-  # Stores in OpenBAO
-  # Creates K8s RBAC bindings
 ```
 
 ### Component Installation Order
 
 Foundry automatically handles dependencies:
 
-1. **OpenBAO** (on VM, not K8s)
+1. **OpenBAO** (container on infrastructure host)
    - Required first for all other secrets
-   - Can be HA setup on multiple VMs
+   - Runs as systemd service
+   - Stores secrets, SSH keys, kubeconfig
 
-2. **K3s Cluster**
-   - Control plane node(s) with optional VIP for HA
+2. **PowerDNS** (container on infrastructure host)
+   - Authoritative DNS server
+   - Runs as systemd service alongside OpenBAO
+   - Required before K3s for DNS resolution
+   - Enables split-horizon DNS for external access
+
+3. **DNS Zones**
+   - Infrastructure zone: `openbao.infraexample.com`, `zot.infraexample.com`, `k8s.infraexample.com`
+   - Kubernetes zone: `*.k8sexample.com` (managed by External-DNS in Phase 3)
+
+4. **Zot** (container on infrastructure host)
+   - OCI registry for container images
+   - Runs as systemd service
+   - Pull-through cache for Docker Hub
+   - Installed before K3s so K3s can use it from the start
+
+5. **K3s Cluster**
+   - Control plane node(s) with VIP (kube-vip)
    - Worker nodes (if multi-node)
-   - Requires OpenBAO for bootstrap secrets
+   - Configured to use PowerDNS for DNS resolution
+   - Configured to use Zot as default registry
 
-3. **Zot** (OCI registry)
-   - Deployed to K8s
-   - K3s configured to use Zot as registry
-   - Pull-through cache configuration
-   - Required before other containerized components
-
-4. **Storage**
-   - Storage backends (TrueNAS integration)
-   - CSI drivers
-   - MinIO (if TrueNAS doesn't provide S3-compatible storage)
-
-5. **Networking**
+6. **Networking** (Phase 2)
    - Contour (Ingress controller)
    - Cert-manager (TLS automation)
-   - External-DNS (automatic DNS management)
 
-6. **Observability**
+7. **Storage** (Phase 3)
+   - TrueNAS integration (CSI drivers)
+   - MinIO (if TrueNAS doesn't provide S3-compatible storage)
+
+8. **Observability** (Phase 3)
+   - External-DNS (updates PowerDNS kubernetes zone)
    - Prometheus
    - Loki
    - Grafana
 
-7. **Backup & Recovery**
+9. **Backup & Recovery** (Phase 3)
    - Velero (using MinIO or TrueNAS S3 backend)
 
-8. **CI/CD** (optional)
-   - ArgoCD
+10. **CI/CD** (Phase 4, optional)
+    - ArgoCD
 
 ### Adding a New Service
 
@@ -667,13 +924,69 @@ Initial template support planned for:
 
 **Configuration**:
 ```yaml
+network:
+  openbao_hosts:
+    - 192.168.1.10
+
 components:
   openbao:
-    version: "2.1.0"
-    hosts:
-      - openbao1.example.com
-      - openbao2.example.com  # HA setup
-    storage: postgresql  # or consul, raft
+    # Runs as container on network.openbao_hosts[0]
+    # DNS: openbao.infraexample.com
+```
+
+### PowerDNS
+
+**Purpose**: Authoritative DNS server with split-horizon support
+
+**Deployment**: Container on infrastructure host (systemd service)
+
+**Why PowerDNS**:
+- API-driven (External-DNS integration)
+- Authoritative + recursive DNS
+- Split-horizon DNS for same hostnames internally and externally
+- Lightweight and production-ready
+
+**Installation**:
+- Pull PowerDNS container image (`powerdns-auth-49` for 4.9.x)
+- Generate secure API key, store in OpenBAO
+- Configure SQLite backend (PostgreSQL for HA in Phase 4+)
+- Enable recursive resolver with forwarders
+- Create systemd service
+- Configure split-horizon for public zones
+
+**Zones**:
+- **Infrastructure zones**: Static A records for OpenBAO, Zot, TrueNAS, K8s VIP
+- **Kubernetes zones**: Dynamic A records managed by External-DNS (Phase 3)
+- **`.local` zones**: Private only, no split-horizon
+- **Public zones**: Return local IPs internally, CNAME to DDNS hostname externally
+
+**Configuration**:
+```yaml
+network:
+  dns_hosts:
+    - 192.168.1.10  # Can be same as OpenBAO host
+
+dns:
+  infrastructure_zones:
+    - name: infraexample.com
+      public: true
+      public_cname: home.example.com  # DDNS hostname
+
+  kubernetes_zones:
+    - name: k8sexample.com
+      public: true
+      public_cname: home.example.com
+
+  forwarders:
+    - 8.8.8.8
+    - 1.1.1.1
+
+  backend: sqlite
+  api_key: ${secret:foundry-core/dns:api_key}
+
+components:
+  dns:
+    image_tag: "49"  # PowerDNS version
 ```
 
 ### K3s (Kubernetes)
@@ -763,14 +1076,20 @@ components:
 
 ### External-DNS
 
-**Purpose**: Automatic DNS record management
+**Purpose**: Automatic DNS record management for K8s services
 
-**Deployment**: Helm chart in K8s
+**Deployment**: Helm chart in K8s (Phase 3)
+
+**Integration**:
+- Configured to use PowerDNS API
+- Updates Kubernetes zones only (not infrastructure zones)
+- Uses API key from OpenBAO: `foundry-core/dns:api_key`
+- Watches Ingress and Service resources
 
 **Features**:
 - Automatically creates/updates DNS records for Ingress resources
-- Supports multiple DNS providers
-- Integrates with Contour for automatic service DNS
+- Works with Contour HTTPProxy for automatic service DNS
+- Split-horizon support via PowerDNS (internal IPs locally, CNAME externally)
 
 ### Velero
 
@@ -882,20 +1201,27 @@ Following project best practices:
 
 ### Phase 2: Stack Installation
 
-**Goals**: Install core components
+**Goals**: Install core components with network planning and DNS
 
 **Deliverables**:
+- [ ] `foundry setup` wizard with state tracking and resume
+- [ ] `foundry network plan/detect-macs/validate` commands
+- [ ] Network configuration and validation
 - [ ] `foundry component install openbao`
 - [ ] OpenBAO initialization and auth
-- [ ] `foundry storage configure` for TrueNAS (early setup for Zot)
+- [ ] `foundry component install dns` (PowerDNS)
+- [ ] PowerDNS zone management (infrastructure and kubernetes zones)
+- [ ] Split-horizon DNS configuration
+- [ ] `foundry dns` commands (zone/record management)
+- [ ] `foundry storage configure` for TrueNAS (optional, for Zot)
 - [ ] `foundry component install zot`
-- [ ] Configure Zot with TrueNAS storage backend
-- [ ] `foundry cluster init` (K3s setup with Zot registry integration)
+- [ ] Configure Zot with TrueNAS storage backend (if TrueNAS configured)
+- [ ] `foundry cluster init` (K3s setup with VIP, Zot registry, PowerDNS)
 - [ ] `foundry cluster node add/remove`
 - [ ] `foundry component install` for Contour, cert-manager
 - [ ] Component dependency resolution and ordering
 - [ ] `foundry stack install` orchestration
-- [ ] Integration tests with Kind/K3s
+- [ ] Integration tests with Kind/K3s and PowerDNS
 
 ### Phase 3: Observability & Storage
 
@@ -1008,6 +1334,17 @@ Foundry uses SSH like Ansible, but with a more focused CLI UX.
 - OCI-native (not just Docker images)
 - Simple to operate
 - Harbor is too heavy for our tastes
+
+### Why PowerDNS?
+
+- **Split-horizon DNS**: Same hostnames work locally (fast) and externally (via public IP)
+- **API-driven**: External-DNS can update records programmatically
+- **Authoritative + Recursive**: Manages our zones AND forwards other queries
+- **Lightweight**: Runs in container with minimal resources
+- **Production-ready**: Battle-tested, widely deployed
+- **Self-hosted friendly**: No licensing concerns, runs anywhere
+
+Alternative considered: CoreDNS (simpler but lacks split-horizon and API for dynamic updates)
 
 ## Success Metrics
 

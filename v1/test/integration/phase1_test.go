@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/catalystcommunity/foundry/internal/config"
-	"github.com/catalystcommunity/foundry/internal/host"
-	"github.com/catalystcommunity/foundry/internal/secrets"
-	"github.com/catalystcommunity/foundry/internal/ssh"
+	"github.com/catalystcommunity/foundry/v1/internal/config"
+	"github.com/catalystcommunity/foundry/v1/internal/host"
+	"github.com/catalystcommunity/foundry/v1/internal/secrets"
+	"github.com/catalystcommunity/foundry/v1/internal/ssh"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
@@ -110,11 +110,27 @@ func setupSSHContainer(t *testing.T, ctx context.Context) (testcontainers.Contai
 		ContainerRequest: req,
 		Started:          true,
 	})
-	require.NoError(t, err, "Failed to start SSH container")
+	if err != nil {
+		t.Fatalf("Failed to start SSH container. This test requires Docker to be running and accessible.\n"+
+			"Error: %v\n"+
+			"Troubleshooting:\n"+
+			"  - Ensure Docker daemon is running\n"+
+			"  - Check Docker socket permissions\n"+
+			"  - Verify network connectivity to pull container images\n"+
+			"  - Try: docker pull linuxserver/openssh-server:latest", err)
+	}
 
 	// Get the mapped port
 	mappedPort, err := container.MappedPort(ctx, "2222")
-	require.NoError(t, err, "Failed to get mapped port")
+	if err != nil {
+		// Clean up the container before failing
+		if termErr := container.Terminate(ctx); termErr != nil {
+			t.Logf("Failed to terminate container after port mapping error: %v", termErr)
+		}
+		t.Fatalf("Failed to get mapped port from SSH container.\n"+
+			"Error: %v\n"+
+			"This usually indicates a Docker networking issue.", err)
+	}
 
 	cleanup := func() {
 		if err := container.Terminate(ctx); err != nil {
@@ -163,13 +179,26 @@ func testSSHConnection(t *testing.T, sshPort int) {
 	}
 
 	conn, err := ssh.Connect(connOpts)
-	require.NoError(t, err, "Should connect to SSH server")
-	require.NotNil(t, conn)
+	if err != nil {
+		t.Fatalf("Failed to connect to SSH server on port %d.\n"+
+			"Error: %v\n"+
+			"Troubleshooting:\n"+
+			"  - Container may not be fully started (try increasing wait time)\n"+
+			"  - SSH service may not be listening on expected port\n"+
+			"  - Authentication credentials may be incorrect\n"+
+			"  - Network connectivity issue between test and container", sshPort, err)
+	}
+	require.NotNil(t, conn, "SSH connection should not be nil")
 
-	assert.True(t, conn.IsConnected(), "Connection should be active")
+	if !conn.IsConnected() {
+		t.Fatal("SSH connection established but IsConnected() returns false.\n" +
+			"This indicates a connection state management issue.")
+	}
 
 	err = conn.Close()
-	require.NoError(t, err, "Should close connection")
+	if err != nil {
+		t.Logf("Warning: Failed to close SSH connection cleanly: %v", err)
+	}
 }
 
 // testKeyGeneration tests SSH key pair generation

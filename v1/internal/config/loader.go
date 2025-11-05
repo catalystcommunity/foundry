@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"gopkg.in/yaml.v3"
 )
@@ -39,4 +40,36 @@ func LoadFromReader(r io.Reader) (*Config, error) {
 	}
 
 	return &config, nil
+}
+
+// Save writes a configuration to the given path
+func Save(cfg *Config, path string) error {
+	// Ensure the directory exists
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
+	}
+
+	// Marshal config to YAML
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("failed to marshal config: %w", err)
+	}
+
+	// Write to file with appropriate permissions
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		return fmt.Errorf("failed to write config file: %w", err)
+	}
+
+	return nil
+}
+
+// DefaultConfigPath returns the default configuration file path
+func DefaultConfigPath() string {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		// Fallback to current directory if home dir not available
+		return ".foundry/stack.yaml"
+	}
+	return filepath.Join(homeDir, ".foundry", "stack.yaml")
 }
