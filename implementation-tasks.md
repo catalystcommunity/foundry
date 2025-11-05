@@ -16,7 +16,7 @@ Each phase builds upon the previous one, with the following principles:
 | Phase | Status | Description | Milestone File |
 |-------|--------|-------------|----------------|
 | Phase 1 | ✅ Complete (100%) | Foundation - CLI structure, config, SSH | [phase-implementation-1.md](./phase-implementation-1.md) |
-| Phase 2 | Not Started | Stack Installation - Core components | [phase-implementation-2.md](./phase-implementation-2.md) |
+| Phase 2 | In Progress (96%, 52/54 tasks) | Stack Installation - Core components | [phase-implementation-2.md](./phase-implementation-2.md) |
 | Phase 3 | Not Started | Observability & Storage | [phase-implementation-3.md](./phase-implementation-3.md) |
 | Phase 4 | Not Started | RBAC & Operations | [phase-implementation-4.md](./phase-implementation-4.md) |
 | Phase 5 | Not Started | Polish & Documentation | [phase-implementation-5.md](./phase-implementation-5.md) |
@@ -24,9 +24,9 @@ Each phase builds upon the previous one, with the following principles:
 
 ## Current Phase
 
-**Active Phase**: Phase 1 - Foundation ✅ **COMPLETE**
+**Active Phase**: Phase 2 - Stack Installation (In Progress - 96%, 52/54 tasks)
 
-**Next Phase**: Phase 2 - Stack Installation (OpenBAO, K3s, Zot)
+**Completed Phases**: Phase 1 - Foundation ✅ **COMPLETE**
 
 ## Phase Completion Criteria
 
@@ -46,23 +46,64 @@ Each phase builds upon the previous one, with the following principles:
 
 **Progress**: All 27 tasks complete (100%)
 
-### Phase 2: Stack Installation ✗
-- [ ] OpenBAO can be installed on remote hosts
-- [ ] K3s cluster can be initialized (single-node and HA)
-- [ ] Zot registry can be deployed to K3s
-- [ ] K3s configured to use Zot as default registry
-- [ ] Nodes can be added/removed from cluster
-- [ ] Component dependencies are automatically resolved
-- [ ] `foundry stack install` deploys full basic stack
-- [ ] Integration tests use Kind/K3s for K8s testing
-- [ ] User can deploy a working cluster with registry
+### Phase 2: Stack Installation (In Progress - 52/54 tasks, 96%)
+- [x] Network planning utilities work (MAC detection, IP validation, DHCP guidance) (93.9% coverage)
+- [x] Network planning commands (`foundry network plan/detect-macs/validate`) fully functional
+- [x] Setup wizard (`foundry setup`) works with state tracking and resume capability (85.7% coverage)
+- [x] Setup state management tracks progress and enables resume (90.9% coverage)
+- [x] Network and DNS configuration types with validation (85.1% coverage)
+- [x] Component installation framework with registry and dependency resolution (98.0% coverage)
+- [x] Container runtime helpers (Docker/Podman support via SSH) (93.7% coverage)
+- [x] Systemd service management (87.2% coverage)
+- [x] OpenBAO can be installed as container on infrastructure hosts (82.9% coverage)
+- [x] OpenBAO initialization and unseal works (82.9% coverage)
+- [x] OpenBAO secret resolution from KV v2 API (85.8% coverage)
+- [x] OpenBAO auth token management with OS keyring + file fallback (85.8% coverage)
+- [x] PowerDNS can be installed as container on infrastructure hosts (57.4% coverage)
+- [x] PowerDNS HTTP API client works for zone and record management (57.4% coverage)
+- [x] Split-horizon DNS logic implemented (68.1% coverage)
+- [x] DNS zones can be created (infrastructure and kubernetes) (68.1% coverage)
+- [x] Infrastructure DNS initialization (openbao, dns, zot, truenas, k8s A records) (69.9% coverage)
+- [x] Kubernetes DNS initialization (wildcard record for ingress) (69.9% coverage)
+- [x] DNS management commands (zone list/create/delete, record add/list/delete, dns test) (CLI with tests)
+- [x] OpenBAO SSH key storage implementation (85-100% per-function coverage)
+- [x] Zot registry can be installed as container on infrastructure hosts (90.2% coverage)
+- [x] Zot configured with pull-through cache for Docker Hub (part of config generation)
+- [x] Zot configured with optional TrueNAS storage backend (part of installation logic)
+- [x] K3s token generation for cluster and agent tokens (91.7% coverage)
+- [x] VIP configuration validation and kube-vip manifest generation (95.0% coverage)
+- [x] K3s control plane installation with VIP, DNS, and registry configuration (92.2% coverage)
+- [x] Component registry and CLI commands (82.3% coverage for commands, 70.0% for registry)
+- [x] `foundry component list` command works
+- [x] `foundry component status <name>` command works
+- [x] `foundry component install <name>` command works with dependency checking
+- [x] K8s client implemented with client-go (82.1% coverage)
+- [x] Helm integration complete with SDK wrapper (75.0% coverage)
+- [x] Contour ingress controller deployed via Helm (90.8% coverage)
+- [x] cert-manager deployed via Helm with ClusterIssuer support (93.3% coverage)
+- [x] `foundry cluster init` command works with dry-run mode (33.8% coverage)
+- [x] `foundry cluster node list` command works (100% coverage for core logic)
+- [x] `foundry cluster status` command works (100% coverage for health analysis)
+- [x] `foundry stack install` command works with dry-run mode (51.9% coverage, 9 tests)
+- [x] `foundry stack status` command works with health checks (100% coverage for core logic)
+- [x] `foundry stack validate` command works with comprehensive validation (100% coverage on validation logic, 8 test suites, 30+ test cases)
+- [x] Component dependencies are automatically resolved via dependency resolution system
+- [x] TrueNAS API client complete (96.8% coverage, datasets, NFS shares, pools, ping)
+- [x] OpenBAO integration test complete (Task 42.1 - container lifecycle, secrets, SSH keys, resolver, auth tokens - 6 test scenarios, all passing)
+- [x] PowerDNS integration test complete (Task 42.2 - 9 test scenarios: zone creation, record management, infrastructure/kubernetes DNS initialization, zone/record deletion - all passing)
+- [x] Zot integration test complete (Task 42.3 - 7 test scenarios: health, catalog, manifest upload/retrieval, tags, deletion - all passing)
+- [x] K3s integration test complete (Task 42.4 - Kind-based cluster, kubeconfig retrieval/storage, K8s client from OpenBAO, health checks, node operations, token storage - 8 test scenarios, all passing)
+- [x] Helm integration test complete (Task 42.5 - Kind cluster, repo add, chart install/upgrade/uninstall, release listing, namespace creation, error handling - 8 test scenarios, all passing)
+- [ ] Full stack integration test complete (Task 42.6 - end-to-end workflow with all components)
+- [ ] Integration tests run in CI pipeline
+- [ ] User can deploy a working cluster with DNS, registry, and secrets management (validated via integration tests)
 
 ### Phase 3: Observability & Storage ✗
-- [ ] TrueNAS API integration complete
+- [x] TrueNAS API integration complete (96.8% coverage)
 - [ ] CSI drivers deployed for persistent storage
 - [ ] MinIO deployed when needed
 - [ ] Prometheus, Loki, Grafana deployed and configured
-- [ ] External-DNS manages DNS records automatically
+- [ ] External-DNS manages DNS records automatically (using PowerDNS API)
 - [ ] Velero configured for backups
 - [ ] Stack status command shows all component health
 - [ ] Integration tests verify storage and observability
@@ -131,7 +172,7 @@ Each phase builds upon the previous one, with the following principles:
 ### Starting Phase 1
 ```bash
 # Set up Go project
-go mod init github.com/catalystcommunity/foundry
+go mod init github.com/catalystcommunity/foundry/v1
 
 # Install key dependencies
 go get github.com/urfave/cli/v2
@@ -172,5 +213,52 @@ CGO_ENABLED=0 go build -ldflags="-s -w" -o foundry ./cmd/foundry
 
 ---
 
-**Last Updated**: 2025-10-21
-**Current Status**: Phase 1 COMPLETE - All 27 tasks finished with comprehensive tests and documentation
+**Last Updated**: 2025-11-03
+**Current Status**: Phase 2 IN PROGRESS - 52/54 tasks complete (Tasks 0.1-0.6, 1-20, 23-27, 28-42.5; Remaining: 42.6, 43)
+  - Setup State Management (90.9% coverage)
+  - Setup Wizard Framework (85.7% coverage)
+  - Network & DNS Configuration Types (85.1% coverage)
+  - Network Detection Utilities (98.6% coverage)
+  - Network Validation (93.9% coverage)
+  - Network Planning Commands (CLI with tests)
+  - Component Installation Framework (98.0% coverage)
+  - Container Runtime Helpers (93.7% coverage)
+  - Systemd Service Management (87.2% coverage)
+  - OpenBAO Container Installation (82.9% coverage)
+  - OpenBAO Initialization & Unseal (82.9% coverage)
+  - OpenBAO Secret Resolution (85.8% coverage)
+  - OpenBAO Auth Token Management (85.8% coverage)
+  - PowerDNS Container Installation (57.4% coverage)
+  - PowerDNS HTTP API Client (57.4% coverage)
+  - Split-Horizon DNS Logic (68.1% coverage)
+  - DNS Zone Management (68.1% coverage)
+  - Infrastructure DNS Initialization (69.9% coverage)
+  - Kubernetes DNS Initialization (69.9% coverage)
+  - DNS Management Commands (CLI with tests)
+  - OpenBAO SSH Key Storage Implementation (85-100% per-function coverage)
+  - Zot Container Installation (90.2% coverage, pull-through cache, TrueNAS support)
+  - K3s Token Generation (91.7% coverage, 25 test cases)
+  - VIP Configuration (95.0% coverage, 13 test functions, 58 test cases)
+  - K3s Control Plane Installation (92.2% coverage, comprehensive tests)
+  - K3s Node Role Determination (100% coverage, 50+ test cases)
+  - K8s Client (82.1% coverage, comprehensive tests with fake clientset)
+  - Helm Integration (75.0% coverage, 27 tests)
+  - Contour Ingress Controller (90.8% coverage, 21 tests)
+  - cert-manager Deployment (93.3% coverage, 31 tests)
+  - Component Registry (70.0% coverage, 4 test suites)
+  - Component CLI Commands (82.3% coverage, 3 command test suites)
+  - Cluster Init Command (33.8% coverage, dry-run mode complete)
+  - Cluster Node List Command (100% coverage for core logic)
+  - Cluster Status Command (100% coverage for health analysis, 93.8% for display)
+  - Stack Install Command (51.9% coverage, dry-run mode complete, 9 tests)
+  - Stack Status Command (100% coverage for core logic, comprehensive health checks)
+  - Stack Validate Command (100% coverage on validation logic, 85.7% on dependency validation, 8 test suites, 30+ test cases)
+  - TrueNAS API Client (96.8% coverage, datasets, NFS shares, pools, ping endpoint)
+  - Storage Configure Command (all tests passing, interactive prompts, connection testing)
+  - Storage List Command (all tests passing, pool formatting, secret resolution)
+  - Storage Test Command (all tests passing, full test mode with dataset creation/deletion)
+  - OpenBAO Integration Test (6 test scenarios - health, secrets, SSH keys, resolver, auth tokens, deletion - all passing)
+  - PowerDNS Integration Test (9 test scenarios - all passing)
+  - Zot Integration Test (7 test scenarios - all passing)
+  - K3s Integration Test (8 test scenarios - Kind cluster, kubeconfig, OpenBAO storage, health checks, node ops - all passing)
+  - Helm Integration Test (8 test scenarios - Kind cluster, repo add, chart install/upgrade/uninstall, release listing, namespace creation, error handling - all passing)

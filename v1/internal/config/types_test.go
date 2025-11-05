@@ -18,7 +18,6 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "valid minimal config",
 			config: Config{
-				Version: "1.0",
 				Cluster: ClusterConfig{
 					Name:   "test",
 					Domain: "example.com",
@@ -33,26 +32,8 @@ func TestConfig_Validate(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "missing version",
-			config: Config{
-				Cluster: ClusterConfig{
-					Name:   "test",
-					Domain: "example.com",
-					Nodes: []NodeConfig{
-						{Hostname: "node1", Role: NodeRoleControlPlane},
-					},
-				},
-				Components: ComponentMap{
-					"k3s": ComponentConfig{},
-				},
-			},
-			wantErr: true,
-			errMsg:  "version is required",
-		},
-		{
 			name: "no components",
 			config: Config{
-				Version: "1.0",
 				Cluster: ClusterConfig{
 					Name:   "test",
 					Domain: "example.com",
@@ -68,7 +49,6 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "invalid cluster config",
 			config: Config{
-				Version: "1.0",
 				Cluster: ClusterConfig{
 					Name: "", // Missing name
 				},
@@ -258,7 +238,6 @@ func TestComponentConfig_Validate(t *testing.T) {
 		{
 			name: "valid component with version",
 			component: ComponentConfig{
-				Version: "1.0.0",
 			},
 			wantErr: false,
 		},
@@ -383,7 +362,6 @@ storage:
 	err := yaml.Unmarshal([]byte(yamlData), &config)
 	require.NoError(t, err)
 
-	assert.Equal(t, "1.0", config.Version)
 	assert.Equal(t, "test-cluster", config.Cluster.Name)
 	assert.Equal(t, "test.com", config.Cluster.Domain)
 	assert.Len(t, config.Cluster.Nodes, 2)

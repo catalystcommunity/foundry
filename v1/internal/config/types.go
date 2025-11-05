@@ -2,22 +2,62 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"strings"
+
+	"github.com/catalystcommunity/foundry/v1/internal/setup"
 )
 
 // Config represents the main stack configuration
 type Config struct {
-	Version       string         `yaml:"version"`
-	Cluster       ClusterConfig  `yaml:"cluster"`
-	Components    ComponentMap   `yaml:"components"`
-	Observability *ObsConfig     `yaml:"observability,omitempty"`
-	Storage       *StorageConfig `yaml:"storage,omitempty"`
+	Network       *NetworkConfig  `yaml:"network,omitempty"`
+	DNS           *DNSConfig      `yaml:"dns,omitempty"`
+	Cluster       ClusterConfig   `yaml:"cluster"`
+	Components    ComponentMap    `yaml:"components"`
+	Observability *ObsConfig      `yaml:"observability,omitempty"`
+	Storage       *StorageConfig  `yaml:"storage,omitempty"`
+	SetupState    *setup.SetupState `yaml:"_setup_state,omitempty"`
+}
+
+// NetworkConfig defines network settings
+type NetworkConfig struct {
+	Gateway    string       `yaml:"gateway"`
+	Netmask    string       `yaml:"netmask"`
+	DHCPRange  *DHCPRange   `yaml:"dhcp_range,omitempty"`
+	OpenBAOHosts []string   `yaml:"openbao_hosts"`
+	DNSHosts     []string   `yaml:"dns_hosts"`
+	ZotHosts     []string   `yaml:"zot_hosts"`
+	TrueNASHosts []string   `yaml:"truenas_hosts,omitempty"`
+	K8sVIP       string     `yaml:"k8s_vip"`
+}
+
+// DHCPRange defines the DHCP range for the network
+type DHCPRange struct {
+	Start string `yaml:"start"`
+	End   string `yaml:"end"`
+}
+
+// DNSConfig defines DNS settings
+type DNSConfig struct {
+	InfrastructureZones []DNSZone `yaml:"infrastructure_zones"`
+	KubernetesZones     []DNSZone `yaml:"kubernetes_zones"`
+	Forwarders          []string  `yaml:"forwarders"`
+	Backend             string    `yaml:"backend"`
+	APIKey              string    `yaml:"api_key"`
+}
+
+// DNSZone defines a DNS zone configuration
+type DNSZone struct {
+	Name        string `yaml:"name"`
+	Public      bool   `yaml:"public"`
+	PublicCNAME string `yaml:"public_cname,omitempty"`
 }
 
 // ClusterConfig defines the cluster settings
 type ClusterConfig struct {
 	Name   string       `yaml:"name"`
 	Domain string       `yaml:"domain"`
+	K8sVIP string       `yaml:"k8s_vip,omitempty"`
 	Nodes  []NodeConfig `yaml:"nodes"`
 }
 
@@ -78,8 +118,16 @@ const (
 
 // Validate performs validation on the Config struct
 func (c *Config) Validate() error {
-	if c.Version == "" {
-		return fmt.Errorf("version is required")
+	if c.Network != nil {
+		if err := c.Network.Validate(); err != nil {
+			return fmt.Errorf("network validation failed: %w", err)
+		}
+	}
+
+	if c.DNS != nil {
+		if err := c.DNS.Validate(); err != nil {
+			return fmt.Errorf("dns validation failed: %w", err)
+		}
 	}
 
 	if err := c.Cluster.Validate(); err != nil {
@@ -105,6 +153,38 @@ func (c *Config) Validate() error {
 	if c.Storage != nil {
 		if err := c.Storage.Validate(); err != nil {
 			return fmt.Errorf("storage validation failed: %w", err)
+		}
+	}
+
+	// Cross-validation: K8s VIP must be unique (not in any host list)
+	if c.Network != nil && c.Network.K8sVIP != "" {
+		if err := c.validateK8sVIPUniqueness(); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// validateK8sVIPUniqueness ensures the K8s VIP is not used by any infrastructure host
+func (c *Config) validateK8sVIPUniqueness() error {
+	if c.Network == nil {
+		return nil
+	}
+
+	vip := c.Network.K8sVIP
+
+	// Check against all infrastructure host lists
+	allHosts := append([]string{},
+		c.Network.OpenBAOHosts...,
+	)
+	allHosts = append(allHosts, c.Network.DNSHosts...)
+	allHosts = append(allHosts, c.Network.ZotHosts...)
+	allHosts = append(allHosts, c.Network.TrueNASHosts...)
+
+	for _, host := range allHosts {
+		if host == vip {
+			return fmt.Errorf("k8s_vip %q conflicts with infrastructure host IP", vip)
 		}
 	}
 
@@ -211,6 +291,171 @@ func (t *TrueNASConfig) Validate() error {
 
 	if t.APIKey == "" {
 		return fmt.Errorf("truenas api_key is required")
+	}
+
+	return nil
+}
+
+// Validate performs validation on NetworkConfig
+func (n *NetworkConfig) Validate() error {
+	// Validate gateway
+	if n.Gateway == "" {
+		return fmt.Errorf("gateway is required")
+	}
+	if ip := net.ParseIP(n.Gateway); ip == nil {
+		return fmt.Errorf("gateway %q is not a valid IP address", n.Gateway)
+	}
+
+	// Validate netmask
+	if n.Netmask == "" {
+		return fmt.Errorf("netmask is required")
+	}
+	if ip := net.ParseIP(n.Netmask); ip == nil {
+		return fmt.Errorf("netmask %q is not a valid IP address", n.Netmask)
+	}
+
+	// Validate DHCP range if provided
+	if n.DHCPRange != nil {
+		if err := n.DHCPRange.Validate(); err != nil {
+			return fmt.Errorf("dhcp_range validation failed: %w", err)
+		}
+	}
+
+	// Validate K8s VIP
+	if n.K8sVIP == "" {
+		return fmt.Errorf("k8s_vip is required")
+	}
+	if ip := net.ParseIP(n.K8sVIP); ip == nil {
+		return fmt.Errorf("k8s_vip %q is not a valid IP address", n.K8sVIP)
+	}
+
+	// Validate OpenBAO hosts
+	if len(n.OpenBAOHosts) == 0 {
+		return fmt.Errorf("at least one openbao_hosts entry is required")
+	}
+	for i, host := range n.OpenBAOHosts {
+		if ip := net.ParseIP(host); ip == nil {
+			return fmt.Errorf("openbao_hosts[%d] %q is not a valid IP address", i, host)
+		}
+	}
+
+	// Validate DNS hosts
+	if len(n.DNSHosts) == 0 {
+		return fmt.Errorf("at least one dns_hosts entry is required")
+	}
+	for i, host := range n.DNSHosts {
+		if ip := net.ParseIP(host); ip == nil {
+			return fmt.Errorf("dns_hosts[%d] %q is not a valid IP address", i, host)
+		}
+	}
+
+	// Validate Zot hosts
+	if len(n.ZotHosts) == 0 {
+		return fmt.Errorf("at least one zot_hosts entry is required")
+	}
+	for i, host := range n.ZotHosts {
+		if ip := net.ParseIP(host); ip == nil {
+			return fmt.Errorf("zot_hosts[%d] %q is not a valid IP address", i, host)
+		}
+	}
+
+	// Validate TrueNAS hosts (optional)
+	for i, host := range n.TrueNASHosts {
+		if ip := net.ParseIP(host); ip == nil {
+			return fmt.Errorf("truenas_hosts[%d] %q is not a valid IP address", i, host)
+		}
+	}
+
+	return nil
+}
+
+// Validate performs validation on DHCPRange
+func (d *DHCPRange) Validate() error {
+	if d.Start == "" {
+		return fmt.Errorf("start is required")
+	}
+	if ip := net.ParseIP(d.Start); ip == nil {
+		return fmt.Errorf("start %q is not a valid IP address", d.Start)
+	}
+
+	if d.End == "" {
+		return fmt.Errorf("end is required")
+	}
+	if ip := net.ParseIP(d.End); ip == nil {
+		return fmt.Errorf("end %q is not a valid IP address", d.End)
+	}
+
+	return nil
+}
+
+// Validate performs validation on DNSConfig
+func (d *DNSConfig) Validate() error {
+	// At least one infrastructure zone required
+	if len(d.InfrastructureZones) == 0 {
+		return fmt.Errorf("at least one infrastructure zone is required")
+	}
+
+	// At least one kubernetes zone required
+	if len(d.KubernetesZones) == 0 {
+		return fmt.Errorf("at least one kubernetes zone is required")
+	}
+
+	// Validate all infrastructure zones
+	for i, zone := range d.InfrastructureZones {
+		if err := zone.Validate(); err != nil {
+			return fmt.Errorf("infrastructure_zones[%d] validation failed: %w", i, err)
+		}
+	}
+
+	// Validate all kubernetes zones
+	for i, zone := range d.KubernetesZones {
+		if err := zone.Validate(); err != nil {
+			return fmt.Errorf("kubernetes_zones[%d] validation failed: %w", i, err)
+		}
+	}
+
+	// Validate zone name uniqueness across both lists
+	zoneNames := make(map[string]bool)
+	for _, zone := range d.InfrastructureZones {
+		if zoneNames[zone.Name] {
+			return fmt.Errorf("duplicate zone name: %q", zone.Name)
+		}
+		zoneNames[zone.Name] = true
+	}
+	for _, zone := range d.KubernetesZones {
+		if zoneNames[zone.Name] {
+			return fmt.Errorf("duplicate zone name: %q", zone.Name)
+		}
+		zoneNames[zone.Name] = true
+	}
+
+	// Validate backend
+	if d.Backend == "" {
+		return fmt.Errorf("backend is required")
+	}
+
+	// Validate API key (can be secret reference)
+	if d.APIKey == "" {
+		return fmt.Errorf("api_key is required")
+	}
+
+	return nil
+}
+
+// Validate performs validation on DNSZone
+func (z *DNSZone) Validate() error {
+	if z.Name == "" {
+		return fmt.Errorf("zone name is required")
+	}
+
+	// .local zones must not be public
+	if strings.HasSuffix(z.Name, ".local") && z.Public {
+		return fmt.Errorf("zone %q ends with .local but is marked as public (must be private)", z.Name)
+	}
+
+	// Public zones must have public_cname
+	if z.Public && z.PublicCNAME == "" {
+		return fmt.Errorf("zone %q is marked as public but missing public_cname", z.Name)
 	}
 
 	return nil

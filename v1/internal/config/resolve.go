@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/catalystcommunity/foundry/internal/secrets"
+	"github.com/catalystcommunity/foundry/v1/internal/secrets"
 )
 
 // ValidateSecretRefs validates that all secret references in the config have valid syntax

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/catalystcommunity/foundry/internal/secrets"
+	"github.com/catalystcommunity/foundry/v1/internal/secrets"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -33,7 +33,6 @@ func TestValidateSecretRefs(t *testing.T) {
 		{
 			name: "valid secret refs",
 			config: &Config{
-				Version: "1.0",
 				Cluster: ClusterConfig{
 					Name:   "test",
 					Domain: "example.com",
@@ -56,7 +55,6 @@ func TestValidateSecretRefs(t *testing.T) {
 		{
 			name: "invalid secret ref format",
 			config: &Config{
-				Version: "1.0",
 				Cluster: ClusterConfig{
 					Name:   "test",
 					Domain: "example.com",
@@ -80,7 +78,6 @@ func TestValidateSecretRefs(t *testing.T) {
 		{
 			name: "no secret refs",
 			config: &Config{
-				Version: "1.0",
 				Cluster: ClusterConfig{
 					Name:   "test",
 					Domain: "example.com",
@@ -122,7 +119,6 @@ func TestResolveSecrets(t *testing.T) {
 		{
 			name: "resolve single secret",
 			config: &Config{
-				Version: "1.0",
 				Cluster: ClusterConfig{
 					Name:   "test",
 					Domain: "example.com",
@@ -156,7 +152,6 @@ func TestResolveSecrets(t *testing.T) {
 		{
 			name: "multiple secrets",
 			config: &Config{
-				Version: "1.0",
 				Cluster: ClusterConfig{
 					Name:   "test",
 					Domain: "example.com",
@@ -192,7 +187,6 @@ func TestResolveSecrets(t *testing.T) {
 		{
 			name: "resolution failure",
 			config: &Config{
-				Version: "1.0",
 				Cluster: ClusterConfig{
 					Name:   "test",
 					Domain: "example.com",
@@ -220,7 +214,6 @@ func TestResolveSecrets(t *testing.T) {
 		{
 			name: "non-secret values unchanged",
 			config: &Config{
-				Version: "1.0",
 				Cluster: ClusterConfig{
 					Name:   "test",
 					Domain: "example.com",
@@ -262,7 +255,6 @@ func TestResolveSecrets(t *testing.T) {
 
 func TestResolveSecrets_NilParameters(t *testing.T) {
 	config := &Config{
-		Version: "1.0",
 		Cluster: ClusterConfig{
 			Name:   "test",
 			Domain: "example.com",
