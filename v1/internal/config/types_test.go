@@ -373,11 +373,13 @@ storage:
 	assert.Len(t, config.Components, 2)
 	assert.Contains(t, config.Components, "k3s")
 	assert.Contains(t, config.Components, "zot")
-	assert.Equal(t, "v1.28.5+k3s1", config.Components["k3s"].Version)
+	require.NotNil(t, config.Components["k3s"].Version)
+	assert.Equal(t, "v1.28.5+k3s1", *config.Components["k3s"].Version)
 
 	require.NotNil(t, config.Observability)
 	require.NotNil(t, config.Observability.Prometheus)
-	assert.Equal(t, "30d", config.Observability.Prometheus.Retention)
+	require.NotNil(t, config.Observability.Prometheus.Retention)
+	assert.Equal(t, "30d", *config.Observability.Prometheus.Retention)
 
 	require.NotNil(t, config.Storage)
 	require.NotNil(t, config.Storage.TrueNAS)

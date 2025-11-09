@@ -1,0 +1,33 @@
+; Zot component configuration
+;
+; Configuration for Zot OCI registry deployed as a containerized
+; systemd service on infrastructure hosts.
+
+options {
+    go_package: "github.com/catalystcommunity/foundry/v1/internal/component/zot"
+}
+
+; Zot registry component configuration
+; Default values will be set in Go code DefaultConfig() function
+Config = {
+    version: text,
+    data_dir: text @go_name("DataDir"),
+    config_dir: text @go_name("ConfigDir"),
+    port: int @go_name("Port"),
+    container_runtime: text @go_name("ContainerRuntime"),
+    ? storage_backend: StorageConfig @go_name("StorageBackend"),
+    pull_through_cache: bool @go_name("PullThroughCache"),
+    ? auth: AuthConfig @go_name("Auth"),
+}
+
+; Storage backend configuration for Zot
+StorageConfig = {
+    type: text @go_name("Type"),
+    mount_path: text @go_name("MountPath"),
+}
+
+; Authentication configuration for Zot
+AuthConfig = {
+    type: text @go_name("Type"),
+    config: {* text => any} @go_name("Config"),
+}

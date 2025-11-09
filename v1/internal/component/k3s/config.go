@@ -16,33 +16,7 @@ const (
 	KubeconfigOpenBAOPath = "foundry-core/k3s/kubeconfig"
 )
 
-// RegistryConfig represents a container registry configuration for K3s
-type RegistryConfig struct {
-	Mirrors   map[string]RegistryMirror `yaml:"mirrors,omitempty"`
-	Configs   map[string]RegistryAuth   `yaml:"configs,omitempty"`
-}
-
-// RegistryMirror configures a registry mirror
-type RegistryMirror struct {
-	Endpoint []string `yaml:"endpoint"`
-}
-
-// RegistryAuth configures registry authentication
-type RegistryAuth struct {
-	Auth      *RegistryAuthConfig `yaml:"auth,omitempty"`
-	TLS       *RegistryTLSConfig  `yaml:"tls,omitempty"`
-}
-
-// RegistryAuthConfig holds authentication credentials
-type RegistryAuthConfig struct {
-	Username string `yaml:"username,omitempty"`
-	Password string `yaml:"password,omitempty"`
-}
-
-// RegistryTLSConfig holds TLS configuration
-type RegistryTLSConfig struct {
-	InsecureSkipVerify bool `yaml:"insecure_skip_verify,omitempty"`
-}
+// Registry types (RegistryConfig, RegistryMirror, RegistryAuth, etc.) are generated from CSIL in types.gen.go
 
 // GenerateRegistriesYAML generates the registries.yaml content for K3s
 // This configures K3s to use Zot as a pull-through cache for Docker Hub

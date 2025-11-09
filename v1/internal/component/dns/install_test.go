@@ -138,7 +138,7 @@ func TestConfigFromComponentConfig(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg, err := configFromComponentConfig(tt.input)
+			cfg, _, err := configFromComponentConfig(tt.input)
 			require.NoError(t, err)
 			assert.NotNil(t, cfg)
 			if tt.checkFunc != nil {

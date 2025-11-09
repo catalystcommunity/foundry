@@ -79,17 +79,23 @@ func StoreTokens(ctx context.Context, client SecretClient, tokens *Tokens) error
 		return fmt.Errorf("agent token cannot be empty")
 	}
 
-	// Store cluster token
+	// Store cluster token using generated K3sClusterToken type
+	clusterStorage := &K3sClusterToken{
+		Token: tokens.ClusterToken,
+	}
 	clusterData := map[string]interface{}{
-		"token": tokens.ClusterToken,
+		"token": clusterStorage.Token,
 	}
 	if err := client.WriteSecretV2(ctx, SecretMount, ClusterTokenPath, clusterData); err != nil {
 		return fmt.Errorf("failed to store cluster token: %w", err)
 	}
 
-	// Store agent token
+	// Store agent token using generated K3sAgentToken type
+	agentStorage := &K3sAgentToken{
+		Token: tokens.AgentToken,
+	}
 	agentData := map[string]interface{}{
-		"token": tokens.AgentToken,
+		"token": agentStorage.Token,
 	}
 	if err := client.WriteSecretV2(ctx, SecretMount, AgentTokenPath, agentData); err != nil {
 		return fmt.Errorf("failed to store agent token: %w", err)
@@ -100,39 +106,47 @@ func StoreTokens(ctx context.Context, client SecretClient, tokens *Tokens) error
 
 // LoadTokens retrieves the cluster and agent tokens from OpenBAO
 func LoadTokens(ctx context.Context, client SecretClient) (*Tokens, error) {
-	// Load cluster token
+	// Load cluster token using generated K3sClusterToken type
 	clusterData, err := client.ReadSecretV2(ctx, SecretMount, ClusterTokenPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load cluster token: %w", err)
 	}
 
-	clusterToken, ok := clusterData["token"].(string)
+	clusterTokenStr, ok := clusterData["token"].(string)
 	if !ok {
 		return nil, fmt.Errorf("cluster token is not a string")
 	}
 
-	if clusterToken == "" {
+	clusterStorage := &K3sClusterToken{
+		Token: clusterTokenStr,
+	}
+
+	if clusterStorage.Token == "" {
 		return nil, fmt.Errorf("cluster token is empty")
 	}
 
-	// Load agent token
+	// Load agent token using generated K3sAgentToken type
 	agentData, err := client.ReadSecretV2(ctx, SecretMount, AgentTokenPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load agent token: %w", err)
 	}
 
-	agentToken, ok := agentData["token"].(string)
+	agentTokenStr, ok := agentData["token"].(string)
 	if !ok {
 		return nil, fmt.Errorf("agent token is not a string")
 	}
 
-	if agentToken == "" {
+	agentStorage := &K3sAgentToken{
+		Token: agentTokenStr,
+	}
+
+	if agentStorage.Token == "" {
 		return nil, fmt.Errorf("agent token is empty")
 	}
 
 	return &Tokens{
-		ClusterToken: clusterToken,
-		AgentToken:   agentToken,
+		ClusterToken: clusterStorage.Token,
+		AgentToken:   agentStorage.Token,
 	}, nil
 }
 

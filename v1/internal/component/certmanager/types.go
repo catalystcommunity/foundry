@@ -6,29 +6,8 @@ import (
 	"github.com/catalystcommunity/foundry/v1/internal/component"
 )
 
-// Config represents the cert-manager component configuration
-type Config struct {
-	// Namespace to install cert-manager into (default: cert-manager)
-	Namespace string `yaml:"namespace"`
-
-	// Version of cert-manager to install (default: latest stable)
-	Version string `yaml:"version"`
-
-	// CreateDefaultIssuer enables creation of a default ClusterIssuer
-	CreateDefaultIssuer bool `yaml:"create_default_issuer"`
-
-	// DefaultIssuerType specifies the type of default issuer (self-signed, acme, ca)
-	DefaultIssuerType string `yaml:"default_issuer_type"`
-
-	// ACMEEmail for Let's Encrypt ACME issuer (required if type is acme)
-	ACMEEmail string `yaml:"acme_email"`
-
-	// ACMEServer URL (defaults to Let's Encrypt production)
-	ACMEServer string `yaml:"acme_server"`
-
-	// InstallCRDs ensures CRDs are installed with the chart
-	InstallCRDs bool `yaml:"install_crds"`
-}
+// Config type is generated from CSIL in types.gen.go
+// This file extends the generated type with methods
 
 // Component implements the component.Component interface for cert-manager
 type Component struct {

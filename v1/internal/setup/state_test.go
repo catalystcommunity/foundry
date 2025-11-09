@@ -179,7 +179,9 @@ _setup_state:
 }
 
 func TestSaveState_NonExistentFile(t *testing.T) {
-	state := &SetupState{NetworkPlanned: true}
+	state := &SetupState{
+		NetworkPlanned: true,
+	}
 	err := SaveState("/nonexistent/path/config.yaml", state)
 	assert.Error(t, err)
 }

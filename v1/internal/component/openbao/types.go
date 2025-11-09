@@ -52,23 +52,8 @@ func (c *Component) Uninstall(ctx context.Context) error {
 	return fmt.Errorf("uninstall not yet implemented")
 }
 
-// Config represents OpenBAO-specific configuration
-type Config struct {
-	// Version is the OpenBAO container image tag (e.g., "2.0.0")
-	Version string `yaml:"version"`
-
-	// DataPath is the host path for OpenBAO data storage
-	DataPath string `yaml:"data_path"`
-
-	// ConfigPath is the host path for OpenBAO configuration
-	ConfigPath string `yaml:"config_path"`
-
-	// Address is the listen address for OpenBAO API (default: 0.0.0.0:8200)
-	Address string `yaml:"address"`
-
-	// ContainerRuntime is the runtime to use (docker or podman)
-	ContainerRuntime string `yaml:"container_runtime"`
-}
+// Config type is generated from CSIL in types.gen.go
+// This file extends the generated type with methods
 
 // DefaultConfig returns a Config with sensible defaults
 func DefaultConfig() *Config {

@@ -38,13 +38,13 @@ const (
 // Install implements the component.Component interface.
 func (c *Component) Install(ctx context.Context, cfg component.ComponentConfig) error {
 	// Extract DNS-specific config from ComponentConfig
-	dnsConfig, err := configFromComponentConfig(cfg)
+	dnsConfig, host, err := configFromComponentConfig(cfg)
 	if err != nil {
 		return fmt.Errorf("invalid DNS config: %w", err)
 	}
 
 	// Validate required fields
-	if dnsConfig.Host == nil {
+	if host == nil {
 		return fmt.Errorf("host connection is required")
 	}
 	if dnsConfig.APIKey == "" {
@@ -61,16 +61,16 @@ func (c *Component) Install(ctx context.Context, cfg component.ComponentConfig) 
 	}
 
 	// Create container runtime with adapter
-	adapter := &sshExecutorAdapter{conn: dnsConfig.Host}
+	adapter := &sshExecutorAdapter{conn: host}
 	runtime := container.NewDockerRuntime(adapter)
 
 	// Create data and config directories
-	if err := createDirectories(dnsConfig.Host, dnsConfig); err != nil {
+	if err := createDirectories(host, dnsConfig); err != nil {
 		return fmt.Errorf("failed to create directories: %w", err)
 	}
 
 	// Generate and write config files
-	if err := writeConfigFiles(dnsConfig.Host, dnsConfig); err != nil {
+	if err := writeConfigFiles(host, dnsConfig); err != nil {
 		return fmt.Errorf("failed to write config files: %w", err)
 	}
 
@@ -86,12 +86,12 @@ func (c *Component) Install(ctx context.Context, cfg component.ComponentConfig) 
 	}
 
 	// Create systemd services
-	if err := createSystemdServices(dnsConfig.Host, dnsConfig, authImage, recursorImage); err != nil {
+	if err := createSystemdServices(host, dnsConfig, authImage, recursorImage); err != nil {
 		return fmt.Errorf("failed to create systemd services: %w", err)
 	}
 
 	// Enable and start services
-	if err := enableAndStartServices(dnsConfig.Host); err != nil {
+	if err := enableAndStartServices(host); err != nil {
 		return fmt.Errorf("failed to start services: %w", err)
 	}
 
@@ -99,12 +99,13 @@ func (c *Component) Install(ctx context.Context, cfg component.ComponentConfig) 
 }
 
 // configFromComponentConfig extracts DNS-specific config from generic ComponentConfig.
-func configFromComponentConfig(cfg component.ComponentConfig) (*Config, error) {
+func configFromComponentConfig(cfg component.ComponentConfig) (*Config, *ssh.Connection, error) {
 	dnsConfig := DefaultConfig()
 
-	// Extract Host
-	if host, ok := cfg["host"].(*ssh.Connection); ok {
-		dnsConfig.Host = host
+	// Extract Host (runtime-only, not part of persisted config)
+	var host *ssh.Connection
+	if h, ok := cfg["host"].(*ssh.Connection); ok {
+		host = h
 	}
 
 	// Extract ImageTag
@@ -137,7 +138,7 @@ func configFromComponentConfig(cfg component.ComponentConfig) (*Config, error) {
 		dnsConfig.ConfigDir = configDir
 	}
 
-	return dnsConfig, nil
+	return dnsConfig, host, nil
 }
 
 // generateAPIKey generates a secure random API key.

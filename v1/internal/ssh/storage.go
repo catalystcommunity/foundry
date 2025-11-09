@@ -73,10 +73,16 @@ func (s *OpenBAOKeyStorage) Store(host string, key *KeyPair) error {
 	// Format: foundry-core/ssh-keys/<hostname>
 	mount, path := s.parsePath(host)
 
-	// Base64 encode the keys for safe storage
+	// Base64 encode the keys for safe storage using generated SSHKeyStorage type
+	storage := &SSHKeyStorage{
+		PrivateKey: base64.StdEncoding.EncodeToString(key.Private),
+		PublicKey:  base64.StdEncoding.EncodeToString(key.Public),
+	}
+
+	// Convert to map for OpenBAO client
 	data := map[string]interface{}{
-		"private_key": base64.StdEncoding.EncodeToString(key.Private),
-		"public_key":  base64.StdEncoding.EncodeToString(key.Public),
+		"private_key": storage.PrivateKey,
+		"public_key":  storage.PublicKey,
 	}
 
 	ctx := context.Background()
@@ -102,7 +108,7 @@ func (s *OpenBAOKeyStorage) Load(host string) (*KeyPair, error) {
 		return nil, fmt.Errorf("failed to load SSH key from OpenBAO: %w", err)
 	}
 
-	// Extract and decode the keys
+	// Extract keys into generated SSHKeyStorage type for type safety
 	privateKeyStr, ok := data["private_key"].(string)
 	if !ok {
 		return nil, fmt.Errorf("private_key not found or invalid type in secret")
@@ -113,13 +119,18 @@ func (s *OpenBAOKeyStorage) Load(host string) (*KeyPair, error) {
 		return nil, fmt.Errorf("public_key not found or invalid type in secret")
 	}
 
-	// Decode from base64
-	privateKey, err := base64.StdEncoding.DecodeString(privateKeyStr)
+	storage := &SSHKeyStorage{
+		PrivateKey: privateKeyStr,
+		PublicKey:  publicKeyStr,
+	}
+
+	// Decode from base64 using storage struct fields
+	privateKey, err := base64.StdEncoding.DecodeString(storage.PrivateKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode private key: %w", err)
 	}
 
-	publicKey, err := base64.StdEncoding.DecodeString(publicKeyStr)
+	publicKey, err := base64.StdEncoding.DecodeString(storage.PublicKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode public key: %w", err)
 	}

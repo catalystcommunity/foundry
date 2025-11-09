@@ -4,111 +4,12 @@ import (
 	"fmt"
 	"net"
 	"strings"
-
-	"github.com/catalystcommunity/foundry/v1/internal/setup"
 )
 
-// Config represents the main stack configuration
-type Config struct {
-	Network       *NetworkConfig  `yaml:"network,omitempty"`
-	DNS           *DNSConfig      `yaml:"dns,omitempty"`
-	Cluster       ClusterConfig   `yaml:"cluster"`
-	Components    ComponentMap    `yaml:"components"`
-	Observability *ObsConfig      `yaml:"observability,omitempty"`
-	Storage       *StorageConfig  `yaml:"storage,omitempty"`
-	SetupState    *setup.SetupState `yaml:"_setup_state,omitempty"`
-}
-
-// NetworkConfig defines network settings
-type NetworkConfig struct {
-	Gateway    string       `yaml:"gateway"`
-	Netmask    string       `yaml:"netmask"`
-	DHCPRange  *DHCPRange   `yaml:"dhcp_range,omitempty"`
-	OpenBAOHosts []string   `yaml:"openbao_hosts"`
-	DNSHosts     []string   `yaml:"dns_hosts"`
-	ZotHosts     []string   `yaml:"zot_hosts"`
-	TrueNASHosts []string   `yaml:"truenas_hosts,omitempty"`
-	K8sVIP       string     `yaml:"k8s_vip"`
-}
-
-// DHCPRange defines the DHCP range for the network
-type DHCPRange struct {
-	Start string `yaml:"start"`
-	End   string `yaml:"end"`
-}
-
-// DNSConfig defines DNS settings
-type DNSConfig struct {
-	InfrastructureZones []DNSZone `yaml:"infrastructure_zones"`
-	KubernetesZones     []DNSZone `yaml:"kubernetes_zones"`
-	Forwarders          []string  `yaml:"forwarders"`
-	Backend             string    `yaml:"backend"`
-	APIKey              string    `yaml:"api_key"`
-}
-
-// DNSZone defines a DNS zone configuration
-type DNSZone struct {
-	Name        string `yaml:"name"`
-	Public      bool   `yaml:"public"`
-	PublicCNAME string `yaml:"public_cname,omitempty"`
-}
-
-// ClusterConfig defines the cluster settings
-type ClusterConfig struct {
-	Name   string       `yaml:"name"`
-	Domain string       `yaml:"domain"`
-	K8sVIP string       `yaml:"k8s_vip,omitempty"`
-	Nodes  []NodeConfig `yaml:"nodes"`
-}
-
-// NodeConfig defines a single node in the cluster
-type NodeConfig struct {
-	Hostname string `yaml:"hostname"`
-	Role     string `yaml:"role"` // control-plane, worker
-}
-
-// ComponentMap is a map of component names to their configurations
-type ComponentMap map[string]ComponentConfig
-
-// ComponentConfig defines configuration for a single component
-type ComponentConfig struct {
-	Version string                 `yaml:"version,omitempty"`
-	Hosts   []string               `yaml:"hosts,omitempty"`
-	Config  map[string]interface{} `yaml:",inline"`
-}
-
-// ObsConfig defines observability settings
-type ObsConfig struct {
-	Prometheus *PrometheusConfig `yaml:"prometheus,omitempty"`
-	Loki       *LokiConfig       `yaml:"loki,omitempty"`
-	Grafana    *GrafanaConfig    `yaml:"grafana,omitempty"`
-}
-
-// PrometheusConfig defines Prometheus-specific settings
-type PrometheusConfig struct {
-	Retention string `yaml:"retention,omitempty"`
-}
-
-// LokiConfig defines Loki-specific settings
-type LokiConfig struct {
-	Retention string `yaml:"retention,omitempty"`
-}
-
-// GrafanaConfig defines Grafana-specific settings
-type GrafanaConfig struct {
-	AdminPassword string `yaml:"admin_password,omitempty"`
-}
-
-// StorageConfig defines storage backend configuration
-type StorageConfig struct {
-	TrueNAS *TrueNASConfig `yaml:"truenas,omitempty"`
-}
-
-// TrueNASConfig defines TrueNAS-specific settings
-type TrueNASConfig struct {
-	APIURL string `yaml:"api_url"`
-	APIKey string `yaml:"api_key"`
-}
+// All type definitions (NetworkConfig, DHCPRange, DNSConfig, DNSZone, ClusterConfig, NodeConfig,
+// ComponentMap, ComponentConfig, ObsConfig, PrometheusConfig, LokiConfig, GrafanaConfig,
+// StorageConfig, TrueNASConfig, and Config) are generated from CSIL in types.gen.go
+// Validation methods below extend the generated types
 
 // Valid node roles
 const (
@@ -454,7 +355,7 @@ func (z *DNSZone) Validate() error {
 	}
 
 	// Public zones must have public_cname
-	if z.Public && z.PublicCNAME == "" {
+	if z.Public && (z.PublicCNAME == nil || *z.PublicCNAME == "") {
 		return fmt.Errorf("zone %q is marked as public but missing public_cname", z.Name)
 	}
 

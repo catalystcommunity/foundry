@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/catalystcommunity/foundry/v1/internal/component"
-	"github.com/catalystcommunity/foundry/v1/internal/ssh"
 )
 
 // Component implements the component.Component interface for PowerDNS.
@@ -55,29 +54,8 @@ func (c *Component) Dependencies() []string {
 	return []string{"openbao"} // DNS depends on OpenBAO for API key storage
 }
 
-// Config represents PowerDNS configuration parameters.
-type Config struct {
-	// Host is the SSH connection to the infrastructure host
-	Host *ssh.Connection
-
-	// ImageTag is the PowerDNS version tag (e.g., "49" for 4.9.x)
-	ImageTag string
-
-	// APIKey is the secure API key for PowerDNS API access
-	APIKey string
-
-	// Forwarders are upstream DNS servers for recursive queries
-	Forwarders []string
-
-	// Backend is the database backend (sqlite, postgresql, mysql)
-	Backend string
-
-	// DataDir is the directory for PowerDNS data files
-	DataDir string
-
-	// ConfigDir is the directory for PowerDNS config files
-	ConfigDir string
-}
+// Config type is generated from CSIL in types.gen.go
+// This file extends the generated type with methods
 
 // DefaultConfig returns a Config with sensible defaults.
 func DefaultConfig() *Config {

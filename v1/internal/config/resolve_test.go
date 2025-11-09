@@ -86,7 +86,7 @@ func TestValidateSecretRefs(t *testing.T) {
 					},
 				},
 				Components: ComponentMap{
-					"k3s": ComponentConfig{Version: "v1.28.5"},
+					"k3s": ComponentConfig{Version: strPtr("v1.28.5")},
 				},
 			},
 			wantErr: false,
@@ -222,7 +222,7 @@ func TestResolveSecrets(t *testing.T) {
 					},
 				},
 				Components: ComponentMap{
-					"k3s": ComponentConfig{Version: "v1.28.5"},
+					"k3s": ComponentConfig{Version: strPtr("v1.28.5")},
 				},
 			},
 			ctx:      secrets.NewResolutionContext("foundry-core"),
@@ -230,7 +230,8 @@ func TestResolveSecrets(t *testing.T) {
 			wantErr:  false,
 			check: func(t *testing.T, cfg *Config) {
 				assert.Equal(t, "test", cfg.Cluster.Name)
-				assert.Equal(t, "v1.28.5", cfg.Components["k3s"].Version)
+				require.NotNil(t, cfg.Components["k3s"].Version)
+				assert.Equal(t, "v1.28.5", *cfg.Components["k3s"].Version)
 			},
 		},
 	}

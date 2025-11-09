@@ -98,50 +98,8 @@ func (c *Component) Dependencies() []string {
 	return []string{"openbao", "dns"} // Zot depends on OpenBAO for secrets and DNS for name resolution
 }
 
-// Config represents the Zot registry configuration
-type Config struct {
-	// Version is the Zot image tag
-	Version string
-
-	// DataDir is the path where Zot stores registry data
-	DataDir string
-
-	// ConfigDir is the path where Zot config.json is stored
-	ConfigDir string
-
-	// Port is the port Zot listens on
-	Port int
-
-	// ContainerRuntime is the runtime to use (docker or podman)
-	ContainerRuntime string
-
-	// StorageBackend is the storage configuration (optional)
-	StorageBackend *StorageConfig
-
-	// PullThroughCache enables pull-through caching for Docker Hub
-	PullThroughCache bool
-
-	// Auth configuration (optional, for future use)
-	Auth *AuthConfig
-}
-
-// StorageConfig represents storage backend configuration
-type StorageConfig struct {
-	// Type is the storage backend type (e.g., "truenas")
-	Type string
-
-	// MountPath is where the storage is mounted on the host
-	MountPath string
-}
-
-// AuthConfig represents authentication configuration
-type AuthConfig struct {
-	// Type is the auth type (e.g., "basic", "ldap", "oidc")
-	Type string
-
-	// Config is type-specific auth configuration
-	Config map[string]interface{}
-}
+// Config, StorageConfig, and AuthConfig types are generated from CSIL in types.gen.go
+// This file extends the generated types with methods
 
 // DefaultConfig returns a Config with sensible defaults
 func DefaultConfig() *Config {
@@ -173,9 +131,9 @@ func ParseConfig(cfg component.ComponentConfig) (*Config, error) {
 	}
 
 	if port, ok := cfg["port"].(int); ok {
-		config.Port = port
+		config.Port = int64(port)
 	} else if portFloat, ok := cfg["port"].(float64); ok {
-		config.Port = int(portFloat)
+		config.Port = int64(portFloat)
 	}
 
 	if pullThrough, ok := cfg["pull_through_cache"].(bool); ok {

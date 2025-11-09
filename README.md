@@ -39,6 +39,16 @@ cd v1
 ./tools help    # Show all available commands
 ```
 
+### Working with CSIL-Generated Types
+
+Foundry uses [CSIL](https://github.com/catalystcommunity/csilgen) to define persisted data structures. When modifying configuration types, component configs, or storage formats, you'll need to update CSIL definitions and regenerate Go code.
+
+See the [CSIL Workflow Guide](./docs/csil-workflow.md) for detailed instructions on:
+- Modifying existing types
+- Adding new fields (breaking vs. non-breaking)
+- Regenerating Go code
+- Handling breaking changes
+
 ## Project Structure
 
 ```
@@ -64,6 +74,9 @@ foundry/
 - [DESIGN.md](./DESIGN.md) - Architecture, philosophy, and design decisions
 - [implementation-tasks.md](./implementation-tasks.md) - Implementation phases and status
 - [CLAUDE.md](./CLAUDE.md) - Development best practices and guidelines
+
+### Developer Guides
+- [CSIL Workflow](./docs/csil-workflow.md) - Working with CSIL-generated types
 
 ### User Guides
 - [Getting Started](./docs/getting-started.md) - Quick start guide and common commands

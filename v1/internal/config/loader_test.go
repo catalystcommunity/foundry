@@ -162,7 +162,8 @@ func TestLoad_ValidConfigFile(t *testing.T) {
 	// Verify observability
 	require.NotNil(t, config.Observability)
 	require.NotNil(t, config.Observability.Prometheus)
-	assert.Equal(t, "30d", config.Observability.Prometheus.Retention)
+	require.NotNil(t, config.Observability.Prometheus.Retention)
+	assert.Equal(t, "30d", *config.Observability.Prometheus.Retention)
 
 	// Verify storage
 	require.NotNil(t, config.Storage)

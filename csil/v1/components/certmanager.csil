@@ -1,0 +1,20 @@
+; cert-manager component configuration
+;
+; Configuration for cert-manager certificate management deployed via Helm
+; into the Kubernetes cluster.
+
+options {
+    go_package: "github.com/catalystcommunity/foundry/v1/internal/component/certmanager"
+}
+
+; cert-manager component configuration
+; Default values will be set in Go code DefaultConfig() function
+Config = {
+    namespace: text,
+    version: text,
+    create_default_issuer: bool @go_name("CreateDefaultIssuer"),
+    default_issuer_type: text @go_name("DefaultIssuerType"),
+    acme_email: text @go_name("ACMEEmail"),
+    acme_server: text @go_name("ACMEServer"),
+    install_crds: bool @go_name("InstallCRDs"),
+}

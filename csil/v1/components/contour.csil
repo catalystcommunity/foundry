@@ -1,0 +1,20 @@
+; Contour component configuration
+;
+; Configuration for Contour ingress controller deployed via Helm
+; into the Kubernetes cluster.
+
+options {
+    go_package: "github.com/catalystcommunity/foundry/v1/internal/component/contour"
+}
+
+; Contour ingress controller configuration
+; Default values will be set in Go code DefaultConfig() function
+Config = {
+    version: text,                      ; Contour Helm chart version (empty = latest stable)
+    namespace: text,                    ; Namespace to install Contour into, default: "projectcontour"
+    replica_count: uint @go_name("ReplicaCount"),                ; Number of Contour replicas to run, default: 2
+    envoy_replica_count: uint @go_name("EnvoyReplicaCount"),          ; Number of Envoy replicas to run, default: 2
+    use_kubevip: bool @go_name("UseKubeVIP"),                  ; Enable kube-vip cloud provider, default: true
+    default_ingress_class: bool @go_name("DefaultIngressClass"),        ; Set Contour as default IngressClass, default: true
+    values: {* text => any},            ; Additional Helm values to pass to the chart
+}
