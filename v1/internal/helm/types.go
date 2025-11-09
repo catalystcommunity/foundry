@@ -22,14 +22,14 @@ type Chart struct {
 
 // InstallOptions contains options for installing a Helm chart
 type InstallOptions struct {
-	ReleaseName string
-	Namespace   string
-	Chart       string
-	Version     string
-	Values      map[string]interface{}
+	ReleaseName     string
+	Namespace       string
+	Chart           string
+	Version         string
+	Values          map[string]interface{}
 	CreateNamespace bool
-	Wait        bool
-	Timeout     time.Duration
+	Wait            bool
+	Timeout         time.Duration
 }
 
 // UpgradeOptions contains options for upgrading a Helm release
