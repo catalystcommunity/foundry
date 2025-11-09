@@ -1,0 +1,18 @@
+; OpenBAO component configuration
+;
+; Configuration for OpenBAO secrets management deployed as a containerized
+; systemd service on infrastructure hosts.
+
+options {
+    go_package: "github.com/catalystcommunity/foundry/v1/internal/component/openbao"
+}
+
+; OpenBAO component configuration
+; Default values will be set in Go code DefaultConfig() function
+Config = {
+    version: text,             ; Default: "2.0.0"
+    data_path: text,           ; Default: "/var/lib/openbao"
+    config_path: text,         ; Default: "/etc/openbao"
+    address: text,             ; Default: "0.0.0.0:8200"
+    container_runtime: text,   ; "docker" or "podman", default: "docker"
+}

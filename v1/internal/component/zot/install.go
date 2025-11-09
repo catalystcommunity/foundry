@@ -107,7 +107,7 @@ func createSystemdService(conn container.SSHExecutor, runtime container.Runtime,
 	imageName := fmt.Sprintf("ghcr.io/project-zot/zot:%s", cfg.Version)
 	configPath := filepath.Join(cfg.ConfigDir, "config.json")
 
-	execStart := buildExecStart(runtime.Name(), imageName, cfg.Port, dataDir, configPath)
+	execStart := buildExecStart(runtime.Name(), imageName, int(cfg.Port), dataDir, configPath)
 	execStop := fmt.Sprintf("/usr/bin/%s stop -t 10 foundry-zot", runtime.Name())
 
 	// Create systemd unit file using helper

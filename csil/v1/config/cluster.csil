@@ -1,0 +1,22 @@
+; Cluster configuration types for Foundry
+;
+; Defines Kubernetes cluster settings and node roles.
+
+options {
+    go_package: "github.com/catalystcommunity/foundry/v1/internal/config"
+}
+
+; Cluster configuration for K3s
+ClusterConfig = {
+    name: text,
+    domain: text,
+    ? k8s_vip: text @go_name("K8sVIP"),
+    nodes: [* NodeConfig] .size(1..)
+}
+
+; Individual node configuration
+; Role must be "control-plane" or "worker"
+NodeConfig = {
+    hostname: text,
+    role: text
+}

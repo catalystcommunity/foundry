@@ -1,0 +1,114 @@
+; Network and DNS configuration types for Foundry stack
+;
+; Simplified version for current parser capabilities
+; Full CDDL version in core.csil
+
+options {
+    go_package: "github.com/catalystcommunity/foundry/v1/internal/config"
+}
+
+; Network settings for infrastructure hosts and Kubernetes VIP
+NetworkConfig = {
+    gateway: text,
+    netmask: text,
+    ? dhcp_range: DHCPRange @go_name("DHCPRange"),
+    openbao_hosts: [* text] .size (1..) @go_name("OpenBAOHosts"),
+    dns_hosts: [* text] .size (1..) @go_name("DNSHosts"),
+    zot_hosts: [* text] .size (1..) @go_name("ZotHosts"),
+    ? truenas_hosts: [* text] @go_name("TrueNASHosts"),
+    k8s_vip: text @go_name("K8sVIP")
+}
+
+; DHCP range specification for network planning
+DHCPRange = {
+    start: text,
+    end: text
+}
+
+; DNS configuration with zones and forwarders
+DNSConfig = {
+    infrastructure_zones: [* DNSZone] .size (1..),
+    kubernetes_zones: [* DNSZone] .size (1..),
+    forwarders: [* text],
+    backend: text .default "sqlite",
+    api_key: text @go_name("APIKey")
+}
+
+; DNS zone configuration with split-horizon support
+DNSZone = {
+    name: text,
+    public: bool,
+    ? public_cname: text @go_name("PublicCNAME")
+}
+
+; Cluster configuration for K3s
+ClusterConfig = {
+    name: text,
+    domain: text,
+    ? k8s_vip: text @go_name("K8sVIP"),
+    nodes: [* NodeConfig] .size(1..)
+}
+
+; Individual node configuration
+; Role must be "control-plane" or "worker"
+NodeConfig = {
+    hostname: text,
+    role: text
+}
+
+; Map of component names to their configurations
+ComponentMap = {* text => ComponentConfig}
+
+; Individual component configuration
+; Supports arbitrary additional configuration via inline map
+ComponentConfig = {
+    ? version: text,
+    ? hosts: [* text],
+    config: {* text => any}
+}
+
+; Observability settings for monitoring and logging
+ObsConfig = {
+    ? prometheus: PrometheusConfig,
+    ? loki: LokiConfig,
+    ? grafana: GrafanaConfig
+}
+
+; Prometheus-specific settings
+PrometheusConfig = {
+    ? retention: text
+}
+
+; Loki-specific settings
+LokiConfig = {
+    ? retention: text
+}
+
+; Grafana-specific settings
+GrafanaConfig = {
+    ? admin_password: text
+}
+
+; Storage backend configuration
+StorageConfig = {
+    ? truenas: TrueNASConfig @go_name("TrueNAS")
+}
+
+; TrueNAS-specific settings
+TrueNASConfig = {
+    api_url: text @go_name("APIURL"),
+    api_key: text @go_name("APIKey")
+}
+
+; Main stack configuration loaded from YAML
+; Note: SetupState uses @go_type to reference the setup package type
+; Import will need to be added manually after generation
+Config = {
+    ? network: NetworkConfig,
+    ? dns: DNSConfig @go_name("DNS"),
+    cluster: ClusterConfig,
+    components: ComponentMap,
+    ? observability: ObsConfig,
+    ? storage: StorageConfig,
+    setup_state: SetupState @go_type("*setup.SetupState") @go_name("SetupState")
+}

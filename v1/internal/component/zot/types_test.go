@@ -14,7 +14,7 @@ func TestDefaultConfig(t *testing.T) {
 	assert.Equal(t, "latest", config.Version)
 	assert.Equal(t, "/var/lib/foundry-zot", config.DataDir)
 	assert.Equal(t, "/etc/foundry-zot", config.ConfigDir)
-	assert.Equal(t, 5000, config.Port)
+	assert.Equal(t, int64(5000), config.Port)
 	assert.True(t, config.PullThroughCache)
 	assert.Nil(t, config.Auth)
 	assert.Nil(t, config.StorageBackend)
@@ -29,7 +29,7 @@ func TestParseConfig_Defaults(t *testing.T) {
 	assert.Equal(t, "latest", config.Version)
 	assert.Equal(t, "/var/lib/foundry-zot", config.DataDir)
 	assert.Equal(t, "/etc/foundry-zot", config.ConfigDir)
-	assert.Equal(t, 5000, config.Port)
+	assert.Equal(t, int64(5000), config.Port)
 	assert.True(t, config.PullThroughCache)
 }
 
@@ -48,7 +48,7 @@ func TestParseConfig_CustomValues(t *testing.T) {
 	assert.Equal(t, "v2.0.0", config.Version)
 	assert.Equal(t, "/custom/data", config.DataDir)
 	assert.Equal(t, "/custom/config", config.ConfigDir)
-	assert.Equal(t, 5050, config.Port)
+	assert.Equal(t, int64(5050), config.Port)
 	assert.False(t, config.PullThroughCache)
 }
 
@@ -61,7 +61,7 @@ func TestParseConfig_PortAsFloat(t *testing.T) {
 	config, err := ParseConfig(cfg)
 	require.NoError(t, err)
 
-	assert.Equal(t, 5050, config.Port)
+	assert.Equal(t, int64(5050), config.Port)
 }
 
 func TestParseConfig_WithStorage(t *testing.T) {
@@ -124,7 +124,7 @@ func TestParseConfig_Complete(t *testing.T) {
 	assert.Equal(t, "v2.0.0", config.Version)
 	assert.Equal(t, "/custom/data", config.DataDir)
 	assert.Equal(t, "/custom/config", config.ConfigDir)
-	assert.Equal(t, 5050, config.Port)
+	assert.Equal(t, int64(5050), config.Port)
 	assert.False(t, config.PullThroughCache)
 
 	require.NotNil(t, config.StorageBackend)

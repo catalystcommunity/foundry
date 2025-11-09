@@ -6,6 +6,11 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// Helper function for tests
+func strPtr(s string) *string {
+	return &s
+}
+
 func TestDNSConfig_Validate(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -17,10 +22,10 @@ func TestDNSConfig_Validate(t *testing.T) {
 			name: "valid DNS config",
 			config: DNSConfig{
 				InfrastructureZones: []DNSZone{
-					{Name: "infra.example.com", Public: true, PublicCNAME: "home.example.com"},
+					{Name: "infra.example.com", Public: true, PublicCNAME: strPtr("home.example.com")},
 				},
 				KubernetesZones: []DNSZone{
-					{Name: "k8s.example.com", Public: true, PublicCNAME: "home.example.com"},
+					{Name: "k8s.example.com", Public: true, PublicCNAME: strPtr("home.example.com")},
 				},
 				Forwarders: []string{"8.8.8.8", "1.1.1.1"},
 				Backend:    "sqlite",
@@ -47,7 +52,7 @@ func TestDNSConfig_Validate(t *testing.T) {
 			name: "missing infrastructure zones",
 			config: DNSConfig{
 				KubernetesZones: []DNSZone{
-					{Name: "k8s.example.com", Public: true, PublicCNAME: "home.example.com"},
+					{Name: "k8s.example.com", Public: true, PublicCNAME: strPtr("home.example.com")},
 				},
 				Backend: "sqlite",
 				APIKey:  "test-key",
@@ -59,7 +64,7 @@ func TestDNSConfig_Validate(t *testing.T) {
 			name: "missing kubernetes zones",
 			config: DNSConfig{
 				InfrastructureZones: []DNSZone{
-					{Name: "infra.example.com", Public: true, PublicCNAME: "home.example.com"},
+					{Name: "infra.example.com", Public: true, PublicCNAME: strPtr("home.example.com")},
 				},
 				Backend: "sqlite",
 				APIKey:  "test-key",
@@ -71,10 +76,10 @@ func TestDNSConfig_Validate(t *testing.T) {
 			name: "duplicate zone names",
 			config: DNSConfig{
 				InfrastructureZones: []DNSZone{
-					{Name: "example.com", Public: true, PublicCNAME: "home.example.com"},
+					{Name: "example.com", Public: true, PublicCNAME: strPtr("home.example.com")},
 				},
 				KubernetesZones: []DNSZone{
-					{Name: "example.com", Public: true, PublicCNAME: "home.example.com"},
+					{Name: "example.com", Public: true, PublicCNAME: strPtr("home.example.com")},
 				},
 				Backend: "sqlite",
 				APIKey:  "test-key",
@@ -86,10 +91,10 @@ func TestDNSConfig_Validate(t *testing.T) {
 			name: "missing backend",
 			config: DNSConfig{
 				InfrastructureZones: []DNSZone{
-					{Name: "infra.example.com", Public: true, PublicCNAME: "home.example.com"},
+					{Name: "infra.example.com", Public: true, PublicCNAME: strPtr("home.example.com")},
 				},
 				KubernetesZones: []DNSZone{
-					{Name: "k8s.example.com", Public: true, PublicCNAME: "home.example.com"},
+					{Name: "k8s.example.com", Public: true, PublicCNAME: strPtr("home.example.com")},
 				},
 				APIKey: "test-key",
 			},
@@ -100,10 +105,10 @@ func TestDNSConfig_Validate(t *testing.T) {
 			name: "missing api_key",
 			config: DNSConfig{
 				InfrastructureZones: []DNSZone{
-					{Name: "infra.example.com", Public: true, PublicCNAME: "home.example.com"},
+					{Name: "infra.example.com", Public: true, PublicCNAME: strPtr("home.example.com")},
 				},
 				KubernetesZones: []DNSZone{
-					{Name: "k8s.example.com", Public: true, PublicCNAME: "home.example.com"},
+					{Name: "k8s.example.com", Public: true, PublicCNAME: strPtr("home.example.com")},
 				},
 				Backend: "sqlite",
 			},
@@ -137,7 +142,7 @@ func TestDNSZone_Validate(t *testing.T) {
 			zone: DNSZone{
 				Name:        "example.com",
 				Public:      true,
-				PublicCNAME: "home.example.com",
+				PublicCNAME: strPtr("home.example.com"),
 			},
 			wantErr: false,
 		},
@@ -168,7 +173,7 @@ func TestDNSZone_Validate(t *testing.T) {
 			zone: DNSZone{
 				Name:        "infra.local",
 				Public:      true,
-				PublicCNAME: "home.example.com",
+				PublicCNAME: strPtr("home.example.com"),
 			},
 			wantErr: true,
 			errMsg:  "ends with .local but is marked as public",
@@ -209,10 +214,10 @@ func TestConfig_WithNetworkAndDNS(t *testing.T) {
 		},
 		DNS: &DNSConfig{
 			InfrastructureZones: []DNSZone{
-				{Name: "infra.example.com", Public: true, PublicCNAME: "home.example.com"},
+				{Name: "infra.example.com", Public: true, PublicCNAME: strPtr("home.example.com")},
 			},
 			KubernetesZones: []DNSZone{
-				{Name: "k8s.example.com", Public: true, PublicCNAME: "home.example.com"},
+				{Name: "k8s.example.com", Public: true, PublicCNAME: strPtr("home.example.com")},
 			},
 			Backend: "sqlite",
 			APIKey:  "${secret:foundry-core/dns:api_key}",

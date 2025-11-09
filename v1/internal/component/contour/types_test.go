@@ -16,8 +16,8 @@ func TestDefaultConfig(t *testing.T) {
 
 	assert.Equal(t, "", config.Version)
 	assert.Equal(t, "projectcontour", config.Namespace)
-	assert.Equal(t, 2, config.ReplicaCount)
-	assert.Equal(t, 2, config.EnvoyReplicaCount)
+	assert.Equal(t, uint64(2), config.ReplicaCount)
+	assert.Equal(t, uint64(2), config.EnvoyReplicaCount)
 	assert.True(t, config.UseKubeVIP)
 	assert.True(t, config.DefaultIngressClass)
 	assert.NotNil(t, config.Values)
@@ -31,8 +31,8 @@ func TestParseConfig_Defaults(t *testing.T) {
 
 	assert.Equal(t, "", config.Version)
 	assert.Equal(t, "projectcontour", config.Namespace)
-	assert.Equal(t, 2, config.ReplicaCount)
-	assert.Equal(t, 2, config.EnvoyReplicaCount)
+	assert.Equal(t, uint64(2), config.ReplicaCount)
+	assert.Equal(t, uint64(2), config.EnvoyReplicaCount)
 	assert.True(t, config.UseKubeVIP)
 	assert.True(t, config.DefaultIngressClass)
 }
@@ -52,8 +52,8 @@ func TestParseConfig_CustomValues(t *testing.T) {
 
 	assert.Equal(t, "1.28.0", config.Version)
 	assert.Equal(t, "custom-contour", config.Namespace)
-	assert.Equal(t, 3, config.ReplicaCount)
-	assert.Equal(t, 4, config.EnvoyReplicaCount)
+	assert.Equal(t, uint64(3), config.ReplicaCount)
+	assert.Equal(t, uint64(4), config.EnvoyReplicaCount)
 	assert.False(t, config.UseKubeVIP)
 	assert.False(t, config.DefaultIngressClass)
 }

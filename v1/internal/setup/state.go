@@ -7,17 +7,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// SetupState tracks progress through the setup wizard
-type SetupState struct {
-	NetworkPlanned   bool `yaml:"network_planned"`
-	NetworkValidated bool `yaml:"network_validated"`
-	OpenBAOInstalled bool `yaml:"openbao_installed"`
-	DNSInstalled     bool `yaml:"dns_installed"`
-	DNSZonesCreated  bool `yaml:"dns_zones_created"`
-	ZotInstalled     bool `yaml:"zot_installed"`
-	K8sInstalled     bool `yaml:"k8s_installed"`
-	StackComplete    bool `yaml:"stack_complete"`
-}
+// SetupState is generated from CSIL in types.gen.go
+// Methods below extend the generated type with business logic
 
 // Step represents a setup step identifier
 type Step string

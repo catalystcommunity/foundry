@@ -64,12 +64,12 @@ func TestBuildHelmValues_Defaults(t *testing.T) {
 	// Check Contour replicas
 	contour, ok := values["contour"].(map[string]interface{})
 	require.True(t, ok)
-	assert.Equal(t, 2, contour["replicaCount"])
+	assert.Equal(t, uint64(2), contour["replicaCount"])
 
 	// Check Envoy replicas
 	envoy, ok := values["envoy"].(map[string]interface{})
 	require.True(t, ok)
-	assert.Equal(t, 2, envoy["replicaCount"])
+	assert.Equal(t, uint64(2), envoy["replicaCount"])
 
 	// Check service type
 	service, ok := envoy["service"].(map[string]interface{})
@@ -89,8 +89,8 @@ func TestBuildHelmValues_Defaults(t *testing.T) {
 
 func TestBuildHelmValues_CustomReplicas(t *testing.T) {
 	cfg := &Config{
-		ReplicaCount:      5,
-		EnvoyReplicaCount: 3,
+		ReplicaCount:      uint64(5),
+		EnvoyReplicaCount: uint64(3),
 		UseKubeVIP:        false,
 		DefaultIngressClass: false,
 		Values:            make(map[string]interface{}),
@@ -100,17 +100,17 @@ func TestBuildHelmValues_CustomReplicas(t *testing.T) {
 
 	contour, ok := values["contour"].(map[string]interface{})
 	require.True(t, ok)
-	assert.Equal(t, 5, contour["replicaCount"])
+	assert.Equal(t, uint64(5), contour["replicaCount"])
 
 	envoy, ok := values["envoy"].(map[string]interface{})
 	require.True(t, ok)
-	assert.Equal(t, 3, envoy["replicaCount"])
+	assert.Equal(t, uint64(3), envoy["replicaCount"])
 }
 
 func TestBuildHelmValues_NoKubeVIP(t *testing.T) {
 	cfg := &Config{
-		ReplicaCount:      2,
-		EnvoyReplicaCount: 2,
+		ReplicaCount:      uint64(2),
+		EnvoyReplicaCount: uint64(2),
 		UseKubeVIP:        false,
 		DefaultIngressClass: true,
 		Values:            make(map[string]interface{}),
@@ -131,8 +131,8 @@ func TestBuildHelmValues_NoKubeVIP(t *testing.T) {
 
 func TestBuildHelmValues_NoDefaultIngressClass(t *testing.T) {
 	cfg := &Config{
-		ReplicaCount:      2,
-		EnvoyReplicaCount: 2,
+		ReplicaCount:      uint64(2),
+		EnvoyReplicaCount: uint64(2),
 		UseKubeVIP:        true,
 		DefaultIngressClass: false,
 		Values:            make(map[string]interface{}),
@@ -147,8 +147,8 @@ func TestBuildHelmValues_NoDefaultIngressClass(t *testing.T) {
 
 func TestBuildHelmValues_WithCustomValues(t *testing.T) {
 	cfg := &Config{
-		ReplicaCount:      2,
-		EnvoyReplicaCount: 2,
+		ReplicaCount:      uint64(2),
+		EnvoyReplicaCount: uint64(2),
 		UseKubeVIP:        true,
 		DefaultIngressClass: true,
 		Values: map[string]interface{}{

@@ -1,0 +1,75 @@
+; K3s component configuration
+;
+; Configuration for Kubernetes cluster (K3s distribution) installed on
+; control plane and worker nodes.
+
+options {
+    go_package: "github.com/catalystcommunity/foundry/v1/internal/component/k3s"
+}
+
+; K3s component configuration
+Config = {
+    version: text @go_name("Version"),
+    vip: text @go_name("VIP"),
+    interface: text @go_name("Interface"),
+    cluster_token: text @go_name("ClusterToken"),
+    agent_token: text @go_name("AgentToken"),
+    tls_sans: [* text] @go_name("TLSSANs"),
+    disable_components: [* text] @go_name("DisableComponents"),
+    registry_config: text @go_name("RegistryConfig"),
+    cluster_init: bool @go_name("ClusterInit"),
+    server_url: text @go_name("ServerURL"),
+    dns_servers: [* text] @go_name("DNSServers"),
+}
+
+; K3s registry configuration (registries.yaml format)
+; This defines how K3s interacts with container registries
+RegistryConfig = {
+    mirrors: RegistryMirrorMap,           ; Registry mirrors (key is registry hostname)
+    configs: RegistryAuthMap,             ; Registry auth configs
+}
+
+; Map of registry mirrors (hostname => mirror config)
+RegistryMirrorMap = {* text => RegistryMirror}
+
+; Map of registry auth configs (hostname => auth config)
+RegistryAuthMap = {* text => RegistryAuth}
+
+; Registry mirror configuration
+RegistryMirror = {
+    endpoint: [* text],  ; Mirror endpoints for this registry
+}
+
+; Registry authentication configuration
+RegistryAuth = {
+    ? auth: RegistryAuthConfig,    ; Authentication credentials
+    ? tls: RegistryTLSConfig,      ; TLS configuration
+}
+
+; Registry authentication credentials
+RegistryAuthConfig = {
+    ? username: text,
+    ? password: text,
+}
+
+; Registry TLS configuration
+RegistryTLSConfig = {
+    ? insecure_skip_verify: bool,  ; Skip TLS verification (for self-signed certs)
+}
+
+; OpenBAO storage formats for K3s tokens
+; Storage paths:
+;   - secret/foundry-core/k3s/cluster-token (for control plane)
+;   - secret/foundry-core/k3s/agent-token (for worker nodes)
+
+; K3s cluster token storage
+; Used for control plane node authentication
+K3sClusterToken = {
+    token: text,  ; base64 URL-encoded 32-byte random token
+}
+
+; K3s agent token storage
+; Used for worker node authentication
+K3sAgentToken = {
+    token: text,  ; base64 URL-encoded 32-byte random token
+}

@@ -22,6 +22,11 @@ import (
 	gossh "golang.org/x/crypto/ssh"
 )
 
+// strPtr is a helper function to create a pointer to a string
+func strPtr(s string) *string {
+	return &s
+}
+
 // TestPhase1Workflow tests the complete Phase 1 workflow:
 // 1. Create and validate config
 // 2. Add host (with SSH container)
@@ -144,7 +149,6 @@ func setupSSHContainer(t *testing.T, ctx context.Context) (testcontainers.Contai
 // createTestConfig creates a test configuration
 func createTestConfig(t *testing.T, sshPort int) *config.Config {
 	return &config.Config{
-		Version: "v1",
 		Cluster: config.ClusterConfig{
 			Name:   "test-cluster",
 			Domain: "test.local",
@@ -157,7 +161,7 @@ func createTestConfig(t *testing.T, sshPort int) *config.Config {
 		},
 		Components: config.ComponentMap{
 			"test-component": {
-				Version: "1.0.0",
+				Version: strPtr("1.0.0"),
 				Hosts:   []string{"test-node"},
 				Config: map[string]interface{}{
 					"database_password": "${secret:database/main:password}",
@@ -425,7 +429,6 @@ func TestConfigSaveAndLoad(t *testing.T) {
 
 	// Create a test config
 	testConfig := &config.Config{
-		Version: "v1",
 		Cluster: config.ClusterConfig{
 			Name:   "test-cluster",
 			Domain: "test.local",
@@ -438,7 +441,7 @@ func TestConfigSaveAndLoad(t *testing.T) {
 		},
 		Components: config.ComponentMap{
 			"openbao": {
-				Version: "2.0.0",
+				Version: strPtr("2.0.0"),
 				Hosts:   []string{"node1"},
 			},
 		},
@@ -456,7 +459,6 @@ func TestConfigSaveAndLoad(t *testing.T) {
 		cfg, err := config.Load(validConfigPath)
 		require.NoError(t, err)
 		assert.NotNil(t, cfg)
-		assert.NotEmpty(t, cfg.Version) // Version format may vary
 		assert.NotEmpty(t, cfg.Cluster.Name)
 	}
 }

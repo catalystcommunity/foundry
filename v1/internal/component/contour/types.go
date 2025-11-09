@@ -136,29 +136,8 @@ func (c *Component) Dependencies() []string {
 	return []string{"k3s"} // Contour depends on Kubernetes being available
 }
 
-// Config represents the Contour ingress controller configuration
-type Config struct {
-	// Version is the Contour Helm chart version
-	Version string
-
-	// Namespace is the namespace to install Contour into
-	Namespace string
-
-	// ReplicaCount is the number of Contour replicas to run
-	ReplicaCount int
-
-	// EnvoyReplicaCount is the number of Envoy replicas to run
-	EnvoyReplicaCount int
-
-	// UseKubeVIP enables kube-vip cloud provider integration for LoadBalancer services
-	UseKubeVIP bool
-
-	// DefaultIngressClass sets Contour as the default IngressClass
-	DefaultIngressClass bool
-
-	// Values are additional Helm values to pass to the chart
-	Values map[string]interface{}
-}
+// Config type is generated from CSIL in types.gen.go
+// This file extends the generated type with methods
 
 // DefaultConfig returns a Config with sensible defaults
 func DefaultConfig() *Config {
@@ -186,11 +165,11 @@ func ParseConfig(cfg component.ComponentConfig) (*Config, error) {
 	}
 
 	if replicas, ok := cfg.GetInt("replica_count"); ok {
-		config.ReplicaCount = replicas
+		config.ReplicaCount = uint64(replicas)
 	}
 
 	if envoyReplicas, ok := cfg.GetInt("envoy_replica_count"); ok {
-		config.EnvoyReplicaCount = envoyReplicas
+		config.EnvoyReplicaCount = uint64(envoyReplicas)
 	}
 
 	if useKubeVIP, ok := cfg.GetBool("use_kubevip"); ok {

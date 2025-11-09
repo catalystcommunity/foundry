@@ -1,0 +1,18 @@
+; SSH key pair storage format in OpenBAO
+;
+; Storage path: foundry-core/ssh-keys/<hostname>
+; Keys are base64-encoded for safe storage in JSON/YAML.
+;
+; This defines the data format that Foundry writes to OpenBAO's KV v2
+; secrets engine when storing SSH key pairs for infrastructure hosts.
+
+options {
+    go_package: "github.com/catalystcommunity/foundry/v1/internal/ssh"
+}
+
+; SSH key pair stored in OpenBAO KV v2
+; Both keys are base64-encoded byte arrays for safe storage
+SSHKeyStorage = {
+    private_key: text,  ; base64-encoded SSH private key
+    public_key: text,   ; base64-encoded SSH public key
+}

@@ -43,41 +43,8 @@ func (c *Component) Dependencies() []string {
 	return []string{"openbao", "dns", "zot"}
 }
 
-// Config holds the K3s installation configuration
-type Config struct {
-	// Version is the K3s version to install (e.g., "v1.28.5+k3s1")
-	Version string
-
-	// VIP is the virtual IP for the cluster
-	VIP string
-
-	// Interface is the network interface for kube-vip
-	Interface string
-
-	// ClusterToken is the token for joining control plane nodes
-	ClusterToken string
-
-	// AgentToken is the token for joining worker nodes
-	AgentToken string
-
-	// TLSSANs are additional TLS SANs for the API server certificate
-	TLSSANs []string
-
-	// DisableComponents are K3s components to disable (e.g., traefik, servicelb)
-	DisableComponents []string
-
-	// RegistryConfig is the path to the registries.yaml file (optional)
-	RegistryConfig string
-
-	// ClusterInit indicates if this is the first control plane node (for HA)
-	ClusterInit bool
-
-	// ServerURL is the URL of an existing control plane (for joining additional nodes)
-	ServerURL string
-
-	// DNSServers are the DNS servers to configure for K3s and the node
-	DNSServers []string
-}
+// Config and RegistryConfig types are generated from CSIL in types.gen.go
+// This file extends the generated types with parsing methods
 
 // ParseConfig parses a component.ComponentConfig into a K3s Config
 func ParseConfig(cfg component.ComponentConfig) (*Config, error) {

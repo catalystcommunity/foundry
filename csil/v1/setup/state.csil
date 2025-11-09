@@ -1,0 +1,20 @@
+; Setup wizard progress tracking
+;
+; This type is embedded in the main Config struct and persisted
+; in ~/.foundry/stack.yaml under the _setup_state key.
+
+options {
+    go_package: "github.com/catalystcommunity/foundry/v1/internal/setup"
+}
+
+; Tracks which setup steps have been completed
+SetupState = {
+    network_planned: bool,
+    network_validated: bool,
+    openbao_installed: bool @go_name("OpenBAOInstalled"),
+    dns_installed: bool @go_name("DNSInstalled"),
+    dns_zones_created: bool @go_name("DNSZonesCreated"),
+    zot_installed: bool,
+    k8s_installed: bool @go_name("K8sInstalled"),
+    stack_complete: bool
+}
