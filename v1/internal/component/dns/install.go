@@ -260,7 +260,7 @@ func createSystemdServices(conn *ssh.Connection, cfg *Config, authImage, recurso
 // buildAuthExecStart builds the ExecStart command for the auth service.
 func buildAuthExecStart(image string, cfg *Config) string {
 	return fmt.Sprintf(
-		"/usr/bin/docker run --rm --name powerdns-auth "+
+		"docker run --rm --name powerdns-auth "+
 			"-p 8081:8081 "+
 			"-v %s/auth:/etc/powerdns "+
 			"-v %s:/var/lib/powerdns "+
@@ -275,7 +275,7 @@ func buildAuthExecStart(image string, cfg *Config) string {
 // buildRecursorExecStart builds the ExecStart command for the recursor service.
 func buildRecursorExecStart(image string, cfg *Config) string {
 	return fmt.Sprintf(
-		"/usr/bin/docker run --rm --name powerdns-recursor "+
+		"docker run --rm --name powerdns-recursor "+
 			"-p 53:53/udp "+
 			"-p 53:53/tcp "+
 			"-p 8082:8082 "+
@@ -289,7 +289,7 @@ func buildRecursorExecStart(image string, cfg *Config) string {
 
 // buildExecStop builds the ExecStop command for a service.
 func buildExecStop(containerName string) string {
-	return fmt.Sprintf("/usr/bin/docker stop %s", containerName)
+	return fmt.Sprintf("docker stop %s", containerName)
 }
 
 // enableAndStartServices enables and starts the PowerDNS systemd services.

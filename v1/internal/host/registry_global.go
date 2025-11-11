@@ -4,8 +4,9 @@ import "sync"
 
 // Package-level global registry for host management
 // This provides a centralized registry that can be accessed from any package
+// Production code must call SetDefaultRegistry() before using host operations
 var (
-	defaultRegistry HostRegistry = NewMemoryRegistry()
+	defaultRegistry HostRegistry = nil
 	registryMu      sync.RWMutex
 )
 
