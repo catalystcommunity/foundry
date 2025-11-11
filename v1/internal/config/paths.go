@@ -125,3 +125,14 @@ func EnsureConfigDir() (string, error) {
 
 	return configDir, nil
 }
+
+// GetKeysDir returns the SSH keys directory path
+// Default: ~/.foundry/keys/
+func GetKeysDir() (string, error) {
+	configDir, err := GetConfigDir()
+	if err != nil {
+		return "", err
+	}
+
+	return filepath.Join(configDir, "keys"), nil
+}
