@@ -93,6 +93,41 @@ func (h *HealthResponse) IsInitialized() bool {
 	return h.Initialized
 }
 
+// WaitForHealthy waits for OpenBAO to become healthy with exponential backoff
+// Returns nil when OpenBAO is reachable (even if sealed/uninitialized)
+func (c *Client) WaitForHealthy(ctx context.Context, maxWait time.Duration) error {
+	deadline := time.Now().Add(maxWait)
+	attempt := 0
+
+	for time.Now().Before(deadline) {
+		attempt++
+
+		// Try to reach the health endpoint
+		_, err := c.Health(ctx)
+		if err == nil {
+			// Successfully reached the API
+			return nil
+		}
+
+		// Calculate backoff: 100ms, 200ms, 400ms, 800ms, 1s, 1s, 1s...
+		backoff := time.Duration(100*(1<<uint(attempt))) * time.Millisecond
+		if backoff > 1*time.Second {
+			backoff = 1 * time.Second
+		}
+
+		// Don't sleep past the deadline
+		if time.Now().Add(backoff).After(deadline) {
+			backoff = time.Until(deadline)
+		}
+
+		if backoff > 0 {
+			time.Sleep(backoff)
+		}
+	}
+
+	return fmt.Errorf("OpenBAO did not become healthy within %v", maxWait)
+}
+
 // doRequest performs an HTTP request with the configured token
 func (c *Client) doRequest(ctx context.Context, method, path string, body interface{}) (*http.Response, error) {
 	url := fmt.Sprintf("%s%s", c.baseURL, path)
@@ -164,11 +199,15 @@ type KVv2Response struct {
 // For KV v2, the API path is: /v1/<mount>/data/<path>
 func (c *Client) ReadSecretV2(ctx context.Context, mount, path string) (map[string]interface{}, error) {
 	apiPath := fmt.Sprintf("/v1/%s/data/%s", mount, path)
+	fmt.Printf("DEBUG OpenBAO: Reading secret - mount=%s, path=%s, full_api_path=%s, token=%s\n",
+		mount, path, apiPath, c.token[:10]+"...")
 
 	resp, err := c.doRequest(ctx, "GET", apiPath, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read secret: %w", err)
 	}
+
+	fmt.Printf("DEBUG OpenBAO: Response status=%d\n", resp.StatusCode)
 
 	var result KVv2Response
 	if err := readResponse(resp, &result); err != nil {
@@ -206,6 +245,25 @@ func (c *Client) DeleteSecretV2(ctx context.Context, mount, path string) error {
 	resp, err := c.doRequest(ctx, "DELETE", apiPath, nil)
 	if err != nil {
 		return fmt.Errorf("failed to delete secret: %w", err)
+	}
+
+	return readResponse(resp, nil)
+}
+
+// EnableKVv2Engine enables the KV v2 secrets engine at the specified mount path
+func (c *Client) EnableKVv2Engine(ctx context.Context, mount string) error {
+	apiPath := fmt.Sprintf("/v1/sys/mounts/%s", mount)
+
+	body := map[string]interface{}{
+		"type": "kv-v2",
+		"options": map[string]interface{}{
+			"version": "2",
+		},
+	}
+
+	resp, err := c.doRequest(ctx, "POST", apiPath, body)
+	if err != nil {
+		return fmt.Errorf("failed to enable KV v2 engine: %w", err)
 	}
 
 	return readResponse(resp, nil)

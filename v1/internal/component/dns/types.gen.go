@@ -8,6 +8,7 @@ type Config struct {
 	ImageTag string `json:"image_tag" yaml:"image_tag"`
 	APIKey string `json:"api_key" yaml:"api_key"`
 	Forwarders []string `json:"forwarders" yaml:"forwarders"`
+	LocalZones []string `json:"local_zones" yaml:"local_zones"`
 	Backend string `json:"backend" yaml:"backend"`
 	DataDir string `json:"data_dir" yaml:"data_dir"`
 	ConfigDir string `json:"config_dir" yaml:"config_dir"`

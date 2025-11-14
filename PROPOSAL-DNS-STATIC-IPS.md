@@ -1,8 +1,16 @@
 # Proposal: PowerDNS Integration and Static IP Planning
 
+**STATUS: PARTIALLY DEPRECATED** - This proposal has been implemented with modifications:
+- ✅ PowerDNS integration complete
+- ❌ DNS zone strategy changed to **flat namespace** (single zone, no `infra.` or `k8s.` subdomains)
+- ❌ Split-horizon DNS deferred to Phase 3
+- See `DESIGN.md` for current architecture
+
 ## Summary
 
 Introduce PowerDNS-auth as a core infrastructure component with split-horizon DNS support, enabling seamless access to infrastructure both locally and remotely. Add a progressive setup workflow to guide users through network planning and stack installation.
+
+**Note:** The multi-zone approach described in this document has been replaced with a simpler flat namespace architecture.
 
 ## Key Decisions
 

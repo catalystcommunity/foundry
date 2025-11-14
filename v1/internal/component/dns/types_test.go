@@ -22,7 +22,7 @@ func TestDefaultConfig(t *testing.T) {
 
 	assert.NotNil(t, cfg)
 	assert.Equal(t, "49", cfg.ImageTag)
-	assert.Equal(t, "sqlite", cfg.Backend)
+	assert.Equal(t, "gsqlite3", cfg.Backend)
 	assert.Equal(t, []string{"8.8.8.8", "1.1.1.1"}, cfg.Forwarders)
 	assert.Equal(t, "/var/lib/powerdns", cfg.DataDir)
 	assert.Equal(t, "/etc/powerdns", cfg.ConfigDir)

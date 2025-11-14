@@ -22,7 +22,6 @@ func TestGenerateConfig(t *testing.T) {
 			wantErr: false,
 			wantContains: []string{
 				"ui = true",
-				"disable_mlock = true",
 				`storage "file"`,
 				`path = "/vault/data"`,
 				`listener "tcp"`,

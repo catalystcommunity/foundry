@@ -61,7 +61,7 @@ func (c *Component) Dependencies() []string {
 func DefaultConfig() *Config {
 	return &Config{
 		ImageTag:   "49",
-		Backend:    "sqlite",
+		Backend:    "gsqlite3", // Use gsqlite3 (Generic SQLite3) backend
 		Forwarders: []string{"8.8.8.8", "1.1.1.1"},
 		DataDir:    "/var/lib/powerdns",
 		ConfigDir:  "/etc/powerdns",

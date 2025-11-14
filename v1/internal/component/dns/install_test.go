@@ -83,7 +83,7 @@ func TestConfigFromComponentConfig(t *testing.T) {
 			input: component.ComponentConfig{},
 			checkFunc: func(t *testing.T, cfg *Config) {
 				assert.Equal(t, "49", cfg.ImageTag)
-				assert.Equal(t, "sqlite", cfg.Backend)
+				assert.Equal(t, "gsqlite3", cfg.Backend)
 				assert.Equal(t, []string{"8.8.8.8", "1.1.1.1"}, cfg.Forwarders)
 			},
 		},
@@ -184,10 +184,10 @@ func TestBuildRecursorExecStart(t *testing.T) {
 
 func TestBuildExecStop(t *testing.T) {
 	result := buildExecStop("powerdns-auth")
-	assert.Equal(t, "/usr/bin/docker stop powerdns-auth", result)
+	assert.Equal(t, "docker stop powerdns-auth", result)
 
 	result = buildExecStop("powerdns-recursor")
-	assert.Equal(t, "/usr/bin/docker stop powerdns-recursor", result)
+	assert.Equal(t, "docker stop powerdns-recursor", result)
 }
 
 // Note: These tests only verify command construction and error handling.

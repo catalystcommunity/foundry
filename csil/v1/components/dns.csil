@@ -17,6 +17,7 @@ Config = {
     image_tag: text @go_name("ImageTag"),     ; PowerDNS version tag, default: "49" for 4.9.x
     api_key: text @go_name("APIKey"),         ; Secure API key for PowerDNS API access
     forwarders: [* text],                     ; Upstream DNS servers, default: ["8.8.8.8", "1.1.1.1"]
+    local_zones: [* text] @go_name("LocalZones"), ; Local zones to forward to Auth server at 127.0.0.1:5300
     backend: text,                            ; Database backend, default: "sqlite" (sqlite, postgresql, mysql)
     data_dir: text @go_name("DataDir"),       ; Directory for PowerDNS data files, default: "/var/lib/powerdns"
     config_dir: text @go_name("ConfigDir"),   ; Directory for PowerDNS config files, default: "/etc/powerdns"
