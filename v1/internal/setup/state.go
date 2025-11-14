@@ -105,6 +105,9 @@ func DetermineNextStep(state *SetupState) Step {
 	if !state.OpenBAOInstalled {
 		return StepOpenBAOInstall
 	}
+	if !state.OpenBAOInitialized {
+		return StepOpenBAOInstall // Initialization happens as part of install step
+	}
 	if !state.DNSInstalled {
 		return StepDNSInstall
 	}
@@ -130,6 +133,7 @@ func (s *SetupState) IsComplete() bool {
 	return s.NetworkPlanned &&
 		s.NetworkValidated &&
 		s.OpenBAOInstalled &&
+		s.OpenBAOInitialized &&
 		s.DNSInstalled &&
 		s.DNSZonesCreated &&
 		s.ZotInstalled &&
@@ -142,6 +146,7 @@ func (s *SetupState) Reset() {
 	s.NetworkPlanned = false
 	s.NetworkValidated = false
 	s.OpenBAOInstalled = false
+	s.OpenBAOInitialized = false
 	s.DNSInstalled = false
 	s.DNSZonesCreated = false
 	s.ZotInstalled = false

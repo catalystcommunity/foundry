@@ -11,20 +11,24 @@ type UnitFile struct {
 	Wants       []string
 
 	// Service section
-	Type            string // simple, forking, oneshot, notify, etc.
-	ExecStart       string
-	ExecStop        string
-	ExecReload      string
-	Restart         string // always, on-failure, on-abnormal, etc.
-	RestartSec      int    // seconds
-	User            string
-	Group           string
-	Environment     map[string]string
-	EnvironmentFile string
+	Type             string // simple, forking, oneshot, notify, etc.
+	ExecStartPre     string
+	ExecStart        string
+	ExecStop         string
+	ExecStopPost     string
+	ExecReload       string
+	Restart          string // always, on-failure, on-abnormal, etc.
+	RestartSec       int    // seconds
+	TimeoutStopSec   int    // seconds
+	KillMode         string // control-group, process, mixed, none
+	User             string
+	Group            string
+	Environment      map[string]string
+	EnvironmentFile  string
 	WorkingDirectory string
 
 	// Install section
-	WantedBy []string
+	WantedBy   []string
 	RequiredBy []string
 }
 

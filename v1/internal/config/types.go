@@ -291,15 +291,8 @@ func (d *DHCPRange) Validate() error {
 
 // Validate performs validation on DNSConfig
 func (d *DNSConfig) Validate() error {
-	// At least one infrastructure zone required
-	if len(d.InfrastructureZones) == 0 {
-		return fmt.Errorf("at least one infrastructure zone is required")
-	}
-
-	// At least one kubernetes zone required
-	if len(d.KubernetesZones) == 0 {
-		return fmt.Errorf("at least one kubernetes zone is required")
-	}
+	// Zones are optional - they can be managed via DNS commands
+	// We only validate the zones that ARE defined
 
 	// Validate all infrastructure zones
 	for i, zone := range d.InfrastructureZones {

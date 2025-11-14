@@ -121,12 +121,13 @@ func TestGenerateRecursorConfig(t *testing.T) {
 			},
 			wantErr: false,
 			checkFunc: func(t *testing.T, result string) {
-				assert.Contains(t, result, "api-key=test-api-key-456")
-				assert.Contains(t, result, "forward-zones-recurse=.=8.8.8.8")
-				assert.Contains(t, result, "local-address=0.0.0.0")
-				assert.Contains(t, result, "local-port=53")
-				assert.Contains(t, result, "webserver=yes")
-				assert.Contains(t, result, "webserver-port=8082")
+				// Check YAML format with proper section headers
+				assert.Contains(t, result, "api_key: test-api-key-456")
+				assert.Contains(t, result, "- 8.8.8.8")
+				assert.Contains(t, result, "webservice:")
+				assert.Contains(t, result, "port: 8082")
+				assert.Contains(t, result, "recursor:")
+				assert.Contains(t, result, "forward_zones_recurse:")
 			},
 		},
 		{
@@ -137,7 +138,59 @@ func TestGenerateRecursorConfig(t *testing.T) {
 			},
 			wantErr: false,
 			checkFunc: func(t *testing.T, result string) {
-				assert.Contains(t, result, "forward-zones-recurse=.=8.8.8.8;1.1.1.1;9.9.9.9")
+				// Check YAML format with multiple forwarders
+				assert.Contains(t, result, "- 8.8.8.8")
+				assert.Contains(t, result, "- 1.1.1.1")
+				assert.Contains(t, result, "- 9.9.9.9")
+			},
+		},
+		{
+			name: "valid config with local zones",
+			config: &Config{
+				APIKey:     "test-key",
+				Forwarders: []string{"8.8.8.8"},
+				LocalZones: []string{"catalyst.local"},
+			},
+			wantErr: false,
+			checkFunc: func(t *testing.T, result string) {
+				// Check local zone forwarding to Auth server
+				assert.Contains(t, result, "forward_zones:")
+				assert.Contains(t, result, "- zone: catalyst.local")
+				assert.Contains(t, result, "- 127.0.0.1:5300")
+				// Also check upstream forwarding still exists
+				assert.Contains(t, result, "forward_zones_recurse:")
+				assert.Contains(t, result, "- 8.8.8.8")
+			},
+		},
+		{
+			name: "valid config with multiple local zones",
+			config: &Config{
+				APIKey:     "test-key",
+				Forwarders: []string{"8.8.8.8", "1.1.1.1"},
+				LocalZones: []string{"catalyst.local", "infra.local", "k8s.local"},
+			},
+			wantErr: false,
+			checkFunc: func(t *testing.T, result string) {
+				// Check all local zones are configured
+				assert.Contains(t, result, "- zone: catalyst.local")
+				assert.Contains(t, result, "- zone: infra.local")
+				assert.Contains(t, result, "- zone: k8s.local")
+				// Each should forward to Auth server
+				assert.Contains(t, result, "- 127.0.0.1:5300")
+			},
+		},
+		{
+			name: "valid config with no local zones (backward compatibility)",
+			config: &Config{
+				APIKey:     "test-key",
+				Forwarders: []string{"8.8.8.8"},
+				LocalZones: []string{},
+			},
+			wantErr: false,
+			checkFunc: func(t *testing.T, result string) {
+				// Should not have forward_zones section, only forward_zones_recurse
+				assert.NotContains(t, result, "forward_zones:")
+				assert.Contains(t, result, "forward_zones_recurse:")
 			},
 		},
 	}
@@ -197,7 +250,7 @@ func TestGenerateRecursorConfigFormat(t *testing.T) {
 	result, err := GenerateRecursorConfig(cfg)
 	require.NoError(t, err)
 
-	// Verify it's valid config format
+	// Verify it's valid YAML format
 	lines := strings.Split(result, "\n")
 	configLines := 0
 	for _, line := range lines {
@@ -205,7 +258,8 @@ func TestGenerateRecursorConfigFormat(t *testing.T) {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		if strings.Contains(line, "=") {
+		// YAML format uses ":" for key-value pairs
+		if strings.Contains(line, ":") || strings.HasPrefix(line, "-") {
 			configLines++
 		}
 	}

@@ -2,7 +2,10 @@ package openbao
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -142,6 +145,9 @@ func TestComponent_Install(t *testing.T) {
 			cfg: component.ComponentConfig{
 				"version":           "2.0.0",
 				"container_runtime": "docker",
+				"host":              nil, // Will be set in setup
+				"cluster_name":      "test-cluster",
+				// keys_dir and api_url will be set in test loop
 			},
 			setupMock: func(m *mockSSHExecutor) {
 				// Docker detection
@@ -178,6 +184,9 @@ SubState=running`)
 			cfg: component.ComponentConfig{
 				"version":           "2.0.0",
 				"container_runtime": "podman",
+				"host":              nil, // Will be set in setup
+				"cluster_name":      "test-cluster",
+				// keys_dir and api_url will be set in test loop
 			},
 			setupMock: func(m *mockSSHExecutor) {
 				// Podman detection
@@ -211,6 +220,7 @@ SubState=running`)
 			name: "invalid config",
 			cfg: component.ComponentConfig{
 				"version": "", // Invalid: empty version
+				"host":    nil, // Will be set in setup
 			},
 			setupMock:   func(m *mockSSHExecutor) {},
 			wantErr:     true,
@@ -221,6 +231,7 @@ SubState=running`)
 			cfg: component.ComponentConfig{
 				"version":           "2.0.0",
 				"container_runtime": "docker",
+				"host":              nil, // Will be set in setup
 			},
 			setupMock: func(m *mockSSHExecutor) {
 				m.setResponse("command -v docker", "/usr/bin/docker")
@@ -237,7 +248,49 @@ SubState=running`)
 			mock := newMockSSHExecutor()
 			tt.setupMock(mock)
 
-			comp := NewComponent(mock)
+			// Set up keys_dir for tests that need initialization (has cluster_name)
+			if clusterName, ok := tt.cfg["cluster_name"].(string); ok && clusterName != "" {
+				tt.cfg["keys_dir"] = t.TempDir()
+			}
+
+			// Set up mock OpenBAO API server if this test needs initialization
+			if tt.cfg["keys_dir"] != nil {
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					switch r.URL.Path {
+					case "/v1/sys/health":
+						// Return uninitialized, sealed status
+						w.WriteHeader(http.StatusOK)
+						json.NewEncoder(w).Encode(map[string]interface{}{
+							"initialized": false,
+							"sealed":      true,
+						})
+					case "/v1/sys/init":
+						// Return successful initialization
+						w.WriteHeader(http.StatusOK)
+						json.NewEncoder(w).Encode(InitResponse{
+							Keys:       []string{"key1", "key2", "key3", "key4", "key5"},
+							KeysBase64: []string{"a2V5MQ==", "a2V5Mg==", "a2V5Mw==", "a2V5NA==", "a2V5NQ=="},
+							RootToken:  "test-root-token",
+						})
+					case "/v1/sys/unseal":
+						// Return unsealed status after enough keys
+						w.WriteHeader(http.StatusOK)
+						json.NewEncoder(w).Encode(UnsealResponse{
+							Sealed: false,
+							T:      3,
+							N:      5,
+						})
+					}
+				}))
+				defer server.Close()
+				tt.cfg["api_url"] = server.URL
+			}
+
+			comp := NewComponent(mock) // Deprecated: component doesn't need conn anymore
+
+			// Add mock connection to config (this is how Install() receives it now)
+			tt.cfg["host"] = mock
+
 			err := comp.Install(context.Background(), tt.cfg)
 
 			if tt.wantErr {
@@ -253,6 +306,14 @@ SubState=running`)
 					assert.True(t, mock.hasCommand(expected),
 						"expected command containing %q to be executed", expected)
 				}
+
+				// Verify key material was saved if initialization was expected
+				if tt.cfg["keys_dir"] != nil {
+					keysDir := tt.cfg["keys_dir"].(string)
+					clusterName := tt.cfg["cluster_name"].(string)
+					assert.True(t, KeyMaterialExists(keysDir, clusterName),
+						"expected key material to be saved")
+				}
 			}
 		})
 	}
@@ -260,45 +321,44 @@ SubState=running`)
 
 func TestComponent_createDirectories(t *testing.T) {
 	mock := newMockSSHExecutor()
-	comp := NewComponent(mock)
 	cfg := DefaultConfig()
 
-	err := comp.createDirectories(cfg)
+	err := createDirectories(mock, cfg)
 	require.NoError(t, err)
 
 	assert.True(t, mock.hasCommand("/var/lib/openbao"))
 	assert.True(t, mock.hasCommand("/etc/openbao"))
-	assert.True(t, mock.hasCommand("mkdir -p"))
-	assert.True(t, mock.hasCommand("chmod 755"))
+	assert.True(t, mock.hasCommand("sudo mkdir -p"))
+	assert.True(t, mock.hasCommand("sudo chown 374:374"))
+	assert.True(t, mock.hasCommand("sudo chmod 755"))
 }
 
 func TestComponent_writeConfigFile(t *testing.T) {
 	mock := newMockSSHExecutor()
-	comp := NewComponent(mock)
 	cfg := DefaultConfig()
 
-	err := comp.writeConfigFile(cfg)
+	err := writeConfigFile(mock, cfg)
 	require.NoError(t, err)
 
 	assert.True(t, mock.hasCommand("/etc/openbao/config.hcl"))
-	assert.True(t, mock.hasCommand("cat >"))
+	assert.True(t, mock.hasCommand("sudo tee"))
 }
 
 func TestComponent_buildExecStart(t *testing.T) {
 	tests := []struct {
 		name         string
 		cfg          *Config
-		runtime      string
+		runtimePath  string
 		wantContains []string
 	}{
 		{
-			name:    "docker runtime",
-			cfg:     DefaultConfig(),
-			runtime: "docker",
+			name:        "docker runtime",
+			cfg:         DefaultConfig(),
+			runtimePath: "/usr/local/bin/docker",
 			wantContains: []string{
-				"/usr/bin/docker run",
-				"--rm",
+				"/usr/local/bin/docker run",
 				"--name openbao",
+				"--user 374:374",
 				"-p 8200:8200",
 				"-v /var/lib/openbao:/vault/data",
 				"-v /etc/openbao:/vault/config",
@@ -309,11 +369,12 @@ func TestComponent_buildExecStart(t *testing.T) {
 			},
 		},
 		{
-			name:    "podman runtime",
-			cfg:     DefaultConfig(),
-			runtime: "podman",
+			name:        "podman runtime",
+			cfg:         DefaultConfig(),
+			runtimePath: "/usr/bin/podman",
 			wantContains: []string{
 				"/usr/bin/podman run",
+				"--user 374:374",
 				"quay.io/openbao/openbao:2.0.0",
 			},
 		},
@@ -326,7 +387,7 @@ func TestComponent_buildExecStart(t *testing.T) {
 				Address:          "0.0.0.0:9200",
 				ContainerRuntime: "docker",
 			},
-			runtime: "docker",
+			runtimePath: "/usr/local/bin/docker",
 			wantContains: []string{
 				"-p 9200:8200",
 			},
@@ -335,8 +396,7 @@ func TestComponent_buildExecStart(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			comp := NewComponent(nil)
-			result := comp.buildExecStart(tt.cfg, tt.runtime)
+			result := buildExecStart(tt.cfg, tt.runtimePath)
 
 			for _, want := range tt.wantContains {
 				assert.Contains(t, result, want)

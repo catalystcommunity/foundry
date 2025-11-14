@@ -8,7 +8,6 @@ import (
 // ConfigTemplate is the OpenBAO server configuration template
 const ConfigTemplate = `
 ui = true
-disable_mlock = true
 
 storage "file" {
   path = "/vault/data"

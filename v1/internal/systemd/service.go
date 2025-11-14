@@ -256,11 +256,17 @@ Wants={{ join .Wants " " }}
 
 [Service]
 Type={{ .Type }}
+{{- if .ExecStartPre }}
+ExecStartPre={{ .ExecStartPre }}
+{{- end }}
 {{- if .ExecStart }}
 ExecStart={{ .ExecStart }}
 {{- end }}
 {{- if .ExecStop }}
 ExecStop={{ .ExecStop }}
+{{- end }}
+{{- if .ExecStopPost }}
+ExecStopPost={{ .ExecStopPost }}
 {{- end }}
 {{- if .ExecReload }}
 ExecReload={{ .ExecReload }}
@@ -270,6 +276,12 @@ Restart={{ .Restart }}
 {{- end }}
 {{- if gt .RestartSec 0 }}
 RestartSec={{ .RestartSec }}
+{{- end }}
+{{- if gt .TimeoutStopSec 0 }}
+TimeoutStopSec={{ .TimeoutStopSec }}
+{{- end }}
+{{- if .KillMode }}
+KillMode={{ .KillMode }}
 {{- end }}
 {{- if .User }}
 User={{ .User }}

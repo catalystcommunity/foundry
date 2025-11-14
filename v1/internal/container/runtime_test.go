@@ -65,12 +65,12 @@ func TestDockerRuntime_IsAvailable(t *testing.T) {
 	runtime := NewDockerRuntime(mock)
 
 	// Docker is available
-	mock.setCommand("docker --version", "Docker version 24.0.0")
+	mock.setCommand("sudo docker --version", "Docker version 24.0.0")
 	assert.True(t, runtime.IsAvailable())
 
 	// Docker is not available
 	mock2 := newMockSSHExecutor()
-	mock2.setError("docker --version", fmt.Errorf("command not found"))
+	mock2.setError("sudo docker --version", fmt.Errorf("command not found"))
 	runtime2 := NewDockerRuntime(mock2)
 	assert.False(t, runtime2.IsAvailable())
 }
@@ -79,7 +79,7 @@ func TestDockerRuntime_Pull(t *testing.T) {
 	mock := newMockSSHExecutor()
 	runtime := NewDockerRuntime(mock)
 
-	mock.setCommand("docker pull nginx:latest", "latest: Pulling from library/nginx\nStatus: Downloaded newer image")
+	mock.setCommand("sudo docker pull nginx:latest", "latest: Pulling from library/nginx\nStatus: Downloaded newer image")
 
 	err := runtime.Pull("nginx:latest")
 	assert.NoError(t, err)
@@ -89,7 +89,7 @@ func TestDockerRuntime_Pull_Error(t *testing.T) {
 	mock := newMockSSHExecutor()
 	runtime := NewDockerRuntime(mock)
 
-	mock.setError("docker pull invalid:image", fmt.Errorf("image not found"))
+	mock.setError("sudo docker pull invalid:image", fmt.Errorf("image not found"))
 
 	err := runtime.Pull("invalid:image")
 	assert.Error(t, err)
@@ -100,7 +100,7 @@ func TestDockerRuntime_Run_Simple(t *testing.T) {
 	runtime := NewDockerRuntime(mock)
 
 	containerID := "abc123def456"
-	mock.setCommand("docker run", containerID)
+	mock.setCommand("sudo docker run", containerID)
 
 	config := RunConfig{
 		Image: "nginx:latest",
@@ -116,7 +116,7 @@ func TestDockerRuntime_Run_Complex(t *testing.T) {
 	runtime := NewDockerRuntime(mock)
 
 	containerID := "complex123"
-	mock.setCommand("docker run", containerID)
+	mock.setCommand("sudo docker run", containerID)
 
 	config := RunConfig{
 		Image:         "nginx:latest",
@@ -144,7 +144,7 @@ func TestDockerRuntime_Stop(t *testing.T) {
 	mock := newMockSSHExecutor()
 	runtime := NewDockerRuntime(mock)
 
-	mock.setCommand("docker stop", "abc123")
+	mock.setCommand("sudo docker stop", "abc123")
 
 	err := runtime.Stop("abc123", 10*time.Second)
 	assert.NoError(t, err)
@@ -155,12 +155,12 @@ func TestDockerRuntime_Remove(t *testing.T) {
 	runtime := NewDockerRuntime(mock)
 
 	// Remove without force
-	mock.setCommand("docker rm abc123", "abc123")
+	mock.setCommand("sudo docker rm abc123", "abc123")
 	err := runtime.Remove("abc123", false)
 	assert.NoError(t, err)
 
 	// Remove with force
-	mock.setCommand("docker rm -f def456", "def456")
+	mock.setCommand("sudo docker rm -f def456", "def456")
 	err = runtime.Remove("def456", true)
 	assert.NoError(t, err)
 }
@@ -185,7 +185,7 @@ func TestDockerRuntime_Inspect(t *testing.T) {
 		}
 	}]`
 
-	mock.setCommand("docker inspect abc123", inspectOutput)
+	mock.setCommand("sudo docker inspect abc123", inspectOutput)
 
 	info, err := runtime.Inspect("abc123")
 	require.NoError(t, err)
@@ -202,7 +202,7 @@ func TestDockerRuntime_Inspect_NotFound(t *testing.T) {
 	mock := newMockSSHExecutor()
 	runtime := NewDockerRuntime(mock)
 
-	mock.setCommand("docker inspect nonexistent", "[]")
+	mock.setCommand("sudo docker inspect nonexistent", "[]")
 
 	_, err := runtime.Inspect("nonexistent")
 	assert.Error(t, err)
@@ -216,7 +216,7 @@ func TestDockerRuntime_List(t *testing.T) {
 	listOutput := `{"ID":"abc123","Names":"container1","Image":"nginx:latest","State":"running","Status":"Up 5 minutes"}
 {"ID":"def456","Names":"container2","Image":"redis:alpine","State":"exited","Status":"Exited (0) 2 hours ago"}`
 
-	mock.setCommand("docker ps --format json", listOutput)
+	mock.setCommand("sudo docker ps --format json", listOutput)
 
 	containers, err := runtime.List(false)
 	require.NoError(t, err)
@@ -231,7 +231,7 @@ func TestDockerRuntime_List_Empty(t *testing.T) {
 	mock := newMockSSHExecutor()
 	runtime := NewDockerRuntime(mock)
 
-	mock.setCommand("docker ps --format json", "")
+	mock.setCommand("sudo docker ps --format json", "")
 
 	containers, err := runtime.List(false)
 	require.NoError(t, err)
@@ -244,7 +244,7 @@ func TestDockerRuntime_List_All(t *testing.T) {
 
 	listOutput := `{"ID":"abc123","Names":"container1","Image":"nginx:latest","State":"running","Status":"Up 5 minutes"}`
 
-	mock.setCommand("docker ps -a --format json", listOutput)
+	mock.setCommand("sudo docker ps -a --format json", listOutput)
 
 	containers, err := runtime.List(true)
 	require.NoError(t, err)
@@ -262,12 +262,12 @@ func TestPodmanRuntime_IsAvailable(t *testing.T) {
 	runtime := NewPodmanRuntime(mock)
 
 	// Podman is available
-	mock.setCommand("podman --version", "podman version 4.5.0")
+	mock.setCommand("sudo podman --version", "podman version 4.5.0")
 	assert.True(t, runtime.IsAvailable())
 
 	// Podman is not available
 	mock2 := newMockSSHExecutor()
-	mock2.setError("podman --version", fmt.Errorf("command not found"))
+	mock2.setError("sudo podman --version", fmt.Errorf("command not found"))
 	runtime2 := NewPodmanRuntime(mock2)
 	assert.False(t, runtime2.IsAvailable())
 }
@@ -276,7 +276,7 @@ func TestPodmanRuntime_Pull(t *testing.T) {
 	mock := newMockSSHExecutor()
 	runtime := NewPodmanRuntime(mock)
 
-	mock.setCommand("podman pull nginx:latest", "Trying to pull nginx:latest...\nGetting image source signatures")
+	mock.setCommand("sudo podman pull nginx:latest", "Trying to pull nginx:latest...\nGetting image source signatures")
 
 	err := runtime.Pull("nginx:latest")
 	assert.NoError(t, err)
@@ -287,7 +287,7 @@ func TestPodmanRuntime_Run_Simple(t *testing.T) {
 	runtime := NewPodmanRuntime(mock)
 
 	containerID := "xyz789abc123"
-	mock.setCommand("podman run", containerID)
+	mock.setCommand("sudo podman run", containerID)
 
 	config := RunConfig{
 		Image: "nginx:latest",
@@ -303,7 +303,7 @@ func TestPodmanRuntime_Run_Complex(t *testing.T) {
 	runtime := NewPodmanRuntime(mock)
 
 	containerID := "podman-complex"
-	mock.setCommand("podman run", containerID)
+	mock.setCommand("sudo podman run", containerID)
 
 	config := RunConfig{
 		Image:         "nginx:latest",
@@ -331,7 +331,7 @@ func TestPodmanRuntime_Stop(t *testing.T) {
 	mock := newMockSSHExecutor()
 	runtime := NewPodmanRuntime(mock)
 
-	mock.setCommand("podman stop", "xyz789")
+	mock.setCommand("sudo podman stop", "xyz789")
 
 	err := runtime.Stop("xyz789", 15*time.Second)
 	assert.NoError(t, err)
@@ -342,12 +342,12 @@ func TestPodmanRuntime_Remove(t *testing.T) {
 	runtime := NewPodmanRuntime(mock)
 
 	// Remove without force
-	mock.setCommand("podman rm xyz789", "xyz789")
+	mock.setCommand("sudo podman rm xyz789", "xyz789")
 	err := runtime.Remove("xyz789", false)
 	assert.NoError(t, err)
 
 	// Remove with force
-	mock.setCommand("podman rm -f abc123", "abc123")
+	mock.setCommand("sudo podman rm -f abc123", "abc123")
 	err = runtime.Remove("abc123", true)
 	assert.NoError(t, err)
 }
@@ -371,7 +371,7 @@ func TestPodmanRuntime_Inspect(t *testing.T) {
 		}
 	}]`
 
-	mock.setCommand("podman inspect xyz789", inspectOutput)
+	mock.setCommand("sudo podman inspect xyz789", inspectOutput)
 
 	info, err := runtime.Inspect("xyz789")
 	require.NoError(t, err)
@@ -404,7 +404,7 @@ func TestPodmanRuntime_List(t *testing.T) {
 	}
 
 	listOutput, _ := json.Marshal(containers)
-	mock.setCommand("podman ps --format json", string(listOutput))
+	mock.setCommand("sudo podman ps --format json", string(listOutput))
 
 	result, err := runtime.List(false)
 	require.NoError(t, err)
@@ -419,7 +419,7 @@ func TestPodmanRuntime_List_Empty(t *testing.T) {
 	mock := newMockSSHExecutor()
 	runtime := NewPodmanRuntime(mock)
 
-	mock.setCommand("podman ps --format json", "")
+	mock.setCommand("sudo podman ps --format json", "")
 
 	containers, err := runtime.List(false)
 	require.NoError(t, err)
@@ -428,8 +428,8 @@ func TestPodmanRuntime_List_Empty(t *testing.T) {
 
 func TestDetectRuntime_Docker(t *testing.T) {
 	mock := newMockSSHExecutor()
-	mock.setCommand("docker --version", "Docker version 24.0.0")
-	mock.setError("podman --version", fmt.Errorf("command not found"))
+	mock.setCommand("sudo docker --version", "Docker version 24.0.0")
+	mock.setError("sudo podman --version", fmt.Errorf("command not found"))
 
 	runtime, err := DetectRuntime(mock)
 	require.NoError(t, err)
@@ -438,8 +438,8 @@ func TestDetectRuntime_Docker(t *testing.T) {
 
 func TestDetectRuntime_Podman(t *testing.T) {
 	mock := newMockSSHExecutor()
-	mock.setError("docker --version", fmt.Errorf("command not found"))
-	mock.setCommand("podman --version", "podman version 4.5.0")
+	mock.setError("sudo docker --version", fmt.Errorf("command not found"))
+	mock.setCommand("sudo podman --version", "podman version 4.5.0")
 
 	runtime, err := DetectRuntime(mock)
 	require.NoError(t, err)
@@ -448,8 +448,8 @@ func TestDetectRuntime_Podman(t *testing.T) {
 
 func TestDetectRuntime_PreferDocker(t *testing.T) {
 	mock := newMockSSHExecutor()
-	mock.setCommand("docker --version", "Docker version 24.0.0")
-	mock.setCommand("podman --version", "podman version 4.5.0")
+	mock.setCommand("sudo docker --version", "Docker version 24.0.0")
+	mock.setCommand("sudo podman --version", "podman version 4.5.0")
 
 	runtime, err := DetectRuntime(mock)
 	require.NoError(t, err)
@@ -459,8 +459,8 @@ func TestDetectRuntime_PreferDocker(t *testing.T) {
 
 func TestDetectRuntime_NoneAvailable(t *testing.T) {
 	mock := newMockSSHExecutor()
-	mock.setError("docker --version", fmt.Errorf("command not found"))
-	mock.setError("podman --version", fmt.Errorf("command not found"))
+	mock.setError("sudo docker --version", fmt.Errorf("command not found"))
+	mock.setError("sudo podman --version", fmt.Errorf("command not found"))
 
 	_, err := DetectRuntime(mock)
 	assert.Error(t, err)

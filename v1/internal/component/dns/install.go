@@ -31,8 +31,9 @@ func (a *sshExecutorAdapter) Execute(cmd string) (string, error) {
 
 const (
 	defaultImageRegistry = "docker.io/powerdns"
-	defaultAuthImage     = "pdns-auth-49" // PowerDNS 4.9.x
-	defaultRecursorImage = "pdns-recursor-49"
+	defaultAuthImage     = "pdns-auth-master" // PowerDNS authoritative server
+	defaultRecursorImage = "pdns-recursor-master" // PowerDNS recursor
+	defaultImageTag      = "latest" // Use latest tag by default
 )
 
 // Install implements the component.Component interface.
@@ -75,14 +76,26 @@ func (c *Component) Install(ctx context.Context, cfg component.ComponentConfig) 
 	}
 
 	// Pull container images
-	authImage := fmt.Sprintf("%s/%s:%s", defaultImageRegistry, "pdns-auth", dnsConfig.ImageTag)
-	recursorImage := fmt.Sprintf("%s/%s:%s", defaultImageRegistry, "pdns-recursor", dnsConfig.ImageTag)
+	// Use image tag from config, or default to "latest"
+	imageTag := dnsConfig.ImageTag
+	if imageTag == "" || imageTag == "49" {
+		imageTag = defaultImageTag
+	}
+	authImage := fmt.Sprintf("%s/%s:%s", defaultImageRegistry, defaultAuthImage, imageTag)
+	recursorImage := fmt.Sprintf("%s/%s:%s", defaultImageRegistry, defaultRecursorImage, imageTag)
 
 	if err := runtime.Pull(authImage); err != nil {
 		return fmt.Errorf("failed to pull auth image: %w", err)
 	}
 	if err := runtime.Pull(recursorImage); err != nil {
 		return fmt.Errorf("failed to pull recursor image: %w", err)
+	}
+
+	// Initialize the database if using gsqlite3 backend
+	if dnsConfig.Backend == "gsqlite3" {
+		if err := initializeDatabase(host, dnsConfig, authImage); err != nil {
+			return fmt.Errorf("failed to initialize database: %w", err)
+		}
 	}
 
 	// Create systemd services
@@ -103,8 +116,11 @@ func configFromComponentConfig(cfg component.ComponentConfig) (*Config, *ssh.Con
 	dnsConfig := DefaultConfig()
 
 	// Extract Host (runtime-only, not part of persisted config)
+	// Try both "host" and "ssh_conn" keys for backward compatibility
 	var host *ssh.Connection
 	if h, ok := cfg["host"].(*ssh.Connection); ok {
+		host = h
+	} else if h, ok := cfg["ssh_conn"].(*ssh.Connection); ok {
 		host = h
 	}
 
@@ -121,6 +137,11 @@ func configFromComponentConfig(cfg component.ComponentConfig) (*Config, *ssh.Con
 	// Extract Forwarders
 	if fwds, ok := cfg["forwarders"].([]string); ok && len(fwds) > 0 {
 		dnsConfig.Forwarders = fwds
+	}
+
+	// Extract LocalZones
+	if zones, ok := cfg["local_zones"].([]string); ok && len(zones) > 0 {
+		dnsConfig.LocalZones = zones
 	}
 
 	// Extract Backend
@@ -261,7 +282,7 @@ func createSystemdServices(conn *ssh.Connection, cfg *Config, authImage, recurso
 func buildAuthExecStart(image string, cfg *Config) string {
 	return fmt.Sprintf(
 		"docker run --rm --name powerdns-auth "+
-			"-p 8081:8081 "+
+			"--network=host "+
 			"-v %s/auth:/etc/powerdns "+
 			"-v %s:/var/lib/powerdns "+
 			"%s "+
@@ -276,9 +297,8 @@ func buildAuthExecStart(image string, cfg *Config) string {
 func buildRecursorExecStart(image string, cfg *Config) string {
 	return fmt.Sprintf(
 		"docker run --rm --name powerdns-recursor "+
-			"-p 53:53/udp "+
-			"-p 53:53/tcp "+
-			"-p 8082:8082 "+
+			"--user root "+
+			"--network=host "+
 			"-v %s/recursor:/etc/powerdns-recursor "+
 			"%s "+
 			"--config-dir=/etc/powerdns-recursor",
@@ -290,6 +310,130 @@ func buildRecursorExecStart(image string, cfg *Config) string {
 // buildExecStop builds the ExecStop command for a service.
 func buildExecStop(containerName string) string {
 	return fmt.Sprintf("docker stop %s", containerName)
+}
+
+// initializeDatabase initializes the SQLite database for PowerDNS.
+func initializeDatabase(conn *ssh.Connection, cfg *Config, authImage string) error {
+	adapter := &sshExecutorAdapter{conn: conn}
+
+	// Check if database already exists
+	dbPath := filepath.Join(cfg.DataDir, "pdns.db")
+	checkCmd := fmt.Sprintf("sudo test -f %s", dbPath)
+	_, err := adapter.Execute(checkCmd)
+	if err == nil {
+		// Database already exists, skip initialization
+		return nil
+	}
+
+	// SQL schema for PowerDNS SQLite backend
+	schema := `CREATE TABLE domains (
+  id INTEGER PRIMARY KEY,
+  name VARCHAR(255) NOT NULL COLLATE NOCASE,
+  master VARCHAR(128) DEFAULT NULL,
+  last_check INTEGER DEFAULT NULL,
+  type VARCHAR(8) NOT NULL,
+  notified_serial INTEGER DEFAULT NULL,
+  account VARCHAR(40) DEFAULT NULL,
+  options VARCHAR(64000) DEFAULT NULL,
+  catalog VARCHAR(255) DEFAULT NULL
+);
+CREATE UNIQUE INDEX name_index ON domains(name);
+CREATE INDEX catalog_idx ON domains(catalog);
+CREATE TABLE records (
+  id INTEGER PRIMARY KEY,
+  domain_id INTEGER DEFAULT NULL,
+  name VARCHAR(255) DEFAULT NULL,
+  type VARCHAR(10) DEFAULT NULL,
+  content VARCHAR(64000) DEFAULT NULL,
+  ttl INTEGER DEFAULT NULL,
+  prio INTEGER DEFAULT NULL,
+  disabled BOOLEAN DEFAULT 0,
+  ordername VARCHAR(255),
+  auth BOOL DEFAULT 1,
+  FOREIGN KEY(domain_id) REFERENCES domains(id) ON DELETE CASCADE ON UPDATE CASCADE
+);
+CREATE INDEX rec_name_index ON records(name);
+CREATE INDEX nametype_index ON records(name,type);
+CREATE INDEX domain_id ON records(domain_id);
+CREATE INDEX orderindex ON records(ordername);
+CREATE TABLE supermasters (
+  ip VARCHAR(64) NOT NULL,
+  nameserver VARCHAR(255) NOT NULL COLLATE NOCASE,
+  account VARCHAR(40) NOT NULL
+);
+CREATE UNIQUE INDEX ip_nameserver_pk ON supermasters(ip, nameserver);
+CREATE TABLE comments (
+  id INTEGER PRIMARY KEY,
+  domain_id INTEGER NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  type VARCHAR(10) NOT NULL,
+  modified_at INT NOT NULL,
+  account VARCHAR(40) DEFAULT NULL,
+  comment VARCHAR(64000) NOT NULL,
+  FOREIGN KEY(domain_id) REFERENCES domains(id) ON DELETE CASCADE ON UPDATE CASCADE
+);
+CREATE INDEX comments_domain_id_index ON comments (domain_id);
+CREATE INDEX comments_nametype_index ON comments (name, type);
+CREATE INDEX comments_order_idx ON comments (domain_id, modified_at);
+CREATE TABLE domainmetadata (
+ id INTEGER PRIMARY KEY,
+ domain_id INT NOT NULL,
+ kind VARCHAR(32) COLLATE NOCASE,
+ content TEXT,
+ FOREIGN KEY(domain_id) REFERENCES domains(id) ON DELETE CASCADE ON UPDATE CASCADE
+);
+CREATE INDEX domainmetaidindex ON domainmetadata(domain_id);
+CREATE TABLE cryptokeys (
+ id INTEGER PRIMARY KEY,
+ domain_id INT NOT NULL,
+ flags INT NOT NULL,
+ active BOOL,
+ published BOOL DEFAULT 1,
+ content TEXT,
+ FOREIGN KEY(domain_id) REFERENCES domains(id) ON DELETE CASCADE ON UPDATE CASCADE
+);
+CREATE INDEX domainidindex ON cryptokeys(domain_id);
+CREATE TABLE tsigkeys (
+ id INTEGER PRIMARY KEY,
+ name VARCHAR(255) COLLATE NOCASE,
+ algorithm VARCHAR(50) COLLATE NOCASE,
+ secret VARCHAR(255)
+);
+CREATE UNIQUE INDEX namealgoindex ON tsigkeys(name, algorithm);`
+
+	// Write schema to temp file on remote host
+	schemaPath := "/tmp/pdns_schema.sql"
+	if err := writeRemoteFile(conn, schemaPath, schema); err != nil {
+		return fmt.Errorf("failed to write schema file: %w", err)
+	}
+
+	// Initialize database using sqlite3 command in the PowerDNS container
+	// Use --user root to ensure proper permissions
+	initCmd := fmt.Sprintf(
+		"sudo docker run --rm --user root -v %s:%s -v /tmp:/tmp --entrypoint /bin/sh %s -c 'sqlite3 %s < %s'",
+		cfg.DataDir, cfg.DataDir,
+		authImage,
+		dbPath,
+		schemaPath,
+	)
+
+	if _, err := adapter.Execute(initCmd); err != nil {
+		return fmt.Errorf("failed to initialize database: %w", err)
+	}
+
+	// Set proper ownership and permissions for database file and directory
+	// PowerDNS container runs as UID 953 (pdns user)
+	// Directory: 755 (rwxr-xr-x), Database: 644 (rw-r--r--)
+	permCmd := fmt.Sprintf("sudo chown -R 953:953 %s && sudo chmod 755 %s && sudo chmod 644 %s", cfg.DataDir, cfg.DataDir, dbPath)
+	if _, err := adapter.Execute(permCmd); err != nil {
+		return fmt.Errorf("failed to set database permissions: %w", err)
+	}
+
+	// Clean up temp schema file
+	cleanupCmd := fmt.Sprintf("sudo rm -f %s", schemaPath)
+	_, _ = adapter.Execute(cleanupCmd) // Ignore cleanup errors
+
+	return nil
 }
 
 // enableAndStartServices enables and starts the PowerDNS systemd services.

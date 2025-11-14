@@ -150,17 +150,9 @@ network:
   k8s_vip: 192.168.1.100
 
 dns:
-  # Infrastructure zones (.local for private, public domain for split-horizon)
-  infrastructure_zones:
-    - name: infraexample.com
-      public: true
-      public_cname: home.example.com  # DDNS hostname
-
-  # Kubernetes zones
-  kubernetes_zones:
-    - name: k8sexample.com
-      public: true
-      public_cname: home.example.com
+  # Flat namespace - single zone for everything
+  # Phase 2: Local network only (.local domain)
+  # Phase 3: Public domain support via External-DNS
 
   forwarders:
     - 8.8.8.8
@@ -171,44 +163,48 @@ dns:
 
 cluster:
   name: production
-  domain: example.com
+  domain: catalyst.local  # Flat namespace - all services under this domain
   k8s_vip: 192.168.1.100
   nodes:
-    - hostname: node1.example.com
+    - hostname: node1.catalyst.local
       role: control-plane
-    - hostname: node2.example.com
+    - hostname: node2.catalyst.local
       role: worker
 
 components:
   openbao:
     # Runs on network.openbao_hosts[0]
-    # DNS: openbao.infraexample.com
+    # DNS: openbao.catalyst.local → host IP (specific A record)
 
   dns:
     # Runs on network.dns_hosts[0]
-    # DNS: dns.infraexample.com
+    # DNS: dns.catalyst.local → host IP (specific A record)
     image_tag: "49"  # PowerDNS version
 
   zot:
     # Runs on network.zot_hosts[0]
-    # DNS: zot.infraexample.com
+    # DNS: zot.catalyst.local → host IP (specific A record)
 
   k3s:
     tag: "v1.28.5+k3s1"
+    # DNS: *.catalyst.local → VIP (wildcard A record)
 
   grafana:
+    # DNS: grafana.catalyst.local → VIP (via wildcard)
     admin_password: ${secret:foundry-core/grafana:admin_password}
 
 observability:
   prometheus:
+    # DNS: prometheus.catalyst.local → VIP (via wildcard)
     retention: 30d
   loki:
+    # DNS: loki.catalyst.local → VIP (via wildcard)
     retention: 90d
 
 storage:
   truenas:
-    # DNS: truenas.infraexample.com
-    api_url: https://truenas.infraexample.com
+    # DNS: truenas.catalyst.local → TrueNAS IP (specific A record)
+    api_url: https://truenas.catalyst.local
     api_key: ${secret:foundry-core/truenas:api_key}
 
 # Setup state (managed by 'foundry setup')
@@ -329,55 +325,57 @@ Users and service accounts are managed in OpenBAO:
 - **Recursive resolver**: Forwards non-authoritative queries to upstream DNS (8.8.8.8, etc.)
 - **Dynamic updates**: External-DNS manages K8s service records via PowerDNS API
 
-### DNS Zone Strategy
+### DNS Zone Strategy - Flat Namespace
 
-**Infrastructure Zones**:
-- Purpose: Static infrastructure (OpenBAO, PowerDNS, Zot, TrueNAS, K8s VIP)
-- Examples: `infraexample.com` (public), `infra.local` (private only)
-- Records: Static A records managed by Foundry
-- Naming: `openbao.infraexample.com`, `zot.infraexample.com`
+**Single Zone for Everything**:
+- One DNS zone for the entire cluster (e.g., `catalyst.local`)
+- No subdomains like `infra.` or `k8s.` - everything is flat
+- Specific A records for infrastructure services
+- Wildcard A record for all Kubernetes services
 
-**Kubernetes Zones**:
-- Purpose: Dynamic K8s services and ingresses
-- Examples: `k8sexample.com` (public), `k8s.local` (private only)
-- Records: Dynamic A records managed by External-DNS
-- Naming: `grafana.k8sexample.com`, `myapp.k8sexample.com`
+**DNS Records**:
 
-**`.local` TLD Rule**:
-- Always private only - never publicly accessible
-- No split-horizon configuration
-- Use when you never want external access
+**Infrastructure Services** (specific A records):
+- `openbao.catalyst.local` → Host IP (e.g., 10.16.0.42)
+- `dns.catalyst.local` → Host IP
+- `zot.catalyst.local` → Host IP
+- `truenas.catalyst.local` → TrueNAS IP (if configured)
 
-**Split-Horizon for Public Domains**:
-- Use same zone for internal AND external access
-- Don't create separate private + public zones
-- Example: Use `infraexample.com` (split-horizon), not both `infra.local` + `infrapublic.com`
+**Kubernetes Services** (wildcard A record):
+- `*.catalyst.local` → VIP (e.g., 10.16.0.43)
+- Catches all K8s app hostnames: `grafana.catalyst.local`, `myapp.catalyst.local`
+- Ingress controller (Contour) routes based on HTTP Host header
+
+**Not Managed by Foundry**:
+- `cluster.local` - K8s internal DNS (CoreDNS manages this for pod-to-pod communication)
+
+**Public Domain Support** (Phase 3):
+- External-DNS can manage public domains (`mycompany.com`, etc.)
+- Split-horizon DNS or third-party DNS providers
+- See Phase 3 documentation for details
 
 ### DNS Resolution Flow
 
-**Internal Queries** (from local network):
+**Phase 2: Local Network Only**
+
+**Infrastructure Service Query**:
 ```
-Query: zot.infraexample.com
-PowerDNS: A 192.168.1.10 (local IP, fast)
+Query: zot.catalyst.local
+PowerDNS: A 10.16.0.42 (host IP)
 ```
 
-**External Queries** (from internet):
+**Kubernetes Service Query** (via wildcard):
 ```
-Query: zot.infraexample.com
-  → Public DNS: NS home.example.com (DDNS hostname)
-  → Router (public IP) forwards DNS to PowerDNS
-PowerDNS: CNAME home.example.com
-  → Resolves to router's public IP
-  → Router forwards port 5000 → 192.168.1.10:5000
+Query: grafana.catalyst.local
+PowerDNS: A 10.16.0.43 (VIP, via wildcard *.catalyst.local)
+→ Traffic goes to VIP
+→ Ingress controller examines Host header: "grafana.catalyst.local"
+→ Routes to Grafana service
 ```
 
-**User Delegation** (for external access):
-1. User configures Dynamic DNS on router: `home.example.com` → router's public IP
-2. User adds NS records in DNS provider:
-   - `infraexample.com NS home.example.com`
-   - `k8sexample.com NS home.example.com`
-3. Router port-forwards DNS (53) → PowerDNS
-4. PowerDNS returns local IPs internally, CNAME externally
+**Phase 3: Public Domain Support** (Future)
+
+External-DNS will manage public domains with split-horizon or third-party DNS providers. See Phase 3 documentation for details.
 
 ### Static IP Requirements
 
@@ -716,12 +714,13 @@ foundry stack install --config ~/.foundry/<name>.yaml
   # e. Initialize OpenBAO (interactive root token generation)
   # f. Store Foundry's OpenBAO auth token
   # g. Install PowerDNS container
-  # h. Create infrastructure DNS zone (openbao.infraexample.com, etc.)
-  # i. Create kubernetes DNS zone (*.k8sexample.com)
-  # j. Install Zot container
-  # k. Install K3s cluster (with VIP, configured to use PowerDNS)
-  # l. Install Contour and cert-manager
-  # m. Verify all components healthy
+  # h. Create DNS zone (catalyst.local with flat namespace)
+  # i. Add specific A records for infrastructure (openbao, dns, zot, truenas)
+  # j. Add wildcard A record for K8s services (*.catalyst.local → VIP)
+  # k. Install Zot container
+  # l. Install K3s cluster (with VIP, configured to use PowerDNS)
+  # m. Install Contour and cert-manager
+  # n. Verify all components healthy
 
 # 4. (Optional) Create first user
 foundry rbac user create admin --role cluster-admin
@@ -742,9 +741,10 @@ Foundry automatically handles dependencies:
    - Required before K3s for DNS resolution
    - Enables split-horizon DNS for external access
 
-3. **DNS Zones**
-   - Infrastructure zone: `openbao.infraexample.com`, `zot.infraexample.com`, `k8s.infraexample.com`
-   - Kubernetes zone: `*.k8sexample.com` (managed by External-DNS in Phase 3)
+3. **DNS Zone** (flat namespace)
+   - Single zone: `catalyst.local` (or user's configured domain)
+   - Specific A records: `openbao.catalyst.local`, `zot.catalyst.local`, `truenas.catalyst.local` → host IPs
+   - Wildcard A record: `*.catalyst.local` → VIP (for all K8s services)
 
 4. **Zot** (container on infrastructure host)
    - OCI registry for container images
@@ -931,7 +931,7 @@ network:
 components:
   openbao:
     # Runs as container on network.openbao_hosts[0]
-    # DNS: openbao.infraexample.com
+    # DNS: openbao.catalyst.local → host IP (specific A record)
 ```
 
 ### PowerDNS
@@ -954,11 +954,11 @@ components:
 - Create systemd service
 - Configure split-horizon for public zones
 
-**Zones**:
-- **Infrastructure zones**: Static A records for OpenBAO, Zot, TrueNAS, K8s VIP
-- **Kubernetes zones**: Dynamic A records managed by External-DNS (Phase 3)
-- **`.local` zones**: Private only, no split-horizon
-- **Public zones**: Return local IPs internally, CNAME to DDNS hostname externally
+**Zone Strategy** (Flat Namespace):
+- **Single zone**: All services under one domain (e.g., `catalyst.local`)
+- **Specific A records**: Infrastructure services (openbao, dns, zot, truenas) → host IPs
+- **Wildcard A record**: All K8s services (`*.catalyst.local`) → VIP
+- **Phase 3**: Public domain support via External-DNS
 
 **Configuration**:
 ```yaml
@@ -966,17 +966,10 @@ network:
   dns_hosts:
     - 192.168.1.10  # Can be same as OpenBAO host
 
+cluster:
+  domain: catalyst.local  # Flat namespace
+
 dns:
-  infrastructure_zones:
-    - name: infraexample.com
-      public: true
-      public_cname: home.example.com  # DDNS hostname
-
-  kubernetes_zones:
-    - name: k8sexample.com
-      public: true
-      public_cname: home.example.com
-
   forwarders:
     - 8.8.8.8
     - 1.1.1.1

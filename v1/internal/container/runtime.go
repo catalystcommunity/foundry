@@ -28,17 +28,17 @@ func (d *DockerRuntime) Name() string {
 }
 
 func (d *DockerRuntime) IsAvailable() bool {
-	_, err := d.conn.Execute("docker --version")
+	_, err := d.conn.Execute("sudo docker --version")
 	return err == nil
 }
 
 func (d *DockerRuntime) Pull(image string) error {
-	_, err := d.conn.Execute(fmt.Sprintf("docker pull %s", image))
+	_, err := d.conn.Execute(fmt.Sprintf("sudo docker pull %s", image))
 	return err
 }
 
 func (d *DockerRuntime) Run(config RunConfig) (string, error) {
-	args := []string{"docker", "run"}
+	args := []string{"sudo", "docker", "run"}
 
 	if config.Detach {
 		args = append(args, "-d")
@@ -103,22 +103,22 @@ func (d *DockerRuntime) Run(config RunConfig) (string, error) {
 
 func (d *DockerRuntime) Stop(containerID string, timeout time.Duration) error {
 	seconds := int(timeout.Seconds())
-	cmd := fmt.Sprintf("docker stop --time %d %s", seconds, containerID)
+	cmd := fmt.Sprintf("sudo docker stop --time %d %s", seconds, containerID)
 	_, err := d.conn.Execute(cmd)
 	return err
 }
 
 func (d *DockerRuntime) Remove(containerID string, force bool) error {
-	cmd := fmt.Sprintf("docker rm %s", containerID)
+	cmd := fmt.Sprintf("sudo docker rm %s", containerID)
 	if force {
-		cmd = fmt.Sprintf("docker rm -f %s", containerID)
+		cmd = fmt.Sprintf("sudo docker rm -f %s", containerID)
 	}
 	_, err := d.conn.Execute(cmd)
 	return err
 }
 
 func (d *DockerRuntime) Inspect(containerID string) (*ContainerInfo, error) {
-	cmd := fmt.Sprintf("docker inspect %s", containerID)
+	cmd := fmt.Sprintf("sudo docker inspect %s", containerID)
 	output, err := d.conn.Execute(cmd)
 	if err != nil {
 		return nil, err
@@ -179,9 +179,9 @@ func (d *DockerRuntime) Inspect(containerID string) (*ContainerInfo, error) {
 }
 
 func (d *DockerRuntime) List(all bool) ([]ContainerInfo, error) {
-	cmd := "docker ps --format json"
+	cmd := "sudo docker ps --format json"
 	if all {
-		cmd = "docker ps -a --format json"
+		cmd = "sudo docker ps -a --format json"
 	}
 
 	output, err := d.conn.Execute(cmd)
@@ -243,17 +243,17 @@ func (p *PodmanRuntime) Name() string {
 }
 
 func (p *PodmanRuntime) IsAvailable() bool {
-	_, err := p.conn.Execute("podman --version")
+	_, err := p.conn.Execute("sudo podman --version")
 	return err == nil
 }
 
 func (p *PodmanRuntime) Pull(image string) error {
-	_, err := p.conn.Execute(fmt.Sprintf("podman pull %s", image))
+	_, err := p.conn.Execute(fmt.Sprintf("sudo podman pull %s", image))
 	return err
 }
 
 func (p *PodmanRuntime) Run(config RunConfig) (string, error) {
-	args := []string{"podman", "run"}
+	args := []string{"sudo", "podman", "run"}
 
 	if config.Detach {
 		args = append(args, "-d")
@@ -318,22 +318,22 @@ func (p *PodmanRuntime) Run(config RunConfig) (string, error) {
 
 func (p *PodmanRuntime) Stop(containerID string, timeout time.Duration) error {
 	seconds := int(timeout.Seconds())
-	cmd := fmt.Sprintf("podman stop --time %d %s", seconds, containerID)
+	cmd := fmt.Sprintf("sudo podman stop --time %d %s", seconds, containerID)
 	_, err := p.conn.Execute(cmd)
 	return err
 }
 
 func (p *PodmanRuntime) Remove(containerID string, force bool) error {
-	cmd := fmt.Sprintf("podman rm %s", containerID)
+	cmd := fmt.Sprintf("sudo podman rm %s", containerID)
 	if force {
-		cmd = fmt.Sprintf("podman rm -f %s", containerID)
+		cmd = fmt.Sprintf("sudo podman rm -f %s", containerID)
 	}
 	_, err := p.conn.Execute(cmd)
 	return err
 }
 
 func (p *PodmanRuntime) Inspect(containerID string) (*ContainerInfo, error) {
-	cmd := fmt.Sprintf("podman inspect %s", containerID)
+	cmd := fmt.Sprintf("sudo podman inspect %s", containerID)
 	output, err := p.conn.Execute(cmd)
 	if err != nil {
 		return nil, err
@@ -394,9 +394,9 @@ func (p *PodmanRuntime) Inspect(containerID string) (*ContainerInfo, error) {
 }
 
 func (p *PodmanRuntime) List(all bool) ([]ContainerInfo, error) {
-	cmd := "podman ps --format json"
+	cmd := "sudo podman ps --format json"
 	if all {
-		cmd = "podman ps -a --format json"
+		cmd = "sudo podman ps -a --format json"
 	}
 
 	output, err := p.conn.Execute(cmd)
