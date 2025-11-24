@@ -1,6 +1,7 @@
 ; Cluster configuration types for Foundry
 ;
-; Defines Kubernetes cluster settings and node roles.
+; Defines Kubernetes cluster settings.
+; Note: Cluster nodes are derived from hosts with cluster-* roles.
 
 options {
     go_package: "github.com/catalystcommunity/foundry/v1/internal/config"
@@ -10,13 +11,9 @@ options {
 ClusterConfig = {
     name: text,
     domain: text,
-    ? k8s_vip: text @go_name("K8sVIP"),
-    nodes: [* NodeConfig] .size(1..)
+    vip: text @go_name("VIP")  ; Kubernetes VIP (Virtual IP for cluster API access)
 }
 
-; Individual node configuration
-; Role must be "control-plane" or "worker"
-NodeConfig = {
-    hostname: text,
-    role: text
-}
+; Note: NodeConfig removed - cluster nodes now derived from hosts:[]
+; Nodes with role "cluster-control-plane" become control plane nodes
+; Nodes with role "cluster-worker" become worker nodes

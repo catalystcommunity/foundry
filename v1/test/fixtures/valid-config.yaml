@@ -1,17 +1,31 @@
 cluster:
   name: production
   domain: example.com
-  nodes:
-    - hostname: node1.example.com
-      role: control-plane
-    - hostname: node2.example.com
-      role: worker
+  vip: 192.168.1.100
+
+network:
+  gateway: 192.168.1.1
+  netmask: 255.255.255.0
+
+hosts:
+  - hostname: node1.example.com
+    address: 192.168.1.20
+    roles:
+      - cluster-control-plane
+      - openbao
+      - dns
+      - zot
+    state: configured
+
+  - hostname: node2.example.com
+    address: 192.168.1.21
+    roles:
+      - cluster-worker
+    state: configured
 
 components:
   openbao:
     version: "2.1.0"
-    hosts:
-      - openbao.example.com
 
   k3s:
     version: "v1.28.5+k3s1"

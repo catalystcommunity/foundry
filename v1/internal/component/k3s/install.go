@@ -17,11 +17,79 @@ const (
 	RetryDelay = 10 * time.Second
 )
 
+// IsK3sInstalled checks if K3s is already installed and running on a node
+func IsK3sInstalled(executor SSHExecutor) (bool, error) {
+	result, err := executor.Exec("systemctl is-active k3s 2>/dev/null")
+	if err != nil {
+		return false, fmt.Errorf("failed to check K3s status: %w", err)
+	}
+
+	// If exit code is 0 and output is "active", K3s is installed and running
+	return result.ExitCode == 0 && strings.TrimSpace(result.Stdout) == "active", nil
+}
+
+// IsKubeVIPInstalled checks if kube-vip is already deployed in the cluster
+func IsKubeVIPInstalled(executor SSHExecutor) (bool, error) {
+	// Check if kube-vip daemonset exists
+	result, err := executor.Exec("sudo kubectl get daemonset -n kube-system kube-vip 2>/dev/null")
+	if err != nil {
+		return false, fmt.Errorf("failed to check kube-vip status: %w", err)
+	}
+
+	// If exit code is 0, kube-vip daemonset exists
+	return result.ExitCode == 0, nil
+}
+
 // InstallControlPlane installs K3s control plane on a node
 func InstallControlPlane(ctx context.Context, executor SSHExecutor, cfg *Config) error {
 	// Validate configuration
 	if err := cfg.Validate(); err != nil {
 		return fmt.Errorf("config validation failed: %w", err)
+	}
+
+	// Check if K3s is already installed (idempotency)
+	isInstalled, err := IsK3sInstalled(executor)
+	if err != nil {
+		return fmt.Errorf("failed to check if K3s is installed: %w", err)
+	}
+
+	if isInstalled {
+		// K3s is already installed, but we need to check kube-vip separately
+		fmt.Println("   K3s already installed, skipping K3s installation")
+
+		// Check if kube-vip is also installed
+		kubeVIPInstalled, err := IsKubeVIPInstalled(executor)
+		if err != nil {
+			return fmt.Errorf("failed to check if kube-vip is installed: %w", err)
+		}
+
+		if kubeVIPInstalled {
+			// Both K3s and kube-vip are installed, nothing to do
+			fmt.Println("   kube-vip already installed, skipping setup")
+			return nil
+		}
+
+		// K3s is installed but kube-vip is not, set it up
+		fmt.Println("   kube-vip not found, setting it up...")
+
+		// Detect network interface for kube-vip
+		if cfg.Interface == "" {
+			iface, err := network.DetectPrimaryInterface(executor)
+			if err != nil {
+				return fmt.Errorf("failed to detect network interface: %w", err)
+			}
+			cfg.Interface = iface
+		}
+
+		if err := setupKubeVIP(ctx, executor, cfg); err != nil {
+			return fmt.Errorf("failed to setup kube-vip: %w", err)
+		}
+
+		if err := waitForKubeVIPReady(executor, cfg.VIP); err != nil {
+			return fmt.Errorf("kube-vip failed to become ready: %w", err)
+		}
+
+		return nil
 	}
 
 	// Detect network interface if not provided

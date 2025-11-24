@@ -3,6 +3,7 @@ package config
 import (
 	"testing"
 
+	"github.com/catalystcommunity/foundry/v1/internal/host"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -49,28 +50,12 @@ func TestDNSConfig_Validate(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "missing infrastructure zones",
+			name: "zones are optional - only backend and api_key required",
 			config: DNSConfig{
-				KubernetesZones: []DNSZone{
-					{Name: "k8s.example.com", Public: true, PublicCNAME: strPtr("home.example.com")},
-				},
 				Backend: "sqlite",
 				APIKey:  "test-key",
 			},
-			wantErr: true,
-			errMsg:  "at least one infrastructure zone is required",
-		},
-		{
-			name: "missing kubernetes zones",
-			config: DNSConfig{
-				InfrastructureZones: []DNSZone{
-					{Name: "infra.example.com", Public: true, PublicCNAME: strPtr("home.example.com")},
-				},
-				Backend: "sqlite",
-				APIKey:  "test-key",
-			},
-			wantErr: true,
-			errMsg:  "at least one kubernetes zone is required",
+			wantErr: false,
 		},
 		{
 			name: "duplicate zone names",
@@ -205,12 +190,20 @@ func TestDNSZone_Validate(t *testing.T) {
 func TestConfig_WithNetworkAndDNS(t *testing.T) {
 	config := Config{
 		Network: &NetworkConfig{
-			Gateway:      "192.168.1.1",
-			Netmask:      "255.255.255.0",
-			K8sVIP:       "192.168.1.100",
-			OpenBAOHosts: []string{"192.168.1.10"},
-			DNSHosts:     []string{"192.168.1.10"},
-			ZotHosts:     []string{"192.168.1.10"},
+			Gateway: "192.168.1.1",
+			Netmask: "255.255.255.0",
+		},
+		Hosts: []*host.Host{
+			{
+				Hostname: "host1",
+				Address:  "192.168.1.10",
+				Roles:    []string{host.RoleOpenBAO, host.RoleDNS, host.RoleZot},
+			},
+			{
+				Hostname: "node1",
+				Address:  "192.168.1.20",
+				Roles:    []string{host.RoleClusterControlPlane},
+			},
 		},
 		DNS: &DNSConfig{
 			InfrastructureZones: []DNSZone{
@@ -225,7 +218,7 @@ func TestConfig_WithNetworkAndDNS(t *testing.T) {
 		Cluster: ClusterConfig{
 			Name:   "test",
 			Domain: "example.com",
-			Nodes:  []NodeConfig{{Hostname: "node1", Role: NodeRoleControlPlane}},
+			VIP:    "192.168.1.100",
 		},
 		Components: ComponentMap{
 			"k3s": ComponentConfig{},

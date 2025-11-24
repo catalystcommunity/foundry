@@ -4,10 +4,10 @@
 package config
 
 // Manually added imports for cross-package type references
-// TODO: Add go_imports support to csilgen parser for automatic imports
+// TODO: Remove when csilgen parser supports go_imports array syntax
 import (
-	"github.com/catalystcommunity/foundry/v1/internal/setup"
 	"github.com/catalystcommunity/foundry/v1/internal/host"
+	"github.com/catalystcommunity/foundry/v1/internal/setup"
 )
 
 // NetworkConfig represents a structured data type
@@ -15,11 +15,6 @@ type NetworkConfig struct {
 	Gateway string `json:"gateway" yaml:"gateway"`
 	Netmask string `json:"netmask" yaml:"netmask"`
 	DHCPRange *DHCPRange `json:"dhcp_range,omitempty" yaml:"dhcp_range,omitempty"`
-	OpenBAOHosts []string `json:"openbao_hosts" yaml:"openbao_hosts"`
-	DNSHosts []string `json:"dns_hosts" yaml:"dns_hosts"`
-	ZotHosts []string `json:"zot_hosts" yaml:"zot_hosts"`
-	TrueNASHosts []string `json:"truenas_hosts,omitempty" yaml:"truenas_hosts,omitempty"`
-	K8sVIP string `json:"k8s_vip" yaml:"k8s_vip"`
 }
 
 // DHCPRange represents a structured data type
@@ -44,19 +39,17 @@ type DNSZone struct {
 	PublicCNAME *string `json:"public_cname,omitempty" yaml:"public_cname,omitempty"`
 }
 
-// ClusterConfig represents a structured data type
+// ClusterConfig defines Kubernetes cluster settings
+// Manually defined due to CSIL parser limitation with cross-package references
 type ClusterConfig struct {
-	Name string `json:"name" yaml:"name"`
+	Name   string `json:"name" yaml:"name"`
 	Domain string `json:"domain" yaml:"domain"`
-	K8sVIP *string `json:"k8s_vip,omitempty" yaml:"k8s_vip,omitempty"`
-	Nodes []NodeConfig `json:"nodes" yaml:"nodes"`
+	VIP    string `json:"vip" yaml:"vip"` // Kubernetes VIP (Virtual IP for cluster API access)
 }
 
-// NodeConfig represents a structured data type
-type NodeConfig struct {
-	Hostname string `json:"hostname" yaml:"hostname"`
-	Role string `json:"role" yaml:"role"`
-}
+// Host is defined in internal/host package
+// Type alias for convenience in config package
+type Host = host.Host
 
 // ComponentMap is a type alias
 type ComponentMap map[string]ComponentConfig
@@ -109,7 +102,7 @@ type Config struct {
 	Components ComponentMap `json:"components" yaml:"components"`
 	Observability *ObsConfig `json:"observability,omitempty" yaml:"observability,omitempty"`
 	Storage *StorageConfig `json:"storage,omitempty" yaml:"storage,omitempty"`
-	Hosts []*host.Host `json:"hosts,omitempty" yaml:"hosts,omitempty"` // Manually added for host registry
+	Hosts []*host.Host `json:"hosts" yaml:"hosts"`
 	SetupState *setup.SetupState `json:"setup_state" yaml:"setup_state"`
 }
 

@@ -37,13 +37,13 @@ func (c *Component) Upgrade(ctx context.Context, cfg component.ComponentConfig) 
 
 // Status returns the status of the OpenBAO component
 func (c *Component) Status(ctx context.Context) (*component.ComponentStatus, error) {
-	// For now, return a basic status
-	// TODO: Implement actual status checking via systemd service status
+	// Status checking is implemented in cmd/foundry/commands/component/status.go
+	// to avoid import cycles with config/ssh/secrets packages
 	return &component.ComponentStatus{
 		Installed: false,
 		Version:   "",
 		Healthy:   false,
-		Message:   "status check not implemented",
+		Message:   "use 'foundry component status openbao' command",
 	}, nil
 }
 

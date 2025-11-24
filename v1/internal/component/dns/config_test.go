@@ -153,7 +153,12 @@ func TestGenerateRecursorConfig(t *testing.T) {
 			},
 			wantErr: false,
 			checkFunc: func(t *testing.T, result string) {
-				// Check local zone forwarding to Auth server
+				// Check DNSSEC negative trust anchors for unsigned local zones
+				assert.Contains(t, result, "dnssec:")
+				assert.Contains(t, result, "negative_trustanchors:")
+				assert.Contains(t, result, "- name: catalyst.local")
+				assert.Contains(t, result, "reason:")
+				// Check local zone forward_zones configuration
 				assert.Contains(t, result, "forward_zones:")
 				assert.Contains(t, result, "- zone: catalyst.local")
 				assert.Contains(t, result, "- 127.0.0.1:5300")
@@ -171,12 +176,14 @@ func TestGenerateRecursorConfig(t *testing.T) {
 			},
 			wantErr: false,
 			checkFunc: func(t *testing.T, result string) {
-				// Check all local zones are configured
+				// Check all local zones have negative trust anchors
+				assert.Contains(t, result, "- name: catalyst.local")
+				assert.Contains(t, result, "- name: infra.local")
+				assert.Contains(t, result, "- name: k8s.local")
+				// Check all local zones are in forward_zones
 				assert.Contains(t, result, "- zone: catalyst.local")
 				assert.Contains(t, result, "- zone: infra.local")
 				assert.Contains(t, result, "- zone: k8s.local")
-				// Each should forward to Auth server
-				assert.Contains(t, result, "- 127.0.0.1:5300")
 			},
 		},
 		{
@@ -188,8 +195,19 @@ func TestGenerateRecursorConfig(t *testing.T) {
 			},
 			wantErr: false,
 			checkFunc: func(t *testing.T, result string) {
-				// Should not have forward_zones section, only forward_zones_recurse
-				assert.NotContains(t, result, "forward_zones:")
+				// Should not have dnssec section when no local zones
+				assert.NotContains(t, result, "negative_trustanchors:")
+				// Should not have forward_zones section for local zones
+				lines := strings.Split(result, "\n")
+				forwardZonesLineFound := false
+				for _, line := range lines {
+					if strings.TrimSpace(line) == "forward_zones:" {
+						forwardZonesLineFound = true
+						break
+					}
+				}
+				assert.False(t, forwardZonesLineFound, "should not have forward_zones section when LocalZones is empty")
+				// Should have forward_zones_recurse
 				assert.Contains(t, result, "forward_zones_recurse:")
 			},
 		},

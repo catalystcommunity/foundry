@@ -30,7 +30,9 @@ func (c *Component) Upgrade(ctx context.Context, cfg component.ComponentConfig) 
 
 // Status returns the status of the K3s component
 func (c *Component) Status(ctx context.Context) (*component.ComponentStatus, error) {
-	return nil, fmt.Errorf("not implemented")
+	// Status checking is implemented in cmd/foundry/commands/component/status.go
+	// to avoid import cycles with config/ssh/secrets packages
+	return nil, fmt.Errorf("not implemented - use 'foundry component status k3s' command")
 }
 
 // Uninstall removes the K3s component

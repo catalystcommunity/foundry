@@ -3,6 +3,7 @@ package config
 import (
 	"testing"
 
+	"github.com/catalystcommunity/foundry/v1/internal/host"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
@@ -21,9 +22,6 @@ func TestConfig_Validate(t *testing.T) {
 				Cluster: ClusterConfig{
 					Name:   "test",
 					Domain: "example.com",
-					Nodes: []NodeConfig{
-						{Hostname: "node1", Role: NodeRoleControlPlane},
-					},
 				},
 				Components: ComponentMap{
 					"k3s": ComponentConfig{},
@@ -37,27 +35,11 @@ func TestConfig_Validate(t *testing.T) {
 				Cluster: ClusterConfig{
 					Name:   "test",
 					Domain: "example.com",
-					Nodes: []NodeConfig{
-						{Hostname: "node1", Role: NodeRoleControlPlane},
-					},
 				},
 				Components: ComponentMap{},
 			},
 			wantErr: true,
 			errMsg:  "at least one component must be defined",
-		},
-		{
-			name: "invalid cluster config",
-			config: Config{
-				Cluster: ClusterConfig{
-					Name: "", // Missing name
-				},
-				Components: ComponentMap{
-					"k3s": ComponentConfig{},
-				},
-			},
-			wantErr: true,
-			errMsg:  "cluster validation failed",
 		},
 	}
 
@@ -74,159 +56,11 @@ func TestConfig_Validate(t *testing.T) {
 	}
 }
 
-func TestClusterConfig_Validate(t *testing.T) {
-	tests := []struct {
-		name    string
-		cluster ClusterConfig
-		wantErr bool
-		errMsg  string
-	}{
-		{
-			name: "valid cluster",
-			cluster: ClusterConfig{
-				Name:   "production",
-				Domain: "example.com",
-				Nodes: []NodeConfig{
-					{Hostname: "node1", Role: NodeRoleControlPlane},
-					{Hostname: "node2", Role: NodeRoleWorker},
-				},
-			},
-			wantErr: false,
-		},
-		{
-			name: "missing name",
-			cluster: ClusterConfig{
-				Domain: "example.com",
-				Nodes: []NodeConfig{
-					{Hostname: "node1", Role: NodeRoleControlPlane},
-				},
-			},
-			wantErr: true,
-			errMsg:  "cluster name is required",
-		},
-		{
-			name: "missing domain",
-			cluster: ClusterConfig{
-				Name: "production",
-				Nodes: []NodeConfig{
-					{Hostname: "node1", Role: NodeRoleControlPlane},
-				},
-			},
-			wantErr: true,
-			errMsg:  "cluster domain is required",
-		},
-		{
-			name: "no nodes",
-			cluster: ClusterConfig{
-				Name:   "production",
-				Domain: "example.com",
-				Nodes:  []NodeConfig{},
-			},
-			wantErr: true,
-			errMsg:  "at least one node must be defined",
-		},
-		{
-			name: "no control-plane node",
-			cluster: ClusterConfig{
-				Name:   "production",
-				Domain: "example.com",
-				Nodes: []NodeConfig{
-					{Hostname: "node1", Role: NodeRoleWorker},
-					{Hostname: "node2", Role: NodeRoleWorker},
-				},
-			},
-			wantErr: true,
-			errMsg:  "at least one control-plane node is required",
-		},
-		{
-			name: "invalid node",
-			cluster: ClusterConfig{
-				Name:   "production",
-				Domain: "example.com",
-				Nodes: []NodeConfig{
-					{Hostname: "", Role: NodeRoleControlPlane},
-				},
-			},
-			wantErr: true,
-			errMsg:  "node 0 validation failed",
-		},
-	}
+// NOTE: TestClusterConfig_Validate removed - ClusterConfig.Validate() no longer exists
+// Cluster validation moved to role-based host validation in host package
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := tt.cluster.Validate()
-			if tt.wantErr {
-				require.Error(t, err)
-				assert.Contains(t, err.Error(), tt.errMsg)
-			} else {
-				require.NoError(t, err)
-			}
-		})
-	}
-}
-
-func TestNodeConfig_Validate(t *testing.T) {
-	tests := []struct {
-		name    string
-		node    NodeConfig
-		wantErr bool
-		errMsg  string
-	}{
-		{
-			name: "valid control-plane node",
-			node: NodeConfig{
-				Hostname: "node1.example.com",
-				Role:     NodeRoleControlPlane,
-			},
-			wantErr: false,
-		},
-		{
-			name: "valid worker node",
-			node: NodeConfig{
-				Hostname: "node2.example.com",
-				Role:     NodeRoleWorker,
-			},
-			wantErr: false,
-		},
-		{
-			name: "missing hostname",
-			node: NodeConfig{
-				Role: NodeRoleControlPlane,
-			},
-			wantErr: true,
-			errMsg:  "node hostname is required",
-		},
-		{
-			name: "missing role",
-			node: NodeConfig{
-				Hostname: "node1.example.com",
-			},
-			wantErr: true,
-			errMsg:  "node role is required",
-		},
-		{
-			name: "invalid role",
-			node: NodeConfig{
-				Hostname: "node1.example.com",
-				Role:     "invalid-role",
-			},
-			wantErr: true,
-			errMsg:  "invalid node role",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := tt.node.Validate()
-			if tt.wantErr {
-				require.Error(t, err)
-				assert.Contains(t, err.Error(), tt.errMsg)
-			} else {
-				require.NoError(t, err)
-			}
-		})
-	}
-}
+// NOTE: TestNodeConfig_Validate removed - NodeConfig type no longer exists
+// Node configuration moved to host.Host with cluster-* roles
 
 func TestComponentConfig_Validate(t *testing.T) {
 	tests := []struct {
@@ -331,11 +165,26 @@ version: "1.0"
 cluster:
   name: test-cluster
   domain: test.com
-  nodes:
-    - hostname: node1
-      role: control-plane
-    - hostname: node2
-      role: worker
+  vip: 192.168.1.100
+
+network:
+  gateway: 192.168.1.1
+  netmask: 255.255.255.0
+
+hosts:
+  - hostname: node1
+    address: 192.168.1.20
+    roles:
+      - cluster-control-plane
+      - openbao
+      - dns
+      - zot
+    state: configured
+  - hostname: node2
+    address: 192.168.1.21
+    roles:
+      - cluster-worker
+    state: configured
 
 components:
   k3s:
@@ -364,11 +213,15 @@ storage:
 
 	assert.Equal(t, "test-cluster", config.Cluster.Name)
 	assert.Equal(t, "test.com", config.Cluster.Domain)
-	assert.Len(t, config.Cluster.Nodes, 2)
-	assert.Equal(t, "node1", config.Cluster.Nodes[0].Hostname)
-	assert.Equal(t, NodeRoleControlPlane, config.Cluster.Nodes[0].Role)
-	assert.Equal(t, "node2", config.Cluster.Nodes[1].Hostname)
-	assert.Equal(t, NodeRoleWorker, config.Cluster.Nodes[1].Role)
+	assert.Equal(t, "192.168.1.100", config.Cluster.VIP)
+
+	// Verify hosts
+	assert.Len(t, config.Hosts, 2)
+	assert.Equal(t, "node1", config.Hosts[0].Hostname)
+	assert.Equal(t, "192.168.1.20", config.Hosts[0].Address)
+	assert.Contains(t, config.Hosts[0].Roles, host.RoleClusterControlPlane)
+	assert.Equal(t, "node2", config.Hosts[1].Hostname)
+	assert.Contains(t, config.Hosts[1].Roles, host.RoleClusterWorker)
 
 	assert.Len(t, config.Components, 2)
 	assert.Contains(t, config.Components, "k3s")

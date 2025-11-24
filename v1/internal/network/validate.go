@@ -9,10 +9,12 @@ import (
 )
 
 // ValidateIPs validates IP addresses in the network configuration
-func ValidateIPs(cfg *config.NetworkConfig) error {
-	if cfg == nil {
+func ValidateIPs(fullCfg *config.Config) error {
+	if fullCfg == nil || fullCfg.Network == nil {
 		return fmt.Errorf("network config is nil")
 	}
+
+	cfg := fullCfg.Network
 
 	// Gateway and netmask are already validated by config.Validate()
 	// But we can do additional checks here
@@ -23,12 +25,16 @@ func ValidateIPs(cfg *config.NetworkConfig) error {
 		return fmt.Errorf("failed to calculate network CIDR: %w", err)
 	}
 
-	// Validate all infrastructure IPs are on the same network
-	allIPs := []string{cfg.K8sVIP}
-	allIPs = append(allIPs, cfg.OpenBAOHosts...)
-	allIPs = append(allIPs, cfg.DNSHosts...)
-	allIPs = append(allIPs, cfg.ZotHosts...)
-	allIPs = append(allIPs, cfg.TrueNASHosts...)
+	// Validate all infrastructure IPs are on the same network (from hosts and VIP)
+	var allIPs []string
+	if fullCfg.Cluster.VIP != "" {
+		allIPs = append(allIPs, fullCfg.Cluster.VIP)
+	}
+	for _, h := range fullCfg.Hosts {
+		if h.Address != "" {
+			allIPs = append(allIPs, h.Address)
+		}
+	}
 
 	for _, ipStr := range allIPs {
 		ip := net.ParseIP(ipStr)
@@ -72,10 +78,12 @@ func CheckReachability(conn SSHExecutor, ips []string) error {
 }
 
 // CheckDHCPConflicts checks if any infrastructure IPs fall within the DHCP range
-func CheckDHCPConflicts(cfg *config.NetworkConfig) error {
-	if cfg == nil {
+func CheckDHCPConflicts(fullCfg *config.Config) error {
+	if fullCfg == nil || fullCfg.Network == nil {
 		return fmt.Errorf("network config is nil")
 	}
+
+	cfg := fullCfg.Network
 
 	// If no DHCP range is configured, no conflicts possible
 	if cfg.DHCPRange == nil {
@@ -89,12 +97,16 @@ func CheckDHCPConflicts(cfg *config.NetworkConfig) error {
 		return fmt.Errorf("invalid DHCP range")
 	}
 
-	// Collect all infrastructure IPs
-	allIPs := []string{cfg.K8sVIP}
-	allIPs = append(allIPs, cfg.OpenBAOHosts...)
-	allIPs = append(allIPs, cfg.DNSHosts...)
-	allIPs = append(allIPs, cfg.ZotHosts...)
-	allIPs = append(allIPs, cfg.TrueNASHosts...)
+	// Collect all infrastructure IPs (from hosts and VIP)
+	var allIPs []string
+	if fullCfg.Cluster.VIP != "" {
+		allIPs = append(allIPs, fullCfg.Cluster.VIP)
+	}
+	for _, h := range fullCfg.Hosts {
+		if h.Address != "" {
+			allIPs = append(allIPs, h.Address)
+		}
+	}
 
 	conflicts := []string{}
 	for _, ipStr := range allIPs {

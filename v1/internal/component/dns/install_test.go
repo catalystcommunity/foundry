@@ -158,7 +158,7 @@ func TestBuildAuthExecStart(t *testing.T) {
 
 	assert.Contains(t, result, "docker run")
 	assert.Contains(t, result, "--name powerdns-auth")
-	assert.Contains(t, result, "-p 8081:8081")
+	assert.Contains(t, result, "--network=host")
 	assert.Contains(t, result, "-v /etc/powerdns/auth:/etc/powerdns")
 	assert.Contains(t, result, "-v /var/lib/powerdns:/var/lib/powerdns")
 	assert.Contains(t, result, "docker.io/powerdns/pdns-auth:49")
@@ -174,9 +174,8 @@ func TestBuildRecursorExecStart(t *testing.T) {
 
 	assert.Contains(t, result, "docker run")
 	assert.Contains(t, result, "--name powerdns-recursor")
-	assert.Contains(t, result, "-p 53:53/udp")
-	assert.Contains(t, result, "-p 53:53/tcp")
-	assert.Contains(t, result, "-p 8082:8082")
+	assert.Contains(t, result, "--user root")
+	assert.Contains(t, result, "--network=host")
 	assert.Contains(t, result, "-v /etc/powerdns/recursor:/etc/powerdns-recursor")
 	assert.Contains(t, result, "docker.io/powerdns/pdns-recursor:49")
 	assert.Contains(t, result, "--config-dir=/etc/powerdns-recursor")

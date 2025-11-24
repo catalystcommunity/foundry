@@ -4,19 +4,19 @@
 ; Full CDDL version in core.csil
 
 options {
-    go_package: "github.com/catalystcommunity/foundry/v1/internal/config"
+    go_package: "github.com/catalystcommunity/foundry/v1/internal/config",
+    go_imports: [
+        "github.com/catalystcommunity/foundry/v1/internal/setup",
+        "github.com/catalystcommunity/foundry/v1/internal/host"
+    ]
 }
 
-; Network settings for infrastructure hosts and Kubernetes VIP
+; Network settings for infrastructure
+; Note: Host assignments moved to hosts:[] with role-based discovery
 NetworkConfig = {
     gateway: text,
     netmask: text,
-    ? dhcp_range: DHCPRange @go_name("DHCPRange"),
-    openbao_hosts: [* text] .size (1..) @go_name("OpenBAOHosts"),
-    dns_hosts: [* text] .size (1..) @go_name("DNSHosts"),
-    zot_hosts: [* text] .size (1..) @go_name("ZotHosts"),
-    ? truenas_hosts: [* text] @go_name("TrueNASHosts"),
-    k8s_vip: text @go_name("K8sVIP")
+    ? dhcp_range: DHCPRange @go_name("DHCPRange")
 }
 
 ; DHCP range specification for network planning
@@ -41,20 +41,9 @@ DNSZone = {
     ? public_cname: text @go_name("PublicCNAME")
 }
 
-; Cluster configuration for K3s
-ClusterConfig = {
-    name: text,
-    domain: text,
-    ? k8s_vip: text @go_name("K8sVIP"),
-    nodes: [* NodeConfig] .size(1..)
-}
-
-; Individual node configuration
-; Role must be "control-plane" or "worker"
-NodeConfig = {
-    hostname: text,
-    role: text
-}
+; Forward declarations for types defined elsewhere
+ClusterConfig = any  ; Defined in cluster.csil
+Host = any           ; Defined in internal/host/types.go (Go type)
 
 ; Map of component names to their configurations
 ComponentMap = {* text => ComponentConfig}
@@ -102,7 +91,8 @@ TrueNASConfig = {
 
 ; Main stack configuration loaded from YAML
 ; Note: SetupState uses @go_type to reference the setup package type
-; Import will need to be added manually after generation
+; Note: Host uses @go_type to reference the host package type
+; Imports will need to be added manually after generation
 Config = {
     ? network: NetworkConfig,
     ? dns: DNSConfig @go_name("DNS"),
@@ -110,5 +100,6 @@ Config = {
     components: ComponentMap,
     ? observability: ObsConfig,
     ? storage: StorageConfig,
+    hosts: [* Host] .size(1..) @go_type("[]*host.Host") @go_name("Hosts"),
     setup_state: SetupState @go_type("*setup.SetupState") @go_name("SetupState")
 }

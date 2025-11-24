@@ -11,12 +11,12 @@ const (
 	// TokenLength is the number of random bytes to generate for tokens (32 bytes = 256 bits)
 	TokenLength = 32
 
-	// OpenBAO paths for storing K3s tokens in foundry-core instance
-	ClusterTokenPath = "foundry-core/k3s/cluster-token"
-	AgentTokenPath   = "foundry-core/k3s/agent-token"
+	// OpenBAO paths for storing K3s tokens (relative to mount point)
+	ClusterTokenPath = "k3s/cluster-token"
+	AgentTokenPath   = "k3s/agent-token"
 
 	// Mount point for KV v2 secrets engine
-	SecretMount = "secret"
+	SecretMount = "foundry-core"
 )
 
 // SecretClient defines the interface for storing and retrieving secrets
@@ -151,7 +151,17 @@ func LoadTokens(ctx context.Context, client SecretClient) (*Tokens, error) {
 }
 
 // GenerateAndStoreTokens is a convenience function that generates tokens and stores them in OpenBAO
+// This function is idempotent - if tokens already exist in OpenBAO, it returns those instead of generating new ones
 func GenerateAndStoreTokens(ctx context.Context, client SecretClient) (*Tokens, error) {
+	// First, try to load existing tokens (idempotency check)
+	existingTokens, err := LoadTokens(ctx, client)
+	if err == nil && existingTokens != nil {
+		// Tokens already exist, return them
+		fmt.Println("   K3s tokens already exist in OpenBAO, reusing them")
+		return existingTokens, nil
+	}
+
+	// Tokens don't exist, generate new ones
 	tokens, err := GenerateTokens()
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate tokens: %w", err)

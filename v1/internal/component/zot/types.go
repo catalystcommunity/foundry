@@ -1,14 +1,13 @@
 package zot
 
+
 import (
 	"context"
 	"fmt"
 
 	"github.com/catalystcommunity/foundry/v1/internal/component"
 	"github.com/catalystcommunity/foundry/v1/internal/container"
-	"github.com/catalystcommunity/foundry/v1/internal/systemd"
 )
-
 // Component implements the component.Component interface for Zot registry
 type Component struct {
 	conn container.SSHExecutor
@@ -28,6 +27,15 @@ func (c *Component) Name() string {
 
 // Install installs the Zot registry as a containerized systemd service
 func (c *Component) Install(ctx context.Context, cfg component.ComponentConfig) error {
+	// Extract SSH connection from config
+	conn, ok := cfg["host"].(container.SSHExecutor)
+	if !ok {
+		return fmt.Errorf("SSH connection not provided in config\n\nThis is a bug - the install command should provide a connection")
+	}
+
+	// Store connection for use by other methods (Status, Uninstall, etc.)
+	c.conn = conn
+
 	config, err := ParseConfig(cfg)
 	if err != nil {
 		return fmt.Errorf("parse config: %w", err)
@@ -36,9 +44,9 @@ func (c *Component) Install(ctx context.Context, cfg component.ComponentConfig) 
 	// Create container runtime (default to docker, but can be configured)
 	var runtime container.Runtime
 	if config.ContainerRuntime == "podman" {
-		runtime = container.NewPodmanRuntime(c.conn)
+		runtime = container.NewPodmanRuntime(conn)
 	} else {
-		runtime = container.NewDockerRuntime(c.conn)
+		runtime = container.NewDockerRuntime(conn)
 	}
 
 	// Verify runtime is available
@@ -46,7 +54,7 @@ func (c *Component) Install(ctx context.Context, cfg component.ComponentConfig) 
 		return fmt.Errorf("%s runtime is not available on the host", runtime.Name())
 	}
 
-	return Install(c.conn, runtime, config)
+	return Install(conn, runtime, config)
 }
 
 // Upgrade upgrades the Zot registry to a new version
@@ -56,35 +64,13 @@ func (c *Component) Upgrade(ctx context.Context, cfg component.ComponentConfig) 
 
 // Status returns the current status of the Zot registry
 func (c *Component) Status(ctx context.Context) (*component.ComponentStatus, error) {
-	// Check if systemd service exists and is running
-	status, err := systemd.GetServiceStatus(c.conn, "foundry-zot")
-	if err != nil {
-		return &component.ComponentStatus{
-			Installed: false,
-			Healthy:   false,
-			Message:   fmt.Sprintf("failed to get service status: %v", err),
-		}, nil
-	}
-
-	if !status.Loaded {
-		return &component.ComponentStatus{
-			Installed: false,
-			Healthy:   false,
-			Message:   "service not installed",
-		}, nil
-	}
-
-	healthy := status.Active && status.Running
-	message := "running"
-	if !healthy {
-		message = fmt.Sprintf("service state: %s, sub-state: %s", status.ActiveState, status.SubState)
-	}
-
+	// Status checking is implemented in cmd/foundry/commands/component/status.go
+	// to avoid import cycles with config/ssh/secrets packages
 	return &component.ComponentStatus{
-		Installed: true,
-		Version:   "", // Could parse from container image tag
-		Healthy:   healthy,
-		Message:   message,
+		Installed: false,
+		Version:   "",
+		Healthy:   false,
+		Message:   "use 'foundry component status zot' command",
 	}, nil
 }
 

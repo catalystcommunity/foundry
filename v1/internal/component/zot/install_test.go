@@ -21,11 +21,15 @@ type mockExecutor struct {
 }
 
 func newMockExecutor() *mockExecutor {
-	return &mockExecutor{
+	m := &mockExecutor{
 		commands: []string{},
 		outputs:  make(map[string]string),
 		errors:   make(map[string]error),
 	}
+	// Default response for runtime path detection
+	m.outputs["which docker"] = "/usr/bin/docker"
+	m.outputs["which podman"] = "/usr/bin/podman"
+	return m
 }
 
 func (m *mockExecutor) Execute(cmd string) (string, error) {
@@ -370,6 +374,7 @@ func TestComponent_Install_Success(t *testing.T) {
 	comp := NewComponent(executor)
 
 	cfg := component.ComponentConfig{
+		"host":               executor,
 		"version":            "v2.0.0",
 		"port":               5050,
 		"pull_through_cache": true,
@@ -383,12 +388,13 @@ func TestComponent_Install_InvalidConfig(t *testing.T) {
 	executor := newMockExecutor()
 	comp := NewComponent(executor)
 
-	// Config parsing shouldn't fail, but let's test with nil config
+	// Test with missing host connection
 	cfg := component.ComponentConfig{}
 
 	err := comp.Install(context.Background(), cfg)
-	// Should succeed with defaults
-	require.NoError(t, err)
+	// Should fail without host connection
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "SSH connection not provided")
 }
 
 func TestComponent_Status_NotInstalled(t *testing.T) {
@@ -399,9 +405,10 @@ func TestComponent_Status_NotInstalled(t *testing.T) {
 	status, err := comp.Status(context.Background())
 	require.NoError(t, err)
 
+	// Status() now returns a stub that directs users to the command
 	assert.False(t, status.Installed)
 	assert.False(t, status.Healthy)
-	assert.Contains(t, status.Message, "service not installed")
+	assert.Contains(t, status.Message, "use 'foundry component status zot' command")
 }
 
 func TestComponent_Status_Running(t *testing.T) {
@@ -411,9 +418,10 @@ func TestComponent_Status_Running(t *testing.T) {
 	status, err := comp.Status(context.Background())
 	require.NoError(t, err)
 
-	assert.True(t, status.Installed)
-	assert.True(t, status.Healthy)
-	assert.Equal(t, "running", status.Message)
+	// Status() now returns a stub that directs users to the command
+	assert.False(t, status.Installed)
+	assert.False(t, status.Healthy)
+	assert.Contains(t, status.Message, "use 'foundry component status zot' command")
 }
 
 func TestComponent_Status_NotRunning(t *testing.T) {
@@ -424,9 +432,10 @@ func TestComponent_Status_NotRunning(t *testing.T) {
 	status, err := comp.Status(context.Background())
 	require.NoError(t, err)
 
-	assert.True(t, status.Installed)
+	// Status() now returns a stub that directs users to the command
+	assert.False(t, status.Installed)
 	assert.False(t, status.Healthy)
-	assert.Contains(t, status.Message, "inactive")
+	assert.Contains(t, status.Message, "use 'foundry component status zot' command")
 }
 
 func TestComponent_Status_Error(t *testing.T) {
@@ -437,9 +446,10 @@ func TestComponent_Status_Error(t *testing.T) {
 	status, err := comp.Status(context.Background())
 	require.NoError(t, err) // Status returns status object, not error
 
+	// Status() now returns a stub that directs users to the command
 	assert.False(t, status.Installed)
 	assert.False(t, status.Healthy)
-	assert.Contains(t, status.Message, "failed to get service status")
+	assert.Contains(t, status.Message, "use 'foundry component status zot' command")
 }
 
 func TestComponent_Upgrade_NotImplemented(t *testing.T) {

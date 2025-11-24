@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/catalystcommunity/foundry/v1/internal/config"
+	"github.com/catalystcommunity/foundry/v1/internal/host"
 	"github.com/catalystcommunity/foundry/v1/internal/ssh"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -14,7 +15,7 @@ import (
 func TestValidateIPs(t *testing.T) {
 	tests := []struct {
 		name    string
-		cfg     *config.NetworkConfig
+		cfg     *config.Config
 		wantErr bool
 		errMsg  string
 	}{
@@ -26,65 +27,143 @@ func TestValidateIPs(t *testing.T) {
 		},
 		{
 			name: "all IPs on same network",
-			cfg: &config.NetworkConfig{
-				Gateway:      "192.168.1.1",
-				Netmask:      "255.255.255.0",
-				OpenBAOHosts: []string{"192.168.1.10"},
-				DNSHosts:     []string{"192.168.1.10"},
-				ZotHosts:     []string{"192.168.1.10"},
-				K8sVIP:       "192.168.1.100",
+			cfg: &config.Config{
+				Network: &config.NetworkConfig{
+					Gateway: "192.168.1.1",
+					Netmask: "255.255.255.0",
+				},
+				Hosts: []*host.Host{
+					{
+						Hostname: "host1",
+						Address:  "192.168.1.10",
+						Roles:    []string{host.RoleOpenBAO, host.RoleDNS, host.RoleZot},
+					},
+				},
+				Cluster: config.ClusterConfig{
+					Name:   "test",
+					Domain: "example.com",
+					VIP:    "192.168.1.100",
+				},
+				Components: config.ComponentMap{
+					"k3s": config.ComponentConfig{},
+				},
 			},
 			wantErr: false,
 		},
 		{
-			name: "IP outside network range",
-			cfg: &config.NetworkConfig{
-				Gateway:      "192.168.1.1",
-				Netmask:      "255.255.255.0",
-				OpenBAOHosts: []string{"192.168.2.10"}, // Different subnet
-				DNSHosts:     []string{"192.168.1.10"},
-				ZotHosts:     []string{"192.168.1.10"},
-				K8sVIP:       "192.168.1.100",
+			name: "host IP outside network range",
+			cfg: &config.Config{
+				Network: &config.NetworkConfig{
+					Gateway: "192.168.1.1",
+					Netmask: "255.255.255.0",
+				},
+				Hosts: []*host.Host{
+					{
+						Hostname: "host1",
+						Address:  "192.168.2.10", // Different subnet
+						Roles:    []string{host.RoleOpenBAO},
+					},
+				},
+				Cluster: config.ClusterConfig{
+					Name:   "test",
+					Domain: "example.com",
+					VIP:    "192.168.1.100",
+				},
+				Components: config.ComponentMap{
+					"k3s": config.ComponentConfig{},
+				},
 			},
 			wantErr: true,
 			errMsg:  "is not in network",
 		},
 		{
 			name: "VIP outside network range",
-			cfg: &config.NetworkConfig{
-				Gateway:      "192.168.1.1",
-				Netmask:      "255.255.255.0",
-				OpenBAOHosts: []string{"192.168.1.10"},
-				DNSHosts:     []string{"192.168.1.10"},
-				ZotHosts:     []string{"192.168.1.10"},
-				K8sVIP:       "10.0.0.100", // Completely different network
+			cfg: &config.Config{
+				Network: &config.NetworkConfig{
+					Gateway: "192.168.1.1",
+					Netmask: "255.255.255.0",
+				},
+				Hosts: []*host.Host{
+					{
+						Hostname: "host1",
+						Address:  "192.168.1.10",
+						Roles:    []string{host.RoleOpenBAO},
+					},
+				},
+				Cluster: config.ClusterConfig{
+					Name:   "test",
+					Domain: "example.com",
+					VIP:    "10.0.0.100", // Completely different network
+				},
+				Components: config.ComponentMap{
+					"k3s": config.ComponentConfig{},
+				},
 			},
 			wantErr: true,
 			errMsg:  "is not in network",
 		},
 		{
-			name: "with TrueNAS hosts on same network",
-			cfg: &config.NetworkConfig{
-				Gateway:      "192.168.1.1",
-				Netmask:      "255.255.255.0",
-				OpenBAOHosts: []string{"192.168.1.10"},
-				DNSHosts:     []string{"192.168.1.10"},
-				ZotHosts:     []string{"192.168.1.10"},
-				TrueNASHosts: []string{"192.168.1.15"},
-				K8sVIP:       "192.168.1.100",
+			name: "multiple hosts all on same network",
+			cfg: &config.Config{
+				Network: &config.NetworkConfig{
+					Gateway: "192.168.1.1",
+					Netmask: "255.255.255.0",
+				},
+				Hosts: []*host.Host{
+					{
+						Hostname: "host1",
+						Address:  "192.168.1.10",
+						Roles:    []string{host.RoleOpenBAO},
+					},
+					{
+						Hostname: "host2",
+						Address:  "192.168.1.11",
+						Roles:    []string{host.RoleDNS},
+					},
+					{
+						Hostname: "host3",
+						Address:  "192.168.1.12",
+						Roles:    []string{host.RoleZot},
+					},
+				},
+				Cluster: config.ClusterConfig{
+					Name:   "test",
+					Domain: "example.com",
+					VIP:    "192.168.1.100",
+				},
+				Components: config.ComponentMap{
+					"k3s": config.ComponentConfig{},
+				},
 			},
 			wantErr: false,
 		},
 		{
-			name: "TrueNAS host outside network",
-			cfg: &config.NetworkConfig{
-				Gateway:      "192.168.1.1",
-				Netmask:      "255.255.255.0",
-				OpenBAOHosts: []string{"192.168.1.10"},
-				DNSHosts:     []string{"192.168.1.10"},
-				ZotHosts:     []string{"192.168.1.10"},
-				TrueNASHosts: []string{"192.168.2.15"},
-				K8sVIP:       "192.168.1.100",
+			name: "one of multiple hosts outside network",
+			cfg: &config.Config{
+				Network: &config.NetworkConfig{
+					Gateway: "192.168.1.1",
+					Netmask: "255.255.255.0",
+				},
+				Hosts: []*host.Host{
+					{
+						Hostname: "host1",
+						Address:  "192.168.1.10",
+						Roles:    []string{host.RoleOpenBAO},
+					},
+					{
+						Hostname: "host2",
+						Address:  "192.168.2.15", // Different subnet
+						Roles:    []string{host.RoleDNS},
+					},
+				},
+				Cluster: config.ClusterConfig{
+					Name:   "test",
+					Domain: "example.com",
+					VIP:    "192.168.1.100",
+				},
+				Components: config.ComponentMap{
+					"k3s": config.ComponentConfig{},
+				},
 			},
 			wantErr: true,
 			errMsg:  "is not in network",
@@ -170,7 +249,7 @@ func TestCheckReachability(t *testing.T) {
 func TestCheckDHCPConflicts(t *testing.T) {
 	tests := []struct {
 		name    string
-		cfg     *config.NetworkConfig
+		cfg     *config.Config
 		wantErr bool
 		errMsg  string
 	}{
@@ -182,62 +261,124 @@ func TestCheckDHCPConflicts(t *testing.T) {
 		},
 		{
 			name: "no DHCP range configured",
-			cfg: &config.NetworkConfig{
-				Gateway:      "192.168.1.1",
-				Netmask:      "255.255.255.0",
-				OpenBAOHosts: []string{"192.168.1.10"},
-				DNSHosts:     []string{"192.168.1.10"},
-				ZotHosts:     []string{"192.168.1.10"},
-				K8sVIP:       "192.168.1.100",
-				DHCPRange:    nil,
-			},
-			wantErr: false,
-		},
-		{
-			name: "no conflicts - IPs outside DHCP range",
-			cfg: &config.NetworkConfig{
-				Gateway:      "192.168.1.1",
-				Netmask:      "255.255.255.0",
-				OpenBAOHosts: []string{"192.168.1.10"},
-				DNSHosts:     []string{"192.168.1.11"},
-				ZotHosts:     []string{"192.168.1.12"},
-				K8sVIP:       "192.168.1.100",
-				DHCPRange: &config.DHCPRange{
-					Start: "192.168.1.50",
-					End:   "192.168.1.99",
+			cfg: &config.Config{
+				Network: &config.NetworkConfig{
+					Gateway:   "192.168.1.1",
+					Netmask:   "255.255.255.0",
+					DHCPRange: nil,
+				},
+				Hosts: []*host.Host{
+					{
+						Hostname: "host1",
+						Address:  "192.168.1.10",
+						Roles:    []string{host.RoleOpenBAO},
+					},
+				},
+				Cluster: config.ClusterConfig{
+					Name:   "test",
+					Domain: "example.com",
+					VIP:    "192.168.1.100",
+				},
+				Components: config.ComponentMap{
+					"k3s": config.ComponentConfig{},
 				},
 			},
 			wantErr: false,
 		},
 		{
-			name: "K8s VIP conflicts with DHCP range",
-			cfg: &config.NetworkConfig{
-				Gateway:      "192.168.1.1",
-				Netmask:      "255.255.255.0",
-				OpenBAOHosts: []string{"192.168.1.10"},
-				DNSHosts:     []string{"192.168.1.11"},
-				ZotHosts:     []string{"192.168.1.12"},
-				K8sVIP:       "192.168.1.75", // Inside DHCP range
-				DHCPRange: &config.DHCPRange{
-					Start: "192.168.1.50",
-					End:   "192.168.1.99",
+			name: "no conflicts - IPs outside DHCP range",
+			cfg: &config.Config{
+				Network: &config.NetworkConfig{
+					Gateway: "192.168.1.1",
+					Netmask: "255.255.255.0",
+					DHCPRange: &config.DHCPRange{
+						Start: "192.168.1.50",
+						End:   "192.168.1.99",
+					},
+				},
+				Hosts: []*host.Host{
+					{
+						Hostname: "host1",
+						Address:  "192.168.1.10",
+						Roles:    []string{host.RoleOpenBAO},
+					},
+					{
+						Hostname: "host2",
+						Address:  "192.168.1.11",
+						Roles:    []string{host.RoleDNS},
+					},
+					{
+						Hostname: "host3",
+						Address:  "192.168.1.12",
+						Roles:    []string{host.RoleZot},
+					},
+				},
+				Cluster: config.ClusterConfig{
+					Name:   "test",
+					Domain: "example.com",
+					VIP:    "192.168.1.100",
+				},
+				Components: config.ComponentMap{
+					"k3s": config.ComponentConfig{},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "VIP conflicts with DHCP range",
+			cfg: &config.Config{
+				Network: &config.NetworkConfig{
+					Gateway: "192.168.1.1",
+					Netmask: "255.255.255.0",
+					DHCPRange: &config.DHCPRange{
+						Start: "192.168.1.50",
+						End:   "192.168.1.99",
+					},
+				},
+				Hosts: []*host.Host{
+					{
+						Hostname: "host1",
+						Address:  "192.168.1.10",
+						Roles:    []string{host.RoleOpenBAO},
+					},
+				},
+				Cluster: config.ClusterConfig{
+					Name:   "test",
+					Domain: "example.com",
+					VIP:    "192.168.1.75", // Inside DHCP range
+				},
+				Components: config.ComponentMap{
+					"k3s": config.ComponentConfig{},
 				},
 			},
 			wantErr: true,
 			errMsg:  "infrastructure IPs within DHCP range",
 		},
 		{
-			name: "OpenBAO host conflicts with DHCP range",
-			cfg: &config.NetworkConfig{
-				Gateway:      "192.168.1.1",
-				Netmask:      "255.255.255.0",
-				OpenBAOHosts: []string{"192.168.1.50"}, // Inside DHCP range
-				DNSHosts:     []string{"192.168.1.11"},
-				ZotHosts:     []string{"192.168.1.12"},
-				K8sVIP:       "192.168.1.100",
-				DHCPRange: &config.DHCPRange{
-					Start: "192.168.1.50",
-					End:   "192.168.1.99",
+			name: "host conflicts with DHCP range",
+			cfg: &config.Config{
+				Network: &config.NetworkConfig{
+					Gateway: "192.168.1.1",
+					Netmask: "255.255.255.0",
+					DHCPRange: &config.DHCPRange{
+						Start: "192.168.1.50",
+						End:   "192.168.1.99",
+					},
+				},
+				Hosts: []*host.Host{
+					{
+						Hostname: "host1",
+						Address:  "192.168.1.50", // Inside DHCP range
+						Roles:    []string{host.RoleOpenBAO},
+					},
+				},
+				Cluster: config.ClusterConfig{
+					Name:   "test",
+					Domain: "example.com",
+					VIP:    "192.168.1.100",
+				},
+				Components: config.ComponentMap{
+					"k3s": config.ComponentConfig{},
 				},
 			},
 			wantErr: true,
@@ -245,16 +386,39 @@ func TestCheckDHCPConflicts(t *testing.T) {
 		},
 		{
 			name: "multiple conflicts",
-			cfg: &config.NetworkConfig{
-				Gateway:      "192.168.1.1",
-				Netmask:      "255.255.255.0",
-				OpenBAOHosts: []string{"192.168.1.60"},
-				DNSHosts:     []string{"192.168.1.70"},
-				ZotHosts:     []string{"192.168.1.80"},
-				K8sVIP:       "192.168.1.100",
-				DHCPRange: &config.DHCPRange{
-					Start: "192.168.1.50",
-					End:   "192.168.1.99",
+			cfg: &config.Config{
+				Network: &config.NetworkConfig{
+					Gateway: "192.168.1.1",
+					Netmask: "255.255.255.0",
+					DHCPRange: &config.DHCPRange{
+						Start: "192.168.1.50",
+						End:   "192.168.1.99",
+					},
+				},
+				Hosts: []*host.Host{
+					{
+						Hostname: "host1",
+						Address:  "192.168.1.60",
+						Roles:    []string{host.RoleOpenBAO},
+					},
+					{
+						Hostname: "host2",
+						Address:  "192.168.1.70",
+						Roles:    []string{host.RoleDNS},
+					},
+					{
+						Hostname: "host3",
+						Address:  "192.168.1.80",
+						Roles:    []string{host.RoleZot},
+					},
+				},
+				Cluster: config.ClusterConfig{
+					Name:   "test",
+					Domain: "example.com",
+					VIP:    "192.168.1.100",
+				},
+				Components: config.ComponentMap{
+					"k3s": config.ComponentConfig{},
 				},
 			},
 			wantErr: true,
@@ -262,33 +426,59 @@ func TestCheckDHCPConflicts(t *testing.T) {
 		},
 		{
 			name: "boundary case - IP at start of DHCP range",
-			cfg: &config.NetworkConfig{
-				Gateway:      "192.168.1.1",
-				Netmask:      "255.255.255.0",
-				OpenBAOHosts: []string{"192.168.1.50"}, // Exactly at start
-				DNSHosts:     []string{"192.168.1.11"},
-				ZotHosts:     []string{"192.168.1.12"},
-				K8sVIP:       "192.168.1.100",
-				DHCPRange: &config.DHCPRange{
-					Start: "192.168.1.50",
-					End:   "192.168.1.99",
+			cfg: &config.Config{
+				Network: &config.NetworkConfig{
+					Gateway: "192.168.1.1",
+					Netmask: "255.255.255.0",
+					DHCPRange: &config.DHCPRange{
+						Start: "192.168.1.50",
+						End:   "192.168.1.99",
+					},
+				},
+				Hosts: []*host.Host{
+					{
+						Hostname: "host1",
+						Address:  "192.168.1.50", // Exactly at start
+						Roles:    []string{host.RoleOpenBAO},
+					},
+				},
+				Cluster: config.ClusterConfig{
+					Name:   "test",
+					Domain: "example.com",
+					VIP:    "192.168.1.100",
+				},
+				Components: config.ComponentMap{
+					"k3s": config.ComponentConfig{},
 				},
 			},
 			wantErr: true,
 			errMsg:  "192.168.1.50",
 		},
 		{
-			name: "boundary case - IP at end of DHCP range",
-			cfg: &config.NetworkConfig{
-				Gateway:      "192.168.1.1",
-				Netmask:      "255.255.255.0",
-				OpenBAOHosts: []string{"192.168.1.10"},
-				DNSHosts:     []string{"192.168.1.11"},
-				ZotHosts:     []string{"192.168.1.12"},
-				K8sVIP:       "192.168.1.99", // Exactly at end
-				DHCPRange: &config.DHCPRange{
-					Start: "192.168.1.50",
-					End:   "192.168.1.99",
+			name: "boundary case - VIP at end of DHCP range",
+			cfg: &config.Config{
+				Network: &config.NetworkConfig{
+					Gateway: "192.168.1.1",
+					Netmask: "255.255.255.0",
+					DHCPRange: &config.DHCPRange{
+						Start: "192.168.1.50",
+						End:   "192.168.1.99",
+					},
+				},
+				Hosts: []*host.Host{
+					{
+						Hostname: "host1",
+						Address:  "192.168.1.10",
+						Roles:    []string{host.RoleOpenBAO},
+					},
+				},
+				Cluster: config.ClusterConfig{
+					Name:   "test",
+					Domain: "example.com",
+					VIP:    "192.168.1.99", // Exactly at end
+				},
+				Components: config.ComponentMap{
+					"k3s": config.ComponentConfig{},
 				},
 			},
 			wantErr: true,
@@ -296,16 +486,29 @@ func TestCheckDHCPConflicts(t *testing.T) {
 		},
 		{
 			name: "boundary case - IP just before DHCP range",
-			cfg: &config.NetworkConfig{
-				Gateway:      "192.168.1.1",
-				Netmask:      "255.255.255.0",
-				OpenBAOHosts: []string{"192.168.1.49"}, // Just before start
-				DNSHosts:     []string{"192.168.1.11"},
-				ZotHosts:     []string{"192.168.1.12"},
-				K8sVIP:       "192.168.1.100",
-				DHCPRange: &config.DHCPRange{
-					Start: "192.168.1.50",
-					End:   "192.168.1.99",
+			cfg: &config.Config{
+				Network: &config.NetworkConfig{
+					Gateway: "192.168.1.1",
+					Netmask: "255.255.255.0",
+					DHCPRange: &config.DHCPRange{
+						Start: "192.168.1.50",
+						End:   "192.168.1.99",
+					},
+				},
+				Hosts: []*host.Host{
+					{
+						Hostname: "host1",
+						Address:  "192.168.1.49", // Just before start
+						Roles:    []string{host.RoleOpenBAO},
+					},
+				},
+				Cluster: config.ClusterConfig{
+					Name:   "test",
+					Domain: "example.com",
+					VIP:    "192.168.1.100",
+				},
+				Components: config.ComponentMap{
+					"k3s": config.ComponentConfig{},
 				},
 			},
 			wantErr: false,
@@ -429,12 +632,12 @@ func TestValidateDNSResolution(t *testing.T) {
 
 func TestGetNetworkCIDR(t *testing.T) {
 	tests := []struct {
-		name       string
-		gateway    string
-		netmask    string
-		wantCIDR   string
-		wantErr    bool
-		errMsg     string
+		name     string
+		gateway  string
+		netmask  string
+		wantCIDR string
+		wantErr  bool
+		errMsg   string
 	}{
 		{
 			name:     "valid /24 network",

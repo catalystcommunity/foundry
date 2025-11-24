@@ -171,6 +171,8 @@ spec:
           value: "3"
         - name: vip_retryperiod
           value: "1"
+        - name: KUBECONFIG
+          value: /etc/rancher/k3s/k3s.yaml
         securityContext:
           capabilities:
             add:
@@ -178,7 +180,7 @@ spec:
             - NET_RAW
         volumeMounts:
         - name: kubeconfig
-          mountPath: /etc/kubernetes/admin.conf
+          mountPath: /etc/rancher/k3s/k3s.yaml
           readOnly: true
       hostNetwork: true
       nodeSelector:
@@ -194,7 +196,7 @@ spec:
       volumes:
       - name: kubeconfig
         hostPath:
-          path: /etc/kubernetes/admin.conf
+          path: /etc/rancher/k3s/k3s.yaml
           type: FileOrCreate
 `, cfg.Interface, cfg.VIP)
 

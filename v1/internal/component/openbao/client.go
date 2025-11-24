@@ -199,8 +199,12 @@ type KVv2Response struct {
 // For KV v2, the API path is: /v1/<mount>/data/<path>
 func (c *Client) ReadSecretV2(ctx context.Context, mount, path string) (map[string]interface{}, error) {
 	apiPath := fmt.Sprintf("/v1/%s/data/%s", mount, path)
+	tokenPreview := c.token
+	if len(tokenPreview) > 10 {
+		tokenPreview = tokenPreview[:10] + "..."
+	}
 	fmt.Printf("DEBUG OpenBAO: Reading secret - mount=%s, path=%s, full_api_path=%s, token=%s\n",
-		mount, path, apiPath, c.token[:10]+"...")
+		mount, path, apiPath, tokenPreview)
 
 	resp, err := c.doRequest(ctx, "GET", apiPath, nil)
 	if err != nil {
