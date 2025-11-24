@@ -32,12 +32,7 @@ func TestLoad(t *testing.T) {
 			wantErr: true,
 			errMsg:  "config file not found",
 		},
-		{
-			name:    "invalid config - invalid role",
-			path:    filepath.Join(fixturesDir, "invalid-config-invalid-role.yaml"),
-			wantErr: true,
-			errMsg:  "config validation failed",
-		},
+		// NOTE: "invalid role" test removed - NodeConfig validation no longer exists
 		{
 			name:    "invalid config - no components",
 			path:    filepath.Join(fixturesDir, "invalid-config-no-components.yaml"),
@@ -76,9 +71,6 @@ version: "1.0"
 cluster:
   name: test
   domain: example.com
-  nodes:
-    - hostname: node1
-      role: control-plane
 
 components:
   k3s:
@@ -97,23 +89,7 @@ cluster:
 			wantErr: true,
 			errMsg:  "failed to parse YAML",
 		},
-		{
-			name: "valid yaml but invalid config",
-			yaml: `
-version: "1.0"
-cluster:
-  name: test
-  domain: example.com
-  nodes:
-    - hostname: node1
-      role: invalid-role
-
-components:
-  k3s: {}
-`,
-			wantErr: true,
-			errMsg:  "config validation failed",
-		},
+		// NOTE: "invalid role" test removed - NodeConfig validation no longer exists
 		{
 			name:    "empty yaml",
 			yaml:    "",
@@ -150,9 +126,10 @@ func TestLoad_ValidConfigFile(t *testing.T) {
 	// Verify some key fields
 	assert.Equal(t, "production", config.Cluster.Name)
 	assert.Equal(t, "example.com", config.Cluster.Domain)
-	assert.Len(t, config.Cluster.Nodes, 2)
-	assert.Equal(t, "node1.example.com", config.Cluster.Nodes[0].Hostname)
-	assert.Equal(t, NodeRoleControlPlane, config.Cluster.Nodes[0].Role)
+
+	// Verify hosts (nodes are now in hosts array with cluster-* roles)
+	clusterHosts := config.GetClusterControlPlaneHosts()
+	assert.GreaterOrEqual(t, len(clusterHosts), 1, "should have at least one control plane host")
 
 	// Verify components
 	assert.Contains(t, config.Components, "openbao")

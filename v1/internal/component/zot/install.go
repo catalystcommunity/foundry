@@ -3,6 +3,7 @@ package zot
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/catalystcommunity/foundry/v1/internal/container"
 	"github.com/catalystcommunity/foundry/v1/internal/systemd"
@@ -97,6 +98,12 @@ func writeConfigFile(conn container.SSHExecutor, cfg *Config) error {
 
 // createSystemdService creates the systemd service unit for Zot
 func createSystemdService(conn container.SSHExecutor, runtime container.Runtime, cfg *Config) error {
+	// Detect the actual runtime path
+	runtimePath, err := detectRuntimePath(conn, runtime.Name())
+	if err != nil {
+		return fmt.Errorf("detect runtime path: %w", err)
+	}
+
 	// Determine data directory (use storage backend if configured)
 	dataDir := cfg.DataDir
 	if cfg.StorageBackend != nil && cfg.StorageBackend.MountPath != "" {
@@ -107,8 +114,8 @@ func createSystemdService(conn container.SSHExecutor, runtime container.Runtime,
 	imageName := fmt.Sprintf("ghcr.io/project-zot/zot:%s", cfg.Version)
 	configPath := filepath.Join(cfg.ConfigDir, "config.json")
 
-	execStart := buildExecStart(runtime.Name(), imageName, int(cfg.Port), dataDir, configPath)
-	execStop := fmt.Sprintf("/usr/bin/%s stop -t 10 foundry-zot", runtime.Name())
+	execStart := buildExecStart(runtimePath, imageName, int(cfg.Port), dataDir, configPath)
+	execStop := fmt.Sprintf("%s stop -t 10 foundry-zot", runtimePath)
 
 	// Create systemd unit file using helper
 	unit := systemd.ContainerUnitFile(
@@ -117,6 +124,8 @@ func createSystemdService(conn container.SSHExecutor, runtime container.Runtime,
 		execStart,
 	)
 	unit.ExecStop = execStop
+	// Clean up any existing container before starting
+	unit.ExecStartPre = fmt.Sprintf("-%s rm -f foundry-zot", runtimePath)
 
 	// Create the service
 	if err := systemd.CreateService(conn, "foundry-zot", unit); err != nil {
@@ -126,8 +135,18 @@ func createSystemdService(conn container.SSHExecutor, runtime container.Runtime,
 	return nil
 }
 
+// detectRuntimePath finds the actual path to the container runtime executable
+func detectRuntimePath(conn container.SSHExecutor, runtimeType string) (string, error) {
+	cmd := fmt.Sprintf("which %s", runtimeType)
+	output, err := conn.Execute(cmd)
+	if err != nil {
+		return "", fmt.Errorf("failed to find %s: %w", runtimeType, err)
+	}
+	return strings.TrimSpace(output), nil
+}
+
 // buildExecStart builds the ExecStart command for the systemd service
-func buildExecStart(runtimeName, image string, port int, dataDir, configPath string) string {
-	return fmt.Sprintf("/usr/bin/%s run --rm --name foundry-zot -p %d:%d -v %s:/var/lib/zot -v %s:/etc/zot/config.json %s",
-		runtimeName, port, port, dataDir, configPath, image)
+func buildExecStart(runtimePath, image string, port int, dataDir, configPath string) string {
+	return fmt.Sprintf("%s run --rm --name foundry-zot -p %d:%d -v %s:/var/lib/zot -v %s:/etc/zot/config.json %s",
+		runtimePath, port, port, dataDir, configPath, image)
 }

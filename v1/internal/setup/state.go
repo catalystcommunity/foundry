@@ -44,8 +44,8 @@ func LoadState(configPath string) (*SetupState, error) {
 		return nil, fmt.Errorf("failed to parse config file: %w", err)
 	}
 
-	// Extract _setup_state section if it exists
-	stateData, exists := config["_setup_state"]
+	// Extract setup_state section if it exists
+	stateData, exists := config["setup_state"]
 	if !exists {
 		// Return empty state if not present
 		return &SetupState{}, nil
@@ -78,8 +78,8 @@ func SaveState(configPath string, state *SetupState) error {
 		return fmt.Errorf("failed to parse config file: %w", err)
 	}
 
-	// Update _setup_state section
-	config["_setup_state"] = state
+	// Update setup_state section
+	config["setup_state"] = state
 
 	// Write back to file
 	output, err := yaml.Marshal(config)

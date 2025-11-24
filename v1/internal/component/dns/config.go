@@ -64,10 +64,20 @@ incoming:
   listen:
     - 0.0.0.0:53
 
+# DNSSEC settings
+dnssec:
+  # Negative trust anchors disable DNSSEC validation for specific zones
+  # Our local zones are unsigned, so we disable validation for them
+{{- if .LocalZonesList}}
+  negative_trustanchors:
+{{range $index, $zone := .LocalZonesList}}    - name: {{$zone}}
+      reason: "Local unsigned zone managed by PowerDNS Auth"
+{{end}}
+{{- end}}
+
 # Recursor settings
 recursor:
   # Local zones - Forward to Authoritative server at 127.0.0.1:5300
-  # These zones are managed by PowerDNS Auth and should be queried directly
 {{- if .LocalZonesList}}
   forward_zones:
 {{range $index, $zone := .LocalZonesList}}    - zone: {{$zone}}

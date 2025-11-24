@@ -31,9 +31,7 @@ func (c *Config) Validate() error {
 		}
 	}
 
-	if err := c.Cluster.Validate(); err != nil {
-		return fmt.Errorf("cluster validation failed: %w", err)
-	}
+	// Cluster validation: ClusterConfig is now a simple interface - validation moved to host roles
 
 	if len(c.Components) == 0 {
 		return fmt.Errorf("at least one component must be defined")
@@ -58,7 +56,7 @@ func (c *Config) Validate() error {
 	}
 
 	// Cross-validation: K8s VIP must be unique (not in any host list)
-	if c.Network != nil && c.Network.K8sVIP != "" {
+	if c.Network != nil && c.Cluster.VIP != "" {
 		if err := c.validateK8sVIPUniqueness(); err != nil {
 			return err
 		}
@@ -73,79 +71,21 @@ func (c *Config) validateK8sVIPUniqueness() error {
 		return nil
 	}
 
-	vip := c.Network.K8sVIP
+	vip := c.Cluster.VIP
 
-	// Check against all infrastructure host lists
-	allHosts := append([]string{},
-		c.Network.OpenBAOHosts...,
-	)
-	allHosts = append(allHosts, c.Network.DNSHosts...)
-	allHosts = append(allHosts, c.Network.ZotHosts...)
-	allHosts = append(allHosts, c.Network.TrueNASHosts...)
-
-	for _, host := range allHosts {
-		if host == vip {
-			return fmt.Errorf("k8s_vip %q conflicts with infrastructure host IP", vip)
+	// Check against all host addresses
+	for _, h := range c.Hosts {
+		if h.Address == vip {
+			return fmt.Errorf("k8s_vip %q conflicts with host %q IP address", vip, h.Hostname)
 		}
 	}
 
 	return nil
 }
 
-// Validate performs validation on ClusterConfig
-func (c *ClusterConfig) Validate() error {
-	if c.Name == "" {
-		return fmt.Errorf("cluster name is required")
-	}
-
-	if c.Domain == "" {
-		return fmt.Errorf("cluster domain is required")
-	}
-
-	if len(c.Nodes) == 0 {
-		return fmt.Errorf("at least one node must be defined")
-	}
-
-	for i, node := range c.Nodes {
-		if err := node.Validate(); err != nil {
-			return fmt.Errorf("node %d validation failed: %w", i, err)
-		}
-	}
-
-	// At least one control-plane node is required
-	hasControlPlane := false
-	for _, node := range c.Nodes {
-		if node.Role == NodeRoleControlPlane {
-			hasControlPlane = true
-			break
-		}
-	}
-	if !hasControlPlane {
-		return fmt.Errorf("at least one control-plane node is required")
-	}
-
-	return nil
-}
-
-// Validate performs validation on NodeConfig
-func (n *NodeConfig) Validate() error {
-	if n.Hostname == "" {
-		return fmt.Errorf("node hostname is required")
-	}
-
-	if n.Role == "" {
-		return fmt.Errorf("node role is required")
-	}
-
-	// Validate role is one of the allowed values
-	validRole := n.Role == NodeRoleControlPlane || n.Role == NodeRoleWorker
-	if !validRole {
-		return fmt.Errorf("invalid node role %q: must be %s or %s",
-			n.Role, NodeRoleControlPlane, NodeRoleWorker)
-	}
-
-	return nil
-}
+// NOTE: ClusterConfig and NodeConfig validation removed - moved to role-based host validation
+// ClusterConfig no longer has Nodes[] - nodes are now hosts with cluster roles
+// NodeConfig type removed - use host.Host with roles instead
 
 // Validate performs validation on ComponentConfig
 func (c *ComponentConfig) Validate() error {
@@ -222,50 +162,11 @@ func (n *NetworkConfig) Validate() error {
 		}
 	}
 
-	// Validate K8s VIP
-	if n.K8sVIP == "" {
-		return fmt.Errorf("k8s_vip is required")
-	}
-	if ip := net.ParseIP(n.K8sVIP); ip == nil {
-		return fmt.Errorf("k8s_vip %q is not a valid IP address", n.K8sVIP)
-	}
-
-	// Validate OpenBAO hosts
-	if len(n.OpenBAOHosts) == 0 {
-		return fmt.Errorf("at least one openbao_hosts entry is required")
-	}
-	for i, host := range n.OpenBAOHosts {
-		if ip := net.ParseIP(host); ip == nil {
-			return fmt.Errorf("openbao_hosts[%d] %q is not a valid IP address", i, host)
-		}
-	}
-
-	// Validate DNS hosts
-	if len(n.DNSHosts) == 0 {
-		return fmt.Errorf("at least one dns_hosts entry is required")
-	}
-	for i, host := range n.DNSHosts {
-		if ip := net.ParseIP(host); ip == nil {
-			return fmt.Errorf("dns_hosts[%d] %q is not a valid IP address", i, host)
-		}
-	}
-
-	// Validate Zot hosts
-	if len(n.ZotHosts) == 0 {
-		return fmt.Errorf("at least one zot_hosts entry is required")
-	}
-	for i, host := range n.ZotHosts {
-		if ip := net.ParseIP(host); ip == nil {
-			return fmt.Errorf("zot_hosts[%d] %q is not a valid IP address", i, host)
-		}
-	}
-
-	// Validate TrueNAS hosts (optional)
-	for i, host := range n.TrueNASHosts {
-		if ip := net.ParseIP(host); ip == nil {
-			return fmt.Errorf("truenas_hosts[%d] %q is not a valid IP address", i, host)
-		}
-	}
+	// NOTE: Network-based host validation removed - moved to role-based hosts
+	// K8sVIP moved to cluster.vip
+	// Host arrays (OpenBAOHosts, DNSHosts, ZotHosts, TrueNASHosts) removed
+	// Hosts are now in config.hosts[] with roles
+	// IP validation happens in host.Validate() in host package
 
 	return nil
 }

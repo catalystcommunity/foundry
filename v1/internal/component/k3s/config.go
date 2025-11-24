@@ -12,8 +12,8 @@ const (
 	// RegistriesConfigPath is the location of the registries.yaml file
 	RegistriesConfigPath = "/etc/rancher/k3s/registries.yaml"
 
-	// OpenBAO paths for K3s configuration
-	KubeconfigOpenBAOPath = "foundry-core/k3s/kubeconfig"
+	// OpenBAO paths for K3s configuration (relative to mount point)
+	KubeconfigOpenBAOPath = "k3s/kubeconfig"
 )
 
 // Registry types (RegistryConfig, RegistryMirror, RegistryAuth, etc.) are generated from CSIL in types.gen.go

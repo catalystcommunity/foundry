@@ -36,9 +36,6 @@ func TestValidateSecretRefs(t *testing.T) {
 				Cluster: ClusterConfig{
 					Name:   "test",
 					Domain: "example.com",
-					Nodes: []NodeConfig{
-						{Hostname: "node1", Role: NodeRoleControlPlane},
-					},
 				},
 				Components: ComponentMap{
 					"k3s": ComponentConfig{},
@@ -58,9 +55,6 @@ func TestValidateSecretRefs(t *testing.T) {
 				Cluster: ClusterConfig{
 					Name:   "test",
 					Domain: "example.com",
-					Nodes: []NodeConfig{
-						{Hostname: "node1", Role: NodeRoleControlPlane},
-					},
 				},
 				Components: ComponentMap{
 					"k3s": ComponentConfig{},
@@ -81,9 +75,6 @@ func TestValidateSecretRefs(t *testing.T) {
 				Cluster: ClusterConfig{
 					Name:   "test",
 					Domain: "example.com",
-					Nodes: []NodeConfig{
-						{Hostname: "node1", Role: NodeRoleControlPlane},
-					},
 				},
 				Components: ComponentMap{
 					"k3s": ComponentConfig{Version: strPtr("v1.28.5")},
@@ -122,9 +113,6 @@ func TestResolveSecrets(t *testing.T) {
 				Cluster: ClusterConfig{
 					Name:   "test",
 					Domain: "example.com",
-					Nodes: []NodeConfig{
-						{Hostname: "node1", Role: NodeRoleControlPlane},
-					},
 				},
 				Components: ComponentMap{
 					"k3s": ComponentConfig{},
@@ -155,9 +143,6 @@ func TestResolveSecrets(t *testing.T) {
 				Cluster: ClusterConfig{
 					Name:   "test",
 					Domain: "example.com",
-					Nodes: []NodeConfig{
-						{Hostname: "node1", Role: NodeRoleControlPlane},
-					},
 				},
 				Components: ComponentMap{
 					"k3s": ComponentConfig{},
@@ -190,9 +175,6 @@ func TestResolveSecrets(t *testing.T) {
 				Cluster: ClusterConfig{
 					Name:   "test",
 					Domain: "example.com",
-					Nodes: []NodeConfig{
-						{Hostname: "node1", Role: NodeRoleControlPlane},
-					},
 				},
 				Components: ComponentMap{
 					"k3s": ComponentConfig{},
@@ -217,9 +199,6 @@ func TestResolveSecrets(t *testing.T) {
 				Cluster: ClusterConfig{
 					Name:   "test",
 					Domain: "example.com",
-					Nodes: []NodeConfig{
-						{Hostname: "node1", Role: NodeRoleControlPlane},
-					},
 				},
 				Components: ComponentMap{
 					"k3s": ComponentConfig{Version: strPtr("v1.28.5")},
@@ -259,9 +238,6 @@ func TestResolveSecrets_NilParameters(t *testing.T) {
 		Cluster: ClusterConfig{
 			Name:   "test",
 			Domain: "example.com",
-			Nodes: []NodeConfig{
-				{Hostname: "node1", Role: NodeRoleControlPlane},
-			},
 		},
 		Components: ComponentMap{
 			"k3s": ComponentConfig{},

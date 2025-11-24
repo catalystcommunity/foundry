@@ -4,15 +4,54 @@ import (
 	"fmt"
 	"net"
 	"regexp"
+	"strings"
 )
+
+// Valid host roles
+const (
+	RoleOpenBAO             = "openbao"
+	RoleDNS                 = "dns"
+	RoleZot                 = "zot"
+	RoleClusterControlPlane = "cluster-control-plane"
+	RoleClusterWorker       = "cluster-worker"
+)
+
+// Valid host states
+const (
+	StateAdded         = "added"          // Host added to registry, SSH key generated
+	StateSSHConfigured = "ssh-configured" // SSH key installed, sudo configured
+	StateConfigured    = "configured"     // All assigned roles installed and healthy
+)
+
+// ValidRoles returns the list of all valid role strings
+func ValidRoles() []string {
+	return []string{
+		RoleOpenBAO,
+		RoleDNS,
+		RoleZot,
+		RoleClusterControlPlane,
+		RoleClusterWorker,
+	}
+}
+
+// ValidStates returns the list of all valid state strings
+func ValidStates() []string {
+	return []string{
+		StateAdded,
+		StateSSHConfigured,
+		StateConfigured,
+	}
+}
 
 // Host represents a managed host in the infrastructure
 type Host struct {
-	Hostname  string // Friendly name for the host
-	Address   string // IP address or FQDN
-	Port      int    // SSH port (default 22)
-	User      string // SSH user
-	SSHKeySet bool   // Whether an SSH key has been configured for this host
+	Hostname  string   // Friendly name for the host
+	Address   string   // IP address or FQDN
+	Port      int      // SSH port (default 22)
+	User      string   // SSH user
+	SSHKeySet bool     // Whether an SSH key has been configured for this host
+	Roles     []string // Component roles (openbao, dns, zot, cluster-control-plane, cluster-worker)
+	State     string   // Host state (added, ssh-configured, configured)
 }
 
 // HostRegistry defines the interface for managing hosts
@@ -64,7 +103,59 @@ func (h *Host) Validate() error {
 		return fmt.Errorf("user cannot be empty")
 	}
 
+	// Validate roles
+	validRoles := map[string]bool{
+		RoleOpenBAO:             true,
+		RoleDNS:                 true,
+		RoleZot:                 true,
+		RoleClusterControlPlane: true,
+		RoleClusterWorker:       true,
+	}
+	for _, role := range h.Roles {
+		if !validRoles[role] {
+			return fmt.Errorf("invalid role: %s (valid roles: %s)", role, strings.Join(ValidRoles(), ", "))
+		}
+	}
+
+	// Validate state
+	validStates := map[string]bool{
+		StateAdded:         true,
+		StateSSHConfigured: true,
+		StateConfigured:    true,
+	}
+	if h.State != "" && !validStates[h.State] {
+		return fmt.Errorf("invalid state: %s (valid states: %s)", h.State, strings.Join(ValidStates(), ", "))
+	}
+
 	return nil
+}
+
+// HasRole checks if the host has a specific role
+func (h *Host) HasRole(role string) bool {
+	for _, r := range h.Roles {
+		if r == role {
+			return true
+		}
+	}
+	return false
+}
+
+// AddRole adds a role to the host if not already present
+func (h *Host) AddRole(role string) {
+	if !h.HasRole(role) {
+		h.Roles = append(h.Roles, role)
+	}
+}
+
+// RemoveRole removes a role from the host
+func (h *Host) RemoveRole(role string) {
+	roles := make([]string, 0, len(h.Roles))
+	for _, r := range h.Roles {
+		if r != role {
+			roles = append(roles, r)
+		}
+	}
+	h.Roles = roles
 }
 
 // isValidHostname checks if a hostname is valid
@@ -106,5 +197,7 @@ func DefaultHost(hostname, address, user string) *Host {
 		Port:      22,
 		User:      user,
 		SSHKeySet: false,
+		Roles:     []string{}, // Empty by default, set during host add
+		State:     "added",    // Initial state
 	}
 }

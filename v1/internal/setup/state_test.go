@@ -10,7 +10,7 @@ import (
 )
 
 func TestLoadState_EmptyFile(t *testing.T) {
-	// Create temporary config without _setup_state
+	// Create temporary config without setup_state
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "stack.yaml")
 
@@ -38,7 +38,7 @@ components:
 }
 
 func TestLoadState_WithState(t *testing.T) {
-	// Create temporary config with _setup_state
+	// Create temporary config with setup_state
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "stack.yaml")
 
@@ -52,7 +52,7 @@ cluster:
 components:
   k3s:
     version: v1.28.5
-_setup_state:
+setup_state:
   network_planned: true
   network_validated: true
   openbao_installed: false
@@ -146,7 +146,7 @@ cluster:
 components:
   k3s:
     version: v1.28.5
-_setup_state:
+setup_state:
   network_planned: true
   network_validated: false
   openbao_installed: false
@@ -211,9 +211,10 @@ func TestDetermineNextStep_NetworkValidated(t *testing.T) {
 
 func TestDetermineNextStep_OpenBAOInstalled(t *testing.T) {
 	state := &SetupState{
-		NetworkPlanned:   true,
-		NetworkValidated: true,
-		OpenBAOInstalled: true,
+		NetworkPlanned:     true,
+		NetworkValidated:   true,
+		OpenBAOInstalled:   true,
+		OpenBAOInitialized: true,
 	}
 	step := DetermineNextStep(state)
 	assert.Equal(t, StepDNSInstall, step)
@@ -221,10 +222,11 @@ func TestDetermineNextStep_OpenBAOInstalled(t *testing.T) {
 
 func TestDetermineNextStep_DNSInstalled(t *testing.T) {
 	state := &SetupState{
-		NetworkPlanned:   true,
-		NetworkValidated: true,
-		OpenBAOInstalled: true,
-		DNSInstalled:     true,
+		NetworkPlanned:     true,
+		NetworkValidated:   true,
+		OpenBAOInstalled:   true,
+		OpenBAOInitialized: true,
+		DNSInstalled:       true,
 	}
 	step := DetermineNextStep(state)
 	assert.Equal(t, StepDNSZonesCreate, step)
@@ -232,11 +234,12 @@ func TestDetermineNextStep_DNSInstalled(t *testing.T) {
 
 func TestDetermineNextStep_DNSZonesCreated(t *testing.T) {
 	state := &SetupState{
-		NetworkPlanned:   true,
-		NetworkValidated: true,
-		OpenBAOInstalled: true,
-		DNSInstalled:     true,
-		DNSZonesCreated:  true,
+		NetworkPlanned:     true,
+		NetworkValidated:   true,
+		OpenBAOInstalled:   true,
+		OpenBAOInitialized: true,
+		DNSInstalled:       true,
+		DNSZonesCreated:    true,
 	}
 	step := DetermineNextStep(state)
 	assert.Equal(t, StepZotInstall, step)
@@ -244,12 +247,13 @@ func TestDetermineNextStep_DNSZonesCreated(t *testing.T) {
 
 func TestDetermineNextStep_ZotInstalled(t *testing.T) {
 	state := &SetupState{
-		NetworkPlanned:   true,
-		NetworkValidated: true,
-		OpenBAOInstalled: true,
-		DNSInstalled:     true,
-		DNSZonesCreated:  true,
-		ZotInstalled:     true,
+		NetworkPlanned:     true,
+		NetworkValidated:   true,
+		OpenBAOInstalled:   true,
+		OpenBAOInitialized: true,
+		DNSInstalled:       true,
+		DNSZonesCreated:    true,
+		ZotInstalled:       true,
 	}
 	step := DetermineNextStep(state)
 	assert.Equal(t, StepK8sInstall, step)
@@ -257,13 +261,14 @@ func TestDetermineNextStep_ZotInstalled(t *testing.T) {
 
 func TestDetermineNextStep_K8sInstalled(t *testing.T) {
 	state := &SetupState{
-		NetworkPlanned:   true,
-		NetworkValidated: true,
-		OpenBAOInstalled: true,
-		DNSInstalled:     true,
-		DNSZonesCreated:  true,
-		ZotInstalled:     true,
-		K8sInstalled:     true,
+		NetworkPlanned:     true,
+		NetworkValidated:   true,
+		OpenBAOInstalled:   true,
+		OpenBAOInitialized: true,
+		DNSInstalled:       true,
+		DNSZonesCreated:    true,
+		ZotInstalled:       true,
+		K8sInstalled:       true,
 	}
 	step := DetermineNextStep(state)
 	assert.Equal(t, StepComplete, step)
@@ -271,14 +276,15 @@ func TestDetermineNextStep_K8sInstalled(t *testing.T) {
 
 func TestDetermineNextStep_AllComplete(t *testing.T) {
 	state := &SetupState{
-		NetworkPlanned:   true,
-		NetworkValidated: true,
-		OpenBAOInstalled: true,
-		DNSInstalled:     true,
-		DNSZonesCreated:  true,
-		ZotInstalled:     true,
-		K8sInstalled:     true,
-		StackComplete:    true,
+		NetworkPlanned:     true,
+		NetworkValidated:   true,
+		OpenBAOInstalled:   true,
+		OpenBAOInitialized: true,
+		DNSInstalled:       true,
+		DNSZonesCreated:    true,
+		ZotInstalled:       true,
+		K8sInstalled:       true,
+		StackComplete:      true,
 	}
 	step := DetermineNextStep(state)
 	assert.Equal(t, StepComplete, step)
@@ -295,14 +301,15 @@ func TestIsComplete_False(t *testing.T) {
 
 func TestIsComplete_True(t *testing.T) {
 	state := &SetupState{
-		NetworkPlanned:   true,
-		NetworkValidated: true,
-		OpenBAOInstalled: true,
-		DNSInstalled:     true,
-		DNSZonesCreated:  true,
-		ZotInstalled:     true,
-		K8sInstalled:     true,
-		StackComplete:    true,
+		NetworkPlanned:     true,
+		NetworkValidated:   true,
+		OpenBAOInstalled:   true,
+		OpenBAOInitialized: true,
+		DNSInstalled:       true,
+		DNSZonesCreated:    true,
+		ZotInstalled:       true,
+		K8sInstalled:       true,
+		StackComplete:      true,
 	}
 	assert.True(t, state.IsComplete())
 }

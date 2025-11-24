@@ -3,6 +3,7 @@ package config
 import (
 	"testing"
 
+	"github.com/catalystcommunity/foundry/v1/internal/host"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -16,40 +17,27 @@ func TestNetworkConfig_Validate(t *testing.T) {
 		{
 			name: "valid network config",
 			config: NetworkConfig{
-				Gateway:      "192.168.1.1",
-				Netmask:      "255.255.255.0",
-				K8sVIP:       "192.168.1.100",
-				OpenBAOHosts: []string{"192.168.1.10"},
-				DNSHosts:     []string{"192.168.1.10"},
-				ZotHosts:     []string{"192.168.1.10"},
+				Gateway: "192.168.1.1",
+				Netmask: "255.255.255.0",
 			},
 			wantErr: false,
 		},
 		{
-			name: "valid with DHCP range and TrueNAS",
+			name: "valid with DHCP range",
 			config: NetworkConfig{
-				Gateway:      "192.168.1.1",
-				Netmask:      "255.255.255.0",
+				Gateway: "192.168.1.1",
+				Netmask: "255.255.255.0",
 				DHCPRange: &DHCPRange{
 					Start: "192.168.1.50",
 					End:   "192.168.1.200",
 				},
-				K8sVIP:       "192.168.1.100",
-				OpenBAOHosts: []string{"192.168.1.10"},
-				DNSHosts:     []string{"192.168.1.10"},
-				ZotHosts:     []string{"192.168.1.10"},
-				TrueNASHosts: []string{"192.168.1.15"},
 			},
 			wantErr: false,
 		},
 		{
 			name: "missing gateway",
 			config: NetworkConfig{
-				Netmask:      "255.255.255.0",
-				K8sVIP:       "192.168.1.100",
-				OpenBAOHosts: []string{"192.168.1.10"},
-				DNSHosts:     []string{"192.168.1.10"},
-				ZotHosts:     []string{"192.168.1.10"},
+				Netmask: "255.255.255.0",
 			},
 			wantErr: true,
 			errMsg:  "gateway is required",
@@ -57,12 +45,8 @@ func TestNetworkConfig_Validate(t *testing.T) {
 		{
 			name: "invalid gateway IP",
 			config: NetworkConfig{
-				Gateway:      "not-an-ip",
-				Netmask:      "255.255.255.0",
-				K8sVIP:       "192.168.1.100",
-				OpenBAOHosts: []string{"192.168.1.10"},
-				DNSHosts:     []string{"192.168.1.10"},
-				ZotHosts:     []string{"192.168.1.10"},
+				Gateway: "not-an-ip",
+				Netmask: "255.255.255.0",
 			},
 			wantErr: true,
 			errMsg:  "not a valid IP address",
@@ -70,102 +54,32 @@ func TestNetworkConfig_Validate(t *testing.T) {
 		{
 			name: "missing netmask",
 			config: NetworkConfig{
-				Gateway:      "192.168.1.1",
-				K8sVIP:       "192.168.1.100",
-				OpenBAOHosts: []string{"192.168.1.10"},
-				DNSHosts:     []string{"192.168.1.10"},
-				ZotHosts:     []string{"192.168.1.10"},
+				Gateway: "192.168.1.1",
 			},
 			wantErr: true,
 			errMsg:  "netmask is required",
 		},
 		{
-			name: "missing k8s_vip",
+			name: "invalid netmask",
 			config: NetworkConfig{
-				Gateway:      "192.168.1.1",
-				Netmask:      "255.255.255.0",
-				OpenBAOHosts: []string{"192.168.1.10"},
-				DNSHosts:     []string{"192.168.1.10"},
-				ZotHosts:     []string{"192.168.1.10"},
-			},
-			wantErr: true,
-			errMsg:  "k8s_vip is required",
-		},
-		{
-			name: "invalid k8s_vip",
-			config: NetworkConfig{
-				Gateway:      "192.168.1.1",
-				Netmask:      "255.255.255.0",
-				K8sVIP:       "invalid",
-				OpenBAOHosts: []string{"192.168.1.10"},
-				DNSHosts:     []string{"192.168.1.10"},
-				ZotHosts:     []string{"192.168.1.10"},
+				Gateway: "192.168.1.1",
+				Netmask: "invalid",
 			},
 			wantErr: true,
 			errMsg:  "not a valid IP address",
 		},
 		{
-			name: "missing openbao_hosts",
+			name: "invalid DHCP range",
 			config: NetworkConfig{
 				Gateway: "192.168.1.1",
 				Netmask: "255.255.255.0",
-				K8sVIP:  "192.168.1.100",
-				DNSHosts: []string{"192.168.1.10"},
-				ZotHosts: []string{"192.168.1.10"},
+				DHCPRange: &DHCPRange{
+					Start: "invalid",
+					End:   "192.168.1.200",
+				},
 			},
 			wantErr: true,
-			errMsg:  "at least one openbao_hosts entry is required",
-		},
-		{
-			name: "invalid openbao host IP",
-			config: NetworkConfig{
-				Gateway:      "192.168.1.1",
-				Netmask:      "255.255.255.0",
-				K8sVIP:       "192.168.1.100",
-				OpenBAOHosts: []string{"invalid"},
-				DNSHosts:     []string{"192.168.1.10"},
-				ZotHosts:     []string{"192.168.1.10"},
-			},
-			wantErr: true,
-			errMsg:  "not a valid IP address",
-		},
-		{
-			name: "missing dns_hosts",
-			config: NetworkConfig{
-				Gateway:      "192.168.1.1",
-				Netmask:      "255.255.255.0",
-				K8sVIP:       "192.168.1.100",
-				OpenBAOHosts: []string{"192.168.1.10"},
-				ZotHosts:     []string{"192.168.1.10"},
-			},
-			wantErr: true,
-			errMsg:  "at least one dns_hosts entry is required",
-		},
-		{
-			name: "missing zot_hosts",
-			config: NetworkConfig{
-				Gateway:      "192.168.1.1",
-				Netmask:      "255.255.255.0",
-				K8sVIP:       "192.168.1.100",
-				OpenBAOHosts: []string{"192.168.1.10"},
-				DNSHosts:     []string{"192.168.1.10"},
-			},
-			wantErr: true,
-			errMsg:  "at least one zot_hosts entry is required",
-		},
-		{
-			name: "invalid truenas host IP",
-			config: NetworkConfig{
-				Gateway:      "192.168.1.1",
-				Netmask:      "255.255.255.0",
-				K8sVIP:       "192.168.1.100",
-				OpenBAOHosts: []string{"192.168.1.10"},
-				DNSHosts:     []string{"192.168.1.10"},
-				ZotHosts:     []string{"192.168.1.10"},
-				TrueNASHosts: []string{"invalid"},
-			},
-			wantErr: true,
-			errMsg:  "not a valid IP address",
+			errMsg:  "dhcp_range validation failed",
 		},
 	}
 
@@ -246,7 +160,7 @@ func TestDHCPRange_Validate(t *testing.T) {
 	}
 }
 
-func TestConfig_ValidateK8sVIPUniqueness(t *testing.T) {
+func TestConfig_ValidateVIPUniqueness(t *testing.T) {
 	tests := []struct {
 		name    string
 		config  Config
@@ -257,85 +171,77 @@ func TestConfig_ValidateK8sVIPUniqueness(t *testing.T) {
 			name: "VIP is unique",
 			config: Config{
 				Network: &NetworkConfig{
-					Gateway:      "192.168.1.1",
-					Netmask:      "255.255.255.0",
-					K8sVIP:       "192.168.1.100",
-					OpenBAOHosts: []string{"192.168.1.10"},
-					DNSHosts:     []string{"192.168.1.11"},
-					ZotHosts:     []string{"192.168.1.12"},
+					Gateway: "192.168.1.1",
+					Netmask: "255.255.255.0",
+				},
+				Hosts: []*host.Host{
+					{
+						Hostname: "host1",
+						Address:  "192.168.1.10",
+						Roles:    []string{host.RoleOpenBAO, host.RoleDNS, host.RoleZot},
+					},
+					{
+						Hostname: "node1",
+						Address:  "192.168.1.20",
+						Roles:    []string{host.RoleClusterControlPlane},
+					},
 				},
 				Cluster: ClusterConfig{
 					Name:   "test",
 					Domain: "example.com",
-					Nodes:  []NodeConfig{{Hostname: "node1", Role: NodeRoleControlPlane}},
+					VIP:    "192.168.1.100",
 				},
 				Components: ComponentMap{"k3s": ComponentConfig{}},
 			},
 			wantErr: false,
 		},
 		{
-			name: "VIP conflicts with OpenBAO host",
+			name: "VIP conflicts with infrastructure host",
 			config: Config{
 				Network: &NetworkConfig{
-					Gateway:      "192.168.1.1",
-					Netmask:      "255.255.255.0",
-					K8sVIP:       "192.168.1.10",
-					OpenBAOHosts: []string{"192.168.1.10"},
-					DNSHosts:     []string{"192.168.1.11"},
-					ZotHosts:     []string{"192.168.1.12"},
+					Gateway: "192.168.1.1",
+					Netmask: "255.255.255.0",
+				},
+				Hosts: []*host.Host{
+					{
+						Hostname: "host1",
+						Address:  "192.168.1.10",
+						Roles:    []string{host.RoleOpenBAO, host.RoleDNS, host.RoleZot},
+					},
 				},
 				Cluster: ClusterConfig{
 					Name:   "test",
 					Domain: "example.com",
-					Nodes:  []NodeConfig{{Hostname: "node1", Role: NodeRoleControlPlane}},
+					VIP:    "192.168.1.10", // Conflicts with host1
 				},
 				Components: ComponentMap{"k3s": ComponentConfig{}},
 			},
 			wantErr: true,
-			errMsg:  "conflicts with infrastructure host IP",
+			errMsg:  "conflicts with host",
 		},
 		{
-			name: "VIP conflicts with DNS host",
+			name: "VIP conflicts with cluster node",
 			config: Config{
 				Network: &NetworkConfig{
-					Gateway:      "192.168.1.1",
-					Netmask:      "255.255.255.0",
-					K8sVIP:       "192.168.1.11",
-					OpenBAOHosts: []string{"192.168.1.10"},
-					DNSHosts:     []string{"192.168.1.11"},
-					ZotHosts:     []string{"192.168.1.12"},
+					Gateway: "192.168.1.1",
+					Netmask: "255.255.255.0",
+				},
+				Hosts: []*host.Host{
+					{
+						Hostname: "node1",
+						Address:  "192.168.1.20",
+						Roles:    []string{host.RoleClusterControlPlane},
+					},
 				},
 				Cluster: ClusterConfig{
 					Name:   "test",
 					Domain: "example.com",
-					Nodes:  []NodeConfig{{Hostname: "node1", Role: NodeRoleControlPlane}},
+					VIP:    "192.168.1.20", // Conflicts with node1
 				},
 				Components: ComponentMap{"k3s": ComponentConfig{}},
 			},
 			wantErr: true,
-			errMsg:  "conflicts with infrastructure host IP",
-		},
-		{
-			name: "VIP conflicts with TrueNAS host",
-			config: Config{
-				Network: &NetworkConfig{
-					Gateway:      "192.168.1.1",
-					Netmask:      "255.255.255.0",
-					K8sVIP:       "192.168.1.15",
-					OpenBAOHosts: []string{"192.168.1.10"},
-					DNSHosts:     []string{"192.168.1.11"},
-					ZotHosts:     []string{"192.168.1.12"},
-					TrueNASHosts: []string{"192.168.1.15"},
-				},
-				Cluster: ClusterConfig{
-					Name:   "test",
-					Domain: "example.com",
-					Nodes:  []NodeConfig{{Hostname: "node1", Role: NodeRoleControlPlane}},
-				},
-				Components: ComponentMap{"k3s": ComponentConfig{}},
-			},
-			wantErr: true,
-			errMsg:  "conflicts with infrastructure host IP",
+			errMsg:  "conflicts with host",
 		},
 	}
 
