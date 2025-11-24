@@ -1,0 +1,66 @@
+# Foundry Stack Configuration
+# Edit this file to match your infrastructure
+
+cluster:
+  name: <CLUSTER_NAME>  # e.g., homelab, production
+  domain: <DOMAIN>  # e.g., lab.local, example.com
+  vip: <VIP>  # K3s API VIP, e.g., 192.168.1.100
+
+network:
+  gateway: <GATEWAY>  # e.g., 192.168.1.1
+  netmask: <NETMASK>  # e.g., 255.255.255.0
+
+# Add your infrastructure hosts below
+# Each host needs roles assigned from:
+#   - cluster-control-plane: K3s control plane
+#   - cluster-worker: K3s worker
+#   - openbao: Secrets management
+#   - dns: PowerDNS server
+#   - zot: Container registry
+hosts:
+  # Example single-node configuration:
+  # - hostname: node1.lab.local
+  #   address: 192.168.1.20
+  #   port: 22
+  #   user: foundry
+  #   roles:
+  #     - cluster-control-plane
+  #     - openbao
+  #     - dns
+  #     - zot
+  #   state: new
+
+components:
+  openbao:
+    version: latest
+
+  k3s:
+    version: latest
+    ha: false  # Set to true for multi-control-plane
+
+  zot:
+    version: latest
+
+# Optional: Observability configuration (Phase 3)
+# observability:
+#   prometheus:
+#     retention: 30d
+#   loki:
+#     retention: 90d
+
+# Optional: Storage configuration (Phase 3)
+# storage:
+#   truenas:
+#     api_url: https://truenas.example.com
+#     api_key: ${secret:foundry-core/truenas:api_key}
+
+setup_state:
+  network_planned: false
+  network_validated: false
+  openbao_installed: false
+  openbao_initialized: false
+  dns_installed: false
+  dns_zones_created: false
+  zot_installed: false
+  k8s_installed: false
+  stack_complete: false
