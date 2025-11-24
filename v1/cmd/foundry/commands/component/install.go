@@ -1,0 +1,679 @@
+package component
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+
+	"github.com/catalystcommunity/foundry/v1/internal/component"
+	"github.com/catalystcommunity/foundry/v1/internal/component/dns"
+	"github.com/catalystcommunity/foundry/v1/internal/component/openbao"
+	"github.com/catalystcommunity/foundry/v1/internal/config"
+	"github.com/catalystcommunity/foundry/v1/internal/host"
+	"github.com/catalystcommunity/foundry/v1/internal/secrets"
+	"github.com/catalystcommunity/foundry/v1/internal/ssh"
+	"github.com/urfave/cli/v3"
+)
+
+// sshExecutorAdapter adapts ssh.Connection to container.SSHExecutor interface
+// by implementing the Execute(cmd string) (string, error) method
+type sshExecutorAdapter struct {
+	conn *ssh.Connection
+}
+
+func (a *sshExecutorAdapter) Execute(cmd string) (string, error) {
+	result, err := a.conn.Exec(cmd)
+	if err != nil {
+		return "", err
+	}
+	if result.ExitCode != 0 {
+		return result.Stdout, fmt.Errorf("command failed with exit code %d: %s", result.ExitCode, result.Stderr)
+	}
+	return result.Stdout, nil
+}
+
+// InstallCommand installs a component
+var InstallCommand = &cli.Command{
+	Name:      "install",
+	Usage:     "Install a component",
+	ArgsUsage: "<name>",
+	Description: `Installs a component with its dependencies.
+
+The component will be installed according to the configuration in ~/.foundry/stack.yaml.
+
+Examples:
+  foundry component install openbao
+  foundry component install dns
+  foundry component install zot
+  foundry component install k3s`,
+	Flags: []cli.Flag{
+		&cli.BoolFlag{
+			Name:    "dry-run",
+			Usage:   "Show what would be installed without actually installing",
+			Aliases: []string{"n"},
+		},
+		&cli.StringFlag{
+			Name:  "version",
+			Usage: "Override the version to install",
+		},
+	},
+	Action: runInstall,
+}
+
+func runInstall(ctx context.Context, cmd *cli.Command) error {
+	// Get component name from arguments
+	if cmd.Args().Len() == 0 {
+		return fmt.Errorf("component name required\n\nUsage: foundry component install <name>")
+	}
+
+	name := cmd.Args().Get(0)
+	dryRun := cmd.Bool("dry-run")
+	version := cmd.String("version")
+
+	// Get component from registry
+	comp := component.Get(name)
+	if comp == nil {
+		return component.ErrComponentNotFound(name)
+	}
+
+	// Load stack configuration (needed for dependency checking)
+	fmt.Println("Loading stack configuration...")
+	configPath := config.DefaultConfigPath()
+	stackConfig, err := config.Load(configPath)
+	if err != nil {
+		return fmt.Errorf("failed to load stack config: %w\n\nHint: Run 'foundry config init' to create a configuration", err)
+	}
+
+	// Check dependencies using setup state
+	deps := comp.Dependencies()
+	if len(deps) > 0 {
+		fmt.Printf("Component %s depends on: %v\n", name, deps)
+		fmt.Println("Checking dependencies...")
+
+		for _, dep := range deps {
+			installed := isDependencyInstalled(dep, stackConfig)
+			if !installed {
+				return fmt.Errorf("dependency %q is not installed\n\nPlease run: foundry component install %s", dep, dep)
+			}
+
+			fmt.Printf("  ✓ %s (installed)\n", dep)
+		}
+		fmt.Println()
+	}
+
+	// Determine target host for this component
+	targetHost, err := getTargetHostForComponent(name, stackConfig)
+	if err != nil {
+		return fmt.Errorf("failed to determine target host: %w", err)
+	}
+
+	fmt.Printf("Target host: %s (%s)\n", targetHost.Hostname, targetHost.Address)
+
+	if dryRun {
+		fmt.Printf("\nWould install component: %s\n", name)
+		fmt.Printf("Target host: %s\n", targetHost.Hostname)
+		if version != "" {
+			fmt.Printf("Version: %s\n", version)
+		}
+		fmt.Println("\nNote: This is a dry-run. No changes will be made.")
+		return nil
+	}
+
+	// Establish SSH connection to target host
+	fmt.Printf("Connecting to %s...\n", targetHost.Hostname)
+	conn, err := connectToHost(targetHost)
+	if err != nil {
+		return fmt.Errorf("failed to connect to host: %w", err)
+	}
+	defer conn.Close()
+	fmt.Println("✓ Connected")
+
+	// Create adapter for components that need container.SSHExecutor
+	executor := &sshExecutorAdapter{conn: conn}
+
+	// Build component config
+	cfg := component.ComponentConfig{}
+	if version != "" {
+		cfg["version"] = version
+	}
+
+	// Add SSH connection to config (components extract this)
+	// We pass both the raw connection and the executor adapter
+	cfg["host"] = executor
+	cfg["ssh_conn"] = conn // Some components might need the raw connection
+
+	// Add cluster name for OpenBAO key storage
+	cfg["cluster_name"] = stackConfig.Cluster.Name
+
+	// Add keys directory for OpenBAO
+	keysDir, err := config.GetKeysDir()
+	if err != nil {
+		return fmt.Errorf("failed to get keys directory: %w", err)
+	}
+	// Use openbao-keys subdirectory
+	cfg["keys_dir"] = filepath.Join(filepath.Dir(keysDir), "openbao-keys")
+
+	// Add OpenBAO API URL (for OpenBAO component initialization)
+	if name == "openbao" {
+		addr, err := stackConfig.GetPrimaryOpenBAOAddress()
+		if err == nil {
+			// Construct the API URL from the network config
+			cfg["api_url"] = fmt.Sprintf("http://%s:8200", addr)
+		}
+	}
+
+	// Handle PowerDNS API key generation and storage
+	if (name == "dns" || name == "powerdns") && stackConfig.SetupState.OpenBAOInitialized {
+		apiKey, err := ensureDNSAPIKey(stackConfig)
+		if err != nil {
+			return fmt.Errorf("failed to setup DNS API key: %w", err)
+		}
+		cfg["api_key"] = apiKey
+
+		// Pass cluster domain as a local zone for Recursor forwarding
+		// This ensures queries for the cluster domain are forwarded to the Auth server
+		if stackConfig.Cluster.Domain != "" {
+			cfg["local_zones"] = []string{stackConfig.Cluster.Domain}
+		}
+	}
+
+	// TODO: Load additional component-specific config from stack.yaml
+	// For now, we'll use empty config and rely on component defaults
+
+	fmt.Printf("\nInstalling component: %s\n", name)
+
+	// Install component
+	if err := comp.Install(ctx, cfg); err != nil {
+		return fmt.Errorf("failed to install component %s: %w", name, err)
+	}
+
+	fmt.Printf("\n✓ Component %s installed successfully\n", name)
+
+	// Update setup state and component-specific config
+	if err := updateSetupState(stackConfig, name, cfg); err != nil {
+		// Don't fail the whole installation if state update fails
+		// Just warn the user
+		fmt.Printf("\n⚠ Warning: Failed to update setup state: %v\n", err)
+		fmt.Println("The component is installed and working, but state tracking may be incorrect.")
+	}
+
+	// Handle DNS record registration (bidirectional)
+	if err := handleDNSRegistration(ctx, name, stackConfig); err != nil {
+		// Don't fail the installation if DNS registration fails
+		// Just warn the user
+		fmt.Printf("\n⚠ Warning: Failed to register DNS records: %v\n", err)
+		fmt.Println("The component is installed and working, but DNS records may need manual creation.")
+	}
+
+	return nil
+}
+
+// handleDNSRegistration handles bidirectional DNS record registration
+// - If DNS is being installed: look backward at installed components and create their records
+// - If another component is being installed: if DNS exists, self-register
+func handleDNSRegistration(ctx context.Context, componentName string, stackConfig *config.Config) error {
+	// Skip if we don't have network config or cluster domain or setup state
+	if stackConfig == nil || stackConfig.Network == nil || stackConfig.Cluster.Domain == "" || stackConfig.SetupState == nil {
+		return nil
+	}
+
+	switch componentName {
+	case "dns", "powerdns":
+		// DNS is being installed - look backward at installed components
+		return registerExistingComponents(ctx, stackConfig)
+	case "openbao":
+		// OpenBAO is being installed - self-register if DNS exists
+		if stackConfig.SetupState.DNSInstalled {
+			return registerComponentDNS(ctx, "openbao", stackConfig)
+		}
+	case "zot":
+		// Zot is being installed - self-register if DNS exists
+		if stackConfig.SetupState.DNSInstalled {
+			return registerComponentDNS(ctx, "zot", stackConfig)
+		}
+	case "k3s", "kubernetes":
+		// K3s is being installed - self-register VIP if DNS exists
+		if stackConfig.SetupState.DNSInstalled {
+			return registerComponentDNS(ctx, "k8s", stackConfig)
+		}
+	}
+
+	return nil
+}
+
+// registerExistingComponents creates DNS records for components that were installed before DNS
+func registerExistingComponents(ctx context.Context, stackConfig *config.Config) error {
+	fmt.Println("\nRegistering DNS records for existing components...")
+
+	// Get DNS client
+	dnsClient, err := getDNSClient(stackConfig)
+	if err != nil {
+		return fmt.Errorf("failed to create DNS client: %w", err)
+	}
+
+	// Import dns package types
+	dnsZone := stackConfig.Cluster.Domain
+
+	// Register each installed component
+	registered := 0
+
+	if stackConfig.SetupState.OpenBAOInstalled {
+		addr, err := stackConfig.GetPrimaryOpenBAOAddress()
+		if err == nil {
+			if err := registerServiceRecord(dnsClient, dnsZone, "openbao", addr); err != nil {
+				return fmt.Errorf("failed to register openbao DNS record: %w", err)
+			}
+			registered++
+		}
+	}
+
+	// Always register DNS service (pointing to itself)
+	addr, err := stackConfig.GetPrimaryDNSAddress()
+	if err == nil {
+		if err := registerServiceRecord(dnsClient, dnsZone, "dns", addr); err != nil {
+			return fmt.Errorf("failed to register dns DNS record: %w", err)
+		}
+		registered++
+	}
+
+	if stackConfig.SetupState.ZotInstalled {
+		addr, err := stackConfig.GetPrimaryZotAddress()
+		if err == nil {
+			if err := registerServiceRecord(dnsClient, dnsZone, "zot", addr); err != nil {
+				return fmt.Errorf("failed to register zot DNS record: %w", err)
+			}
+			registered++
+		}
+	}
+
+	if stackConfig.SetupState.K8sInstalled && stackConfig.Cluster.VIP != "" {
+		if err := registerServiceRecord(dnsClient, dnsZone, "k8s", stackConfig.Cluster.VIP); err != nil {
+			return fmt.Errorf("failed to register k8s DNS record: %w", err)
+		}
+		registered++
+	}
+
+	if registered > 0 {
+		fmt.Printf("✓ Registered %d DNS record(s)\n", registered)
+	} else {
+		fmt.Println("  No existing components to register")
+	}
+
+	return nil
+}
+
+// registerComponentDNS registers a DNS record for a single component
+func registerComponentDNS(ctx context.Context, componentName string, stackConfig *config.Config) error {
+	fmt.Printf("\nRegistering DNS record for %s...\n", componentName)
+
+	// Get DNS client
+	dnsClient, err := getDNSClient(stackConfig)
+	if err != nil {
+		return fmt.Errorf("failed to create DNS client: %w", err)
+	}
+
+	dnsZone := stackConfig.Cluster.Domain
+
+	// Determine IP address for this component
+	var ip string
+	switch componentName {
+	case "openbao":
+		ip, err = stackConfig.GetPrimaryOpenBAOAddress()
+		if err != nil {
+			return fmt.Errorf("no OpenBAO host configured: %w", err)
+		}
+	case "zot":
+		ip, err = stackConfig.GetPrimaryZotAddress()
+		if err != nil {
+			return fmt.Errorf("no Zot host configured: %w", err)
+		}
+	case "k8s":
+		if stackConfig.Cluster.VIP == "" {
+			return fmt.Errorf("no K8s VIP configured")
+		}
+		ip = stackConfig.Cluster.VIP
+	default:
+		return fmt.Errorf("unknown component: %s", componentName)
+	}
+
+	if err := registerServiceRecord(dnsClient, dnsZone, componentName, ip); err != nil {
+		return fmt.Errorf("failed to register DNS record: %w", err)
+	}
+
+	fmt.Printf("✓ DNS record registered: %s.%s -> %s\n", componentName, dnsZone, ip)
+	return nil
+}
+
+// registerServiceRecord creates an A record for a service
+// name should be a short hostname (e.g., "openbao"), not an FQDN
+func registerServiceRecord(dnsClient *dns.Client, zone, name, ip string) error {
+	fmt.Printf("  Creating A record: %s.%s -> %s\n", name, zone, ip)
+
+	// Use the DNS package's AddARecord helper function
+	// Pass short hostname (name) not FQDN to avoid double zone appending
+	if err := dns.AddARecord(dnsClient, zone, name, ip); err != nil {
+		return fmt.Errorf("failed to add A record: %w", err)
+	}
+
+	return nil
+}
+
+// getDNSClient creates a DNS client for managing records
+func getDNSClient(stackConfig *config.Config) (*dns.Client, error) {
+	// Get DNS server address
+	dnsHost, err := stackConfig.GetPrimaryDNSAddress()
+	if err != nil {
+		return nil, fmt.Errorf("no DNS host configured: %w", err)
+	}
+
+	// Get DNS API key from config (it's a secret reference)
+	// We'll need to resolve it from OpenBAO
+	if stackConfig.DNS == nil || stackConfig.DNS.APIKey == "" {
+		return nil, fmt.Errorf("DNS API key not configured")
+	}
+
+	// Resolve API key from secrets (including OpenBAO)
+	resolver, resCtx, err := buildSecretResolver(stackConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to setup secret resolver: %w", err)
+	}
+
+	// Parse the API key secret reference
+	secretRef, err := secrets.ParseSecretRef(stackConfig.DNS.APIKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse DNS API key secret reference: %w", err)
+	}
+	if secretRef == nil {
+		// Not a secret reference, use as-is
+		return dns.NewClient(fmt.Sprintf("http://%s:8081", dnsHost), stackConfig.DNS.APIKey), nil
+	}
+
+	// Resolve the API key
+	apiKey, err := resolver.Resolve(resCtx, *secretRef)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve DNS API key: %w", err)
+	}
+
+	// Create PowerDNS client
+	client := dns.NewClient(fmt.Sprintf("http://%s:8081", dnsHost), apiKey)
+
+	return client, nil
+}
+
+// buildSecretResolver creates a secret resolver chain that includes OpenBAO if available
+func buildSecretResolver(cfg *config.Config) (*secrets.ChainResolver, *secrets.ResolutionContext, error) {
+	// Try to get OpenBAO address and token
+	var openBAOAddr, openBAOToken string
+
+	addr, err := cfg.GetPrimaryOpenBAOAddress()
+	if err == nil {
+		openBAOAddr = fmt.Sprintf("http://%s:8200", addr)
+
+		// Try to read OpenBAO token from keys file
+		configDir, errConfig := config.GetConfigDir()
+		if errConfig == nil {
+			keysPath := filepath.Join(configDir, "openbao-keys", cfg.Cluster.Name, "keys.json")
+			if keysData, errRead := os.ReadFile(keysPath); errRead == nil {
+				var keys struct {
+					RootToken string `json:"root_token"`
+				}
+				if errUnmarshal := json.Unmarshal(keysData, &keys); errUnmarshal == nil {
+					openBAOToken = keys.RootToken
+				}
+			}
+		}
+	}
+
+	// ResolutionContext with empty instance since we're using foundry-core as the mount
+	// The mount is specified in the resolver, not in instance scoping
+	resCtx := &secrets.ResolutionContext{
+		Instance: "",
+	}
+
+	// If we have OpenBAO configured, add it to the resolver chain
+	if openBAOAddr != "" && openBAOToken != "" {
+		// Use foundry-core mount (where we enabled the KV v2 engine)
+		openBAOResolver, err := secrets.NewOpenBAOResolverWithMount(openBAOAddr, openBAOToken, "foundry-core")
+		if err != nil {
+			// Fall back to env-only if OpenBAO setup fails
+			resolver := secrets.NewChainResolver(
+				secrets.NewEnvResolver(),
+			)
+			return resolver, resCtx, nil
+		}
+
+		resolver := secrets.NewChainResolver(
+			secrets.NewEnvResolver(),
+			openBAOResolver,
+		)
+		return resolver, resCtx, nil
+	}
+
+	// OpenBAO not available, use env resolver only
+	resolver := secrets.NewChainResolver(
+		secrets.NewEnvResolver(),
+	)
+	return resolver, resCtx, nil
+}
+
+// updateSetupState updates the setup_state and component-specific config after successful installation
+func updateSetupState(stackConfig *config.Config, componentName string, componentConfig component.ComponentConfig) error {
+	// Map component names to their setup_state fields
+	switch componentName {
+	case "openbao":
+		stackConfig.SetupState.OpenBAOInstalled = true
+		stackConfig.SetupState.OpenBAOInitialized = true // Initialized during install
+	case "dns", "powerdns":
+		stackConfig.SetupState.DNSInstalled = true
+
+		// Initialize DNS config section if needed
+		if stackConfig.DNS == nil {
+			stackConfig.DNS = &config.DNSConfig{
+				Backend:    "gsqlite3",
+				Forwarders: []string{"8.8.8.8", "1.1.1.1"},
+			}
+		}
+
+		// Store API key reference (points to OpenBAO secret)
+		// Instance scoping will add "foundry-core/" prefix automatically
+		if apiKey, ok := componentConfig["api_key"].(string); ok && apiKey != "" {
+			stackConfig.DNS.APIKey = "${secret:dns:api_key}"
+		}
+	case "zot":
+		stackConfig.SetupState.ZotInstalled = true
+	case "k3s", "kubernetes":
+		stackConfig.SetupState.K8sInstalled = true
+	default:
+		// Unknown component, don't update state
+		return nil
+	}
+
+	// Save the updated config
+	configPath := config.DefaultConfigPath()
+	if err := config.Save(stackConfig, configPath); err != nil {
+		return fmt.Errorf("failed to save config: %w", err)
+	}
+
+	fmt.Printf("✓ Setup state updated\n")
+	return nil
+}
+
+// getTargetHostForComponent determines which host a component should be installed on
+func getTargetHostForComponent(componentName string, stackConfig *config.Config) (*host.Host, error) {
+	// Map component names to their host using role-based discovery
+	var targetHost *host.Host
+	var err error
+
+	switch componentName {
+	case "openbao":
+		targetHost, err = stackConfig.GetPrimaryOpenBAOHost()
+		if err != nil {
+			return nil, fmt.Errorf("no host with openbao role configured: %w", err)
+		}
+	case "dns", "powerdns":
+		targetHost, err = stackConfig.GetPrimaryDNSHost()
+		if err != nil {
+			return nil, fmt.Errorf("no host with dns role configured: %w", err)
+		}
+	case "zot":
+		targetHost, err = stackConfig.GetPrimaryZotHost()
+		if err != nil {
+			return nil, fmt.Errorf("no host with zot role configured: %w", err)
+		}
+	case "k3s", "kubernetes":
+		// K3s is installed on nodes defined by cluster roles
+		// For now, use the first control plane node
+		// TODO: Implement proper node selection for K3s
+		return nil, fmt.Errorf("k3s installation not yet implemented in component install command")
+	default:
+		return nil, fmt.Errorf("unknown component %q - cannot determine target host", componentName)
+	}
+
+	return targetHost, nil
+}
+
+// connectToHost establishes an SSH connection to the given host
+func connectToHost(h *host.Host) (*ssh.Connection, error) {
+	// Load config to get cluster name
+	configPath := config.DefaultConfigPath()
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load config: %w", err)
+	}
+
+	// Get SSH key from storage (prefers OpenBAO, falls back to filesystem)
+	configDir, err := config.GetConfigDir()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get config directory: %w", err)
+	}
+
+	keyStorage, err := ssh.GetKeyStorage(configDir, cfg.Cluster.Name)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create key storage: %w", err)
+	}
+
+	keyPair, err := keyStorage.Load(h.Hostname)
+	if err != nil {
+		return nil, fmt.Errorf("SSH key not found for host %s: %w\n\nHint: Run 'foundry host sync-keys %s' to reinstall SSH keys", h.Hostname, err, h.Hostname)
+	}
+
+	// Create auth method from key pair
+	authMethod, err := keyPair.AuthMethod()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create auth method: %w", err)
+	}
+
+	// Connect to host
+	connOpts := &ssh.ConnectionOptions{
+		Host:       h.Address,
+		Port:       h.Port,
+		User:       h.User,
+		AuthMethod: authMethod,
+		Timeout:    30,
+	}
+
+	conn, err := ssh.Connect(connOpts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to %s: %w", h.Hostname, err)
+	}
+
+	return conn, nil
+}
+
+// ensureDNSAPIKey generates and stores a PowerDNS API key in OpenBAO if it doesn't exist
+// Returns the API key (either existing or newly generated)
+func ensureDNSAPIKey(stackConfig *config.Config) (string, error) {
+	// Get config directory for OpenBAO client
+	configDir, err := config.GetConfigDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get config directory: %w", err)
+	}
+
+	// Get OpenBAO address from config
+	addr, err := stackConfig.GetPrimaryOpenBAOAddress()
+	if err != nil {
+		return "", fmt.Errorf("OpenBAO host not configured: %w", err)
+	}
+	openBAOAddr := fmt.Sprintf("http://%s:8200", addr)
+
+	// Get OpenBAO token from keys file
+	keysPath := filepath.Join(configDir, "openbao-keys", stackConfig.Cluster.Name, "keys.json")
+	keysData, err := os.ReadFile(keysPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to read OpenBAO keys: %w", err)
+	}
+
+	var keys struct {
+		RootToken string `json:"root_token"`
+	}
+	if err := json.Unmarshal(keysData, &keys); err != nil {
+		return "", fmt.Errorf("failed to parse OpenBAO keys: %w", err)
+	}
+
+	// Create OpenBAO client directly
+	openBAOClient := openbao.NewClient(openBAOAddr, keys.RootToken)
+
+	// Check if API key already exists in OpenBAO at foundry-core/dns
+	ctx := context.Background()
+	existingData, err := openBAOClient.ReadSecretV2(ctx, "foundry-core", "dns")
+	if err == nil && existingData != nil {
+		if apiKeyValue, ok := existingData["api_key"].(string); ok {
+			fmt.Println("  ℹ Using existing DNS API key from OpenBAO")
+			return apiKeyValue, nil
+		}
+	}
+
+	// Generate new API key
+	fmt.Println("  Generating DNS API key...")
+	apiKey, err := generateDNSAPIKey()
+	if err != nil {
+		return "", fmt.Errorf("failed to generate API key: %w", err)
+	}
+
+	// Store in OpenBAO at foundry-core/dns
+	fmt.Println("  Storing DNS API key in OpenBAO...")
+	secretData := map[string]interface{}{
+		"api_key": apiKey,
+	}
+
+	if err := openBAOClient.WriteSecretV2(ctx, "foundry-core", "dns", secretData); err != nil {
+		return "", fmt.Errorf("failed to store API key in OpenBAO: %w", err)
+	}
+
+	fmt.Println("  ✓ DNS API key stored in OpenBAO")
+	return apiKey, nil
+}
+
+// generateDNSAPIKey generates a secure random API key for PowerDNS
+func generateDNSAPIKey() (string, error) {
+	bytes := make([]byte, 32) // 256 bits
+	if _, err := rand.Read(bytes); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(bytes), nil
+}
+
+// isDependencyInstalled checks if a component dependency is installed using setup state
+func isDependencyInstalled(dep string, cfg *config.Config) bool {
+	// If setup state is nil, assume nothing is installed
+	if cfg.SetupState == nil {
+		return false
+	}
+
+	switch dep {
+	case "openbao":
+		return cfg.SetupState.OpenBAOInstalled
+	case "dns", "powerdns":
+		return cfg.SetupState.DNSInstalled
+	case "zot":
+		return cfg.SetupState.ZotInstalled
+	case "k3s", "kubernetes":
+		return cfg.SetupState.K8sInstalled
+	default:
+		return false
+	}
+}

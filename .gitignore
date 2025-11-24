@@ -4,7 +4,8 @@
 *.dll
 *.so
 *.dylib
-foundry
+/foundry
+/v1/foundry
 
 # Test binary, built with `go test -c`
 *.test
