@@ -54,25 +54,10 @@ func InstallControlPlane(ctx context.Context, executor SSHExecutor, cfg *Config)
 	}
 
 	if isInstalled {
-		// K3s is already installed, but we need to check kube-vip separately
-		fmt.Println("   K3s already installed, skipping K3s installation")
+		// K3s is already installed - apply updates idempotently
+		fmt.Println("   K3s already installed, applying updates...")
 
-		// Check if kube-vip is also installed
-		kubeVIPInstalled, err := IsKubeVIPInstalled(executor)
-		if err != nil {
-			return fmt.Errorf("failed to check if kube-vip is installed: %w", err)
-		}
-
-		if kubeVIPInstalled {
-			// Both K3s and kube-vip are installed, nothing to do
-			fmt.Println("   kube-vip already installed, skipping setup")
-			return nil
-		}
-
-		// K3s is installed but kube-vip is not, set it up
-		fmt.Println("   kube-vip not found, setting it up...")
-
-		// Detect network interface for kube-vip
+		// Detect network interface for kube-vip if not provided
 		if cfg.Interface == "" {
 			iface, err := network.DetectPrimaryInterface(executor)
 			if err != nil {
@@ -81,14 +66,24 @@ func InstallControlPlane(ctx context.Context, executor SSHExecutor, cfg *Config)
 			cfg.Interface = iface
 		}
 
+		// Apply kube-vip manifests (idempotent via kubectl apply)
+		// This updates RBAC, ConfigMaps, and other resources
 		if err := setupKubeVIP(ctx, executor, cfg); err != nil {
-			return fmt.Errorf("failed to setup kube-vip: %w", err)
+			return fmt.Errorf("failed to update kube-vip: %w", err)
 		}
 
-		if err := waitForKubeVIPReady(executor, cfg.VIP); err != nil {
-			return fmt.Errorf("kube-vip failed to become ready: %w", err)
+		// Restart kube-vip-cloud-provider to pick up any RBAC/config changes
+		fmt.Println("   Restarting kube-vip-cloud-provider...")
+		restartCmd := "sudo kubectl rollout restart deployment -n kube-system kube-vip-cloud-provider"
+		result, err := executor.Exec(restartCmd)
+		if err != nil {
+			return fmt.Errorf("failed to restart kube-vip-cloud-provider: %w", err)
+		}
+		if result.ExitCode != 0 {
+			return fmt.Errorf("failed to restart kube-vip-cloud-provider: exit code %d, stderr: %s", result.ExitCode, result.Stderr)
 		}
 
+		fmt.Println("   ✓ Updates applied successfully")
 		return nil
 	}
 
