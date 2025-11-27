@@ -19,15 +19,18 @@ const (
 // Registry types (RegistryConfig, RegistryMirror, RegistryAuth, etc.) are generated from CSIL in types.gen.go
 
 // GenerateRegistriesYAML generates the registries.yaml content for K3s
-// This configures K3s to use Zot as a pull-through cache for Docker Hub
+// This configures K3s to use Zot as a pull-through cache for container registries
 func GenerateRegistriesYAML(zotURL string, insecure bool) string {
 	template := `mirrors:
   docker.io:
     endpoint:
       - "%s"
+  ghcr.io:
+    endpoint:
+      - "%s"
 `
 
-	config := fmt.Sprintf(template, zotURL)
+	config := fmt.Sprintf(template, zotURL, zotURL)
 
 	// Add TLS configuration if needed
 	if insecure {

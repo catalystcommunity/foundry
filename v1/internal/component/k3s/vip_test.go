@@ -409,6 +409,9 @@ func TestGenerateKubeVIPConfigMap(t *testing.T) {
 				func(t *testing.T, manifest string) {
 					assert.Contains(t, manifest, "cidr-global: \"192.168.1.100/32\"")
 				},
+				func(t *testing.T, manifest string) {
+					assert.Contains(t, manifest, "allow-share-global: \"true\"")
+				},
 			},
 		},
 		{
@@ -418,6 +421,9 @@ func TestGenerateKubeVIPConfigMap(t *testing.T) {
 			checkFuncs: []func(t *testing.T, manifest string){
 				func(t *testing.T, manifest string) {
 					assert.Contains(t, manifest, "cidr-global: \"192.168.1.0/24\"")
+				},
+				func(t *testing.T, manifest string) {
+					assert.Contains(t, manifest, "allow-share-global: \"true\"")
 				},
 			},
 		},

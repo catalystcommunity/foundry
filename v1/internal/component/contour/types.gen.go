@@ -11,6 +11,7 @@ type Config struct {
 	EnvoyReplicaCount uint64 `json:"envoy_replica_count" yaml:"envoy_replica_count"`
 	UseKubeVIP bool `json:"use_kubevip" yaml:"use_kubevip"`
 	DefaultIngressClass bool `json:"default_ingress_class" yaml:"default_ingress_class"`
+	GatewayAPIVersion string `json:"gateway_api_version" yaml:"gateway_api_version"`
 	Values map[string]any `json:"values" yaml:",inline"`
 }
 

@@ -5,6 +5,7 @@ import (
 	"github.com/catalystcommunity/foundry/v1/internal/component/certmanager"
 	"github.com/catalystcommunity/foundry/v1/internal/component/contour"
 	"github.com/catalystcommunity/foundry/v1/internal/component/dns"
+	"github.com/catalystcommunity/foundry/v1/internal/component/gatewayapi"
 	"github.com/catalystcommunity/foundry/v1/internal/component/k3s"
 	"github.com/catalystcommunity/foundry/v1/internal/component/openbao"
 	"github.com/catalystcommunity/foundry/v1/internal/component/zot"
@@ -35,7 +36,14 @@ func InitComponents() error {
 		return err
 	}
 
-	// Register Contour - depends on K3s
+	// Register Gateway API - depends on K3s
+	// Gateway API CRDs are installed as a cluster-level feature, independent of ingress controllers
+	gatewayAPIComp := gatewayapi.NewComponent(nil)
+	if err := component.Register(gatewayAPIComp); err != nil {
+		return err
+	}
+
+	// Register Contour - depends on K3s and Gateway API
 	// Note: Contour requires Helm and K8s clients which are initialized at runtime
 	contourComp := contour.NewComponent(nil, nil)
 	if err := component.Register(contourComp); err != nil {

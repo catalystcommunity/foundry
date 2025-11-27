@@ -149,7 +149,7 @@ func GenerateConfig(cfg *Config) (string, error) {
 		},
 	}
 
-	// Add pull-through cache for Docker Hub if enabled
+	// Add pull-through cache for registries if enabled
 	if cfg.PullThroughCache {
 		zotConfig.Extensions = &Extensions{
 			Sync: &SyncExtension{
@@ -157,6 +157,11 @@ func GenerateConfig(cfg *Config) (string, error) {
 				Registries: []RegistryConfig{
 					{
 						URLs:      []string{"https://registry-1.docker.io"},
+						TLSVerify: true,
+						OnDemand:  true,
+					},
+					{
+						URLs:      []string{"https://ghcr.io"},
 						TLSVerify: true,
 						OnDemand:  true,
 					},

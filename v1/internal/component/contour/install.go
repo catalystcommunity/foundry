@@ -9,9 +9,9 @@ import (
 )
 
 const (
-	contourRepoName = "bitnami"
-	contourRepoURL  = "https://charts.bitnami.com/bitnami"
-	contourChart    = "bitnami/contour"
+	contourRepoName = "projectcontour"
+	contourRepoURL  = "https://projectcontour.github.io/helm-charts/"
+	contourChart    = "projectcontour/contour"
 )
 
 // Install installs the Contour ingress controller using Helm
@@ -26,7 +26,7 @@ func Install(ctx context.Context, helmClient HelmClient, k8sClient K8sClient, cf
 		cfg = DefaultConfig()
 	}
 
-	// Add Bitnami Helm repository
+	// Add Project Contour Helm repository
 	if err := helmClient.AddRepo(ctx, helm.RepoAddOptions{
 		Name:        contourRepoName,
 		URL:         contourRepoURL,
@@ -37,6 +37,31 @@ func Install(ctx context.Context, helmClient HelmClient, k8sClient K8sClient, cf
 
 	// Build Helm values
 	values := buildHelmValues(cfg)
+
+	// Check if release already exists
+	releases, err := helmClient.List(ctx, cfg.Namespace)
+	if err == nil {
+		for _, rel := range releases {
+			if rel.Name == "contour" {
+				// Release exists - check status
+				if rel.Status == "deployed" {
+					// Already deployed successfully, just verify pods are running
+					return verifyInstallation(ctx, k8sClient, cfg.Namespace)
+				}
+				// Release exists but not deployed (failed, pending, etc.)
+				// Uninstall the failed release so we can reinstall cleanly
+				fmt.Printf("  Removing failed release (status: %s)...\n", rel.Status)
+				if err := helmClient.Uninstall(ctx, helm.UninstallOptions{
+					ReleaseName: "contour",
+					Namespace:   cfg.Namespace,
+				}); err != nil {
+					return fmt.Errorf("failed to uninstall existing release: %w", err)
+				}
+				fmt.Println("  ✓ Failed release removed")
+				break // Continue with fresh install
+			}
+		}
+	}
 
 	// Install Contour via Helm
 	if err := helmClient.Install(ctx, helm.InstallOptions{
@@ -60,7 +85,8 @@ func Install(ctx context.Context, helmClient HelmClient, k8sClient K8sClient, cf
 	return nil
 }
 
-// buildHelmValues constructs the Helm values for Contour installation
+// buildHelmValues constructs the Helm values for official Contour chart installation
+// See: https://projectcontour.github.io/helm-charts/
 func buildHelmValues(cfg *Config) map[string]interface{} {
 	values := make(map[string]interface{})
 
@@ -69,50 +95,53 @@ func buildHelmValues(cfg *Config) map[string]interface{} {
 		values[k] = v
 	}
 
-	// Set Contour replicas
-	if cfg.ReplicaCount > 0 {
-		values["contour"] = map[string]interface{}{
-			"replicaCount": cfg.ReplicaCount,
-		}
-	}
-
-	// Set Envoy replicas
-	if cfg.EnvoyReplicaCount > 0 {
-		values["envoy"] = map[string]interface{}{
-			"replicaCount": cfg.EnvoyReplicaCount,
-			"service": map[string]interface{}{
-				"type": "LoadBalancer",
+	// Configure Contour
+	contourConfig := map[string]interface{}{
+		"replicas": cfg.ReplicaCount,
+		// IngressClass configuration
+		"ingressClass": map[string]interface{}{
+			"create":  true,
+			"default": cfg.DefaultIngressClass,
+		},
+		// Gateway API controller configuration
+		"configInline": map[string]interface{}{
+			"gateway": map[string]interface{}{
+				"controllerName": "projectcontour.io/gateway-controller",
 			},
-		}
+		},
+	}
+	values["contour"] = contourConfig
+
+	// Configure Envoy
+	envoyConfig := map[string]interface{}{
+		"replicas": cfg.EnvoyReplicaCount,
+		"service": map[string]interface{}{
+			"type": "LoadBalancer",
+		},
 	}
 
 	// Configure for bare metal with kube-vip
 	if cfg.UseKubeVIP {
-		// kube-vip cloud provider will automatically assign LoadBalancer IPs
-		if envoy, ok := values["envoy"].(map[string]interface{}); ok {
-			if service, ok := envoy["service"].(map[string]interface{}); ok {
-				service["annotations"] = map[string]interface{}{
-					"kube-vip.io/loadbalancerIPs": "auto",
-				}
-			}
-		} else {
-			values["envoy"] = map[string]interface{}{
-				"service": map[string]interface{}{
-					"type": "LoadBalancer",
-					"annotations": map[string]interface{}{
-						"kube-vip.io/loadbalancerIPs": "auto",
-					},
-				},
-			}
+		serviceConfig := map[string]interface{}{
+			"type": "LoadBalancer",
 		}
-	}
 
-	// Set as default IngressClass
-	if cfg.DefaultIngressClass {
-		values["ingressClass"] = map[string]interface{}{
-			"default": true,
+		// If we have a cluster VIP, set it explicitly to share with K3s API
+		// (K3s API uses port 6443, Contour uses 80/443 - no conflict)
+		// If no VIP is set, don't add annotation - let kube-vip-cloud-provider auto-assign
+		if vip := GetClusterVIP(); vip != "" {
+			serviceConfig["annotations"] = map[string]interface{}{
+				"kube-vip.io/loadbalancerIPs": vip,
+			}
 		}
+		// Note: "auto" is NOT a valid value for kube-vip - it tries to resolve it as a hostname
+
+		envoyConfig["service"] = serviceConfig
 	}
+	values["envoy"] = envoyConfig
+
+	// Gateway API CRDs are managed by our gateway-api component, not the Contour chart
+	// The official chart doesn't install CRDs by default anyway
 
 	return values
 }

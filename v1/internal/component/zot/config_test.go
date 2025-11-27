@@ -47,12 +47,20 @@ func TestGenerateConfig_WithPullThroughCache(t *testing.T) {
 	require.NotNil(t, zotConfig.Extensions.Sync)
 	assert.True(t, zotConfig.Extensions.Sync.Enable)
 
-	// Verify Docker Hub registry
-	require.Len(t, zotConfig.Extensions.Sync.Registries, 1)
-	registry := zotConfig.Extensions.Sync.Registries[0]
-	assert.Equal(t, []string{"https://registry-1.docker.io"}, registry.URLs)
-	assert.True(t, registry.TLSVerify)
-	assert.True(t, registry.OnDemand)
+	// Verify registries (Docker Hub and GHCR)
+	require.Len(t, zotConfig.Extensions.Sync.Registries, 2)
+
+	// Docker Hub registry
+	dockerRegistry := zotConfig.Extensions.Sync.Registries[0]
+	assert.Equal(t, []string{"https://registry-1.docker.io"}, dockerRegistry.URLs)
+	assert.True(t, dockerRegistry.TLSVerify)
+	assert.True(t, dockerRegistry.OnDemand)
+
+	// GHCR registry
+	ghcrRegistry := zotConfig.Extensions.Sync.Registries[1]
+	assert.Equal(t, []string{"https://ghcr.io"}, ghcrRegistry.URLs)
+	assert.True(t, ghcrRegistry.TLSVerify)
+	assert.True(t, ghcrRegistry.OnDemand)
 
 	// Verify search and UI are enabled
 	require.NotNil(t, zotConfig.Extensions.Search)

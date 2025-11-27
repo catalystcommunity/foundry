@@ -34,14 +34,15 @@ type InstallOptions struct {
 
 // UpgradeOptions contains options for upgrading a Helm release
 type UpgradeOptions struct {
-	ReleaseName string
-	Namespace   string
-	Chart       string
-	Version     string
-	Values      map[string]interface{}
-	Install     bool // Install if not already installed
-	Wait        bool
-	Timeout     time.Duration
+	ReleaseName     string
+	Namespace       string
+	Chart           string
+	Version         string
+	Values          map[string]interface{}
+	Install         bool // Install if not already installed
+	CreateNamespace bool // Create namespace if it doesn't exist
+	Wait            bool
+	Timeout         time.Duration
 }
 
 // UninstallOptions contains options for uninstalling a Helm release

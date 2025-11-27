@@ -243,6 +243,11 @@ func (c *Client) Upgrade(ctx context.Context, opts UpgradeOptions) error {
 		upgradeAction.Version = opts.Version
 	}
 
+	// Note: Helm's Upgrade action doesn't support CreateNamespace directly.
+	// The namespace should be created before calling upgrade if needed.
+	// For now, we rely on the calling code to handle namespace creation,
+	// or the namespace already existing.
+
 	// Locate the chart
 	chartPath, err := upgradeAction.ChartPathOptions.LocateChart(opts.Chart, c.settings)
 	if err != nil {

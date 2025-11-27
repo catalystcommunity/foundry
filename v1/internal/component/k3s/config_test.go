@@ -21,6 +21,7 @@ func TestGenerateRegistriesYAML(t *testing.T) {
 			want: []string{
 				"mirrors:",
 				"docker.io:",
+				"ghcr.io:",
 				"endpoint:",
 				"- \"http://zot.infraexample.com:5000\"",
 			},
@@ -32,6 +33,7 @@ func TestGenerateRegistriesYAML(t *testing.T) {
 			want: []string{
 				"mirrors:",
 				"docker.io:",
+				"ghcr.io:",
 				"endpoint:",
 				"- \"http://zot.infraexample.com:5000\"",
 				"configs:",
@@ -64,6 +66,7 @@ func TestGenerateRegistriesConfig(t *testing.T) {
 			want: []string{
 				"mirrors:",
 				"docker.io:",
+				"ghcr.io:",
 				"endpoint:",
 				"- \"http://zot.infraexample.com:5000\"",
 				"configs:",
@@ -78,6 +81,7 @@ func TestGenerateRegistriesConfig(t *testing.T) {
 			want: []string{
 				"mirrors:",
 				"docker.io:",
+				"ghcr.io:",
 				"endpoint:",
 				"- \"http://192.168.1.50:5000\"",
 				"configs:",

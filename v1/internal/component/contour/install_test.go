@@ -13,11 +13,11 @@ import (
 
 // mockHelmClient is a mock implementation of helm.Client for testing
 type mockHelmClient struct {
-	addRepoErr    error
-	installErr    error
-	listReleases  []helm.Release
-	listErr       error
-	reposAdded    []helm.RepoAddOptions
+	addRepoErr      error
+	installErr      error
+	listReleases    []helm.Release
+	listErr         error
+	reposAdded      []helm.RepoAddOptions
 	chartsInstalled []helm.InstallOptions
 }
 
@@ -31,12 +31,12 @@ func (m *mockHelmClient) Install(ctx context.Context, opts helm.InstallOptions) 
 	return m.installErr
 }
 
-func (m *mockHelmClient) List(ctx context.Context, namespace string) ([]helm.Release, error) {
-	return m.listReleases, m.listErr
-}
-
 func (m *mockHelmClient) Upgrade(ctx context.Context, opts helm.UpgradeOptions) error {
 	return nil
+}
+
+func (m *mockHelmClient) List(ctx context.Context, namespace string) ([]helm.Release, error) {
+	return m.listReleases, m.listErr
 }
 
 func (m *mockHelmClient) Uninstall(ctx context.Context, opts helm.UninstallOptions) error {
@@ -58,33 +58,36 @@ func (m *mockK8sClient) GetPods(ctx context.Context, namespace string) ([]*k8s.P
 }
 
 func TestBuildHelmValues_Defaults(t *testing.T) {
+	// Clear any VIP override from previous tests
+	SetClusterVIP("")
+
 	cfg := DefaultConfig()
 	values := buildHelmValues(cfg)
 
-	// Check Contour replicas
+	// Check Contour replicas (official chart uses "replicas" not "replicaCount")
 	contour, ok := values["contour"].(map[string]interface{})
 	require.True(t, ok)
-	assert.Equal(t, uint64(2), contour["replicaCount"])
+	assert.Equal(t, uint64(2), contour["replicas"])
 
 	// Check Envoy replicas
 	envoy, ok := values["envoy"].(map[string]interface{})
 	require.True(t, ok)
-	assert.Equal(t, uint64(2), envoy["replicaCount"])
+	assert.Equal(t, uint64(2), envoy["replicas"])
 
 	// Check service type
 	service, ok := envoy["service"].(map[string]interface{})
 	require.True(t, ok)
 	assert.Equal(t, "LoadBalancer", service["type"])
 
-	// Check kube-vip annotations
-	annotations, ok := service["annotations"].(map[string]interface{})
-	require.True(t, ok)
-	assert.Equal(t, "auto", annotations["kube-vip.io/loadbalancerIPs"])
+	// When no VIP is set, no annotation should be added (let kube-vip auto-assign)
+	_, hasAnnotations := service["annotations"]
+	assert.False(t, hasAnnotations, "no annotations expected when VIP not set")
 
-	// Check default IngressClass
-	ingressClass, ok := values["ingressClass"].(map[string]interface{})
+	// Check default IngressClass (nested under contour in official chart)
+	ingressClass, ok := contour["ingressClass"].(map[string]interface{})
 	require.True(t, ok)
 	assert.Equal(t, true, ingressClass["default"])
+	assert.Equal(t, true, ingressClass["create"])
 }
 
 func TestBuildHelmValues_CustomReplicas(t *testing.T) {
@@ -100,11 +103,11 @@ func TestBuildHelmValues_CustomReplicas(t *testing.T) {
 
 	contour, ok := values["contour"].(map[string]interface{})
 	require.True(t, ok)
-	assert.Equal(t, uint64(5), contour["replicaCount"])
+	assert.Equal(t, uint64(5), contour["replicas"])
 
 	envoy, ok := values["envoy"].(map[string]interface{})
 	require.True(t, ok)
-	assert.Equal(t, uint64(3), envoy["replicaCount"])
+	assert.Equal(t, uint64(3), envoy["replicas"])
 }
 
 func TestBuildHelmValues_NoKubeVIP(t *testing.T) {
@@ -140,9 +143,13 @@ func TestBuildHelmValues_NoDefaultIngressClass(t *testing.T) {
 
 	values := buildHelmValues(cfg)
 
-	// Should not have ingressClass when DefaultIngressClass is false
-	_, hasIngressClass := values["ingressClass"]
-	assert.False(t, hasIngressClass)
+	// IngressClass should have default: false when DefaultIngressClass is false
+	contour, ok := values["contour"].(map[string]interface{})
+	require.True(t, ok)
+	ingressClass, ok := contour["ingressClass"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, false, ingressClass["default"])
+	assert.Equal(t, true, ingressClass["create"]) // Still create the class, just not as default
 }
 
 func TestBuildHelmValues_WithCustomValues(t *testing.T) {
@@ -164,6 +171,24 @@ func TestBuildHelmValues_WithCustomValues(t *testing.T) {
 	// Custom values should be preserved
 	assert.Equal(t, "value", values["custom"])
 	assert.NotNil(t, values["nested"])
+}
+
+func TestBuildHelmValues_WithClusterVIP(t *testing.T) {
+	// Set the cluster VIP (simulating what happens when ParseConfig is called with cluster_vip)
+	SetClusterVIP("10.16.0.43")
+	defer SetClusterVIP("") // Clean up
+
+	cfg := DefaultConfig()
+	values := buildHelmValues(cfg)
+
+	// Check that the VIP is used instead of "auto"
+	envoy, ok := values["envoy"].(map[string]interface{})
+	require.True(t, ok)
+	service, ok := envoy["service"].(map[string]interface{})
+	require.True(t, ok)
+	annotations, ok := service["annotations"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, "10.16.0.43", annotations["kube-vip.io/loadbalancerIPs"])
 }
 
 func TestInstall_Success(t *testing.T) {
