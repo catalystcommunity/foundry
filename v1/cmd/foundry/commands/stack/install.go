@@ -14,10 +14,15 @@ import (
 
 	clustercommands "github.com/catalystcommunity/foundry/v1/cmd/foundry/commands/cluster"
 	"github.com/catalystcommunity/foundry/v1/internal/component"
+	"github.com/catalystcommunity/foundry/v1/internal/component/certmanager"
+	"github.com/catalystcommunity/foundry/v1/internal/component/contour"
+	"github.com/catalystcommunity/foundry/v1/internal/component/gatewayapi"
 	"github.com/catalystcommunity/foundry/v1/internal/component/openbao"
 	"github.com/catalystcommunity/foundry/v1/internal/config"
 	"github.com/catalystcommunity/foundry/v1/internal/container"
+	"github.com/catalystcommunity/foundry/v1/internal/helm"
 	"github.com/catalystcommunity/foundry/v1/internal/host"
+	"github.com/catalystcommunity/foundry/v1/internal/k8s"
 	"github.com/catalystcommunity/foundry/v1/internal/setup"
 	"github.com/catalystcommunity/foundry/v1/internal/ssh"
 	"github.com/catalystcommunity/foundry/v1/internal/sudo"
@@ -25,6 +30,32 @@ import (
 	gossh "golang.org/x/crypto/ssh"
 	"golang.org/x/term"
 )
+
+// checkAllComponentsInstalled checks if all components are actually installed
+func checkAllComponentsInstalled(ctx context.Context, state *setup.SetupState) bool {
+	// Check Phase 2 components via state flags
+	phase2Complete := state.OpenBAOInstalled &&
+		state.OpenBAOInitialized &&
+		state.DNSInstalled &&
+		state.DNSZonesCreated &&
+		state.ZotInstalled &&
+		state.K8sInstalled
+
+	if !phase2Complete {
+		return false
+	}
+
+	// Check Phase 3 components via actual status
+	contourComp := component.Get("contour")
+	if contourComp != nil {
+		status, err := contourComp.Status(ctx)
+		if err != nil || status == nil || !status.Installed {
+			return false
+		}
+	}
+
+	return true
+}
 
 // InstallCommand handles the 'foundry stack install' command
 var InstallCommand = &cli.Command{
@@ -139,8 +170,9 @@ func runStackInstall(ctx context.Context, cmd *cli.Command) error {
 		cfg.SetupState = &setup.SetupState{}
 	}
 
-	// Show current state
-	if cfg.SetupState.StackComplete {
+	// Check if all components are actually installed (don't rely solely on StackComplete flag)
+	allComponentsInstalled := checkAllComponentsInstalled(ctx, cfg.SetupState)
+	if allComponentsInstalled {
 		fmt.Println("\n✓ Stack is already complete!")
 		fmt.Println("\nTo reinstall, reset your configuration or use specific component commands.")
 		return nil
@@ -487,7 +519,7 @@ func installComponents(ctx context.Context, cfg *config.Config, configPath strin
 	fmt.Println("\n[3/4] Component Installation")
 	fmt.Println(strings.Repeat("-", 60))
 
-	// Define installation order (matches Phase 2 architecture)
+	// Define installation order (matches Phase 2 + Phase 3 architecture)
 	components := []struct {
 		name      string
 		checkFunc func(*setup.SetupState) bool
@@ -531,6 +563,42 @@ func installComponents(ctx context.Context, cfg *config.Config, configPath strin
 				s.K8sInstalled = true
 			},
 		},
+		{
+			name: "gateway-api",
+			checkFunc: func(s *setup.SetupState) bool {
+				// Check actual component status
+				comp := component.Get("gateway-api")
+				if comp == nil {
+					return false
+				}
+				status, err := comp.Status(ctx)
+				if err != nil || status == nil {
+					return false
+				}
+				return status.Installed
+			},
+			setFunc: func(s *setup.SetupState) {
+				// No state flag for Gateway API - component tracks its own status
+			},
+		},
+		{
+			name: "contour",
+			checkFunc: func(s *setup.SetupState) bool {
+				// Check actual component status instead of state flag
+				comp := component.Get("contour")
+				if comp == nil {
+					return false
+				}
+				status, err := comp.Status(ctx)
+				if err != nil || status == nil {
+					return false
+				}
+				return status.Installed
+			},
+			setFunc: func(s *setup.SetupState) {
+				// No state flag for Contour yet - component tracks its own status
+			},
+		},
 	}
 
 	for i, comp := range components {
@@ -568,6 +636,64 @@ func installComponents(ctx context.Context, cfg *config.Config, configPath strin
 	return nil
 }
 
+// installK8sComponent installs a Kubernetes component using the cluster kubeconfig
+func installK8sComponent(ctx context.Context, cfg *config.Config, componentName string, comp component.Component) error {
+	fmt.Printf("  Installing %s to Kubernetes cluster...\n", componentName)
+
+	// Get kubeconfig path
+	configDir, err := config.GetConfigDir()
+	if err != nil {
+		return fmt.Errorf("failed to get config directory: %w", err)
+	}
+	kubeconfigPath := filepath.Join(configDir, "kubeconfig")
+
+	// Verify kubeconfig exists and read it
+	kubeconfigBytes, err := os.ReadFile(kubeconfigPath)
+	if err != nil {
+		return fmt.Errorf("failed to read kubeconfig at %s: %w", kubeconfigPath, err)
+	}
+
+	// Create Helm and K8s clients from kubeconfig
+	helmClient, err := helm.NewClient(kubeconfigBytes, "default")
+	if err != nil {
+		return fmt.Errorf("failed to create helm client: %w", err)
+	}
+
+	k8sClient, err := k8s.NewClientFromKubeconfig(kubeconfigBytes)
+	if err != nil {
+		return fmt.Errorf("failed to create k8s client: %w", err)
+	}
+
+	// Create component-specific instance with clients
+	var componentWithClients component.Component
+	switch componentName {
+	case "gateway-api":
+		componentWithClients = gatewayapi.NewComponent(k8sClient)
+	case "contour":
+		componentWithClients = contour.NewComponent(helmClient, k8sClient)
+	case "cert-manager":
+		componentWithClients = certmanager.NewComponent(nil)
+	default:
+		return fmt.Errorf("unknown kubernetes component: %s", componentName)
+	}
+
+	// Create component config with cluster-specific values
+	componentConfig := component.ComponentConfig{}
+
+	// Pass cluster VIP to Contour for LoadBalancer annotation sharing
+	if componentName == "contour" && cfg.Cluster.VIP != "" {
+		componentConfig["cluster_vip"] = cfg.Cluster.VIP
+	}
+
+	// Install the component
+	if err := componentWithClients.Install(ctx, componentConfig); err != nil {
+		return fmt.Errorf("installation failed: %w", err)
+	}
+
+	fmt.Printf("  ✓ %s installed successfully\n", componentName)
+	return nil
+}
+
 // installSingleComponent installs a single component with proper configuration
 func installSingleComponent(ctx context.Context, cfg *config.Config, componentName string) error {
 	// Get component from registry
@@ -579,6 +705,11 @@ func installSingleComponent(ctx context.Context, cfg *config.Config, componentNa
 	// K3s is special - use cluster init logic instead of component install
 	if componentName == "k3s" {
 		return installK3sCluster(ctx, cfg)
+	}
+
+	// Kubernetes components are installed via kubeconfig, not SSH to a host
+	if componentName == "gateway-api" || componentName == "contour" || componentName == "cert-manager" {
+		return installK8sComponent(ctx, cfg, componentName, comp)
 	}
 
 	// Get target host for this component

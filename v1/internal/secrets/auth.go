@@ -127,7 +127,14 @@ func deleteTokenFile() error {
 }
 
 // getTokenFilePath returns the path to the token file
+// Respects FOUNDRY_CONFIG_DIR environment variable if set
 func getTokenFilePath() (string, error) {
+	// Check if there's an override via environment variable
+	if dir := os.Getenv("FOUNDRY_CONFIG_DIR"); dir != "" {
+		return filepath.Join(dir, FallbackFileName), nil
+	}
+
+	// Default to ~/.foundry/
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("failed to get home directory: %w", err)

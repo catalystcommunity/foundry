@@ -13,6 +13,8 @@ import (
 type HelmClient interface {
 	AddRepo(ctx context.Context, opts helm.RepoAddOptions) error
 	Install(ctx context.Context, opts helm.InstallOptions) error
+	Upgrade(ctx context.Context, opts helm.UpgradeOptions) error
+	Uninstall(ctx context.Context, opts helm.UninstallOptions) error
 	List(ctx context.Context, namespace string) ([]helm.Release, error)
 }
 
@@ -133,21 +135,36 @@ func (c *Component) Uninstall(ctx context.Context) error {
 
 // Dependencies returns the list of components that Contour depends on
 func (c *Component) Dependencies() []string {
-	return []string{"k3s"} // Contour depends on Kubernetes being available
+	return []string{"k3s", "gateway-api"} // Contour depends on Kubernetes and Gateway API CRDs
 }
 
 // Config type is generated from CSIL in types.gen.go
 // This file extends the generated type with methods
 
+// ClusterVIP stores the cluster VIP for LoadBalancer annotation (not in generated Config)
+// This is passed at runtime from the stack config, not persisted in component config
+var clusterVIPOverride string
+
+// SetClusterVIP sets the cluster VIP for the next installation
+func SetClusterVIP(vip string) {
+	clusterVIPOverride = vip
+}
+
+// GetClusterVIP returns the cluster VIP if set
+func GetClusterVIP() string {
+	return clusterVIPOverride
+}
+
 // DefaultConfig returns a Config with sensible defaults
 func DefaultConfig() *Config {
 	return &Config{
-		Version:             "", // Latest stable version
+		Version:             "0.1.0",   // Official Project Contour chart version (app version 1.32.0)
 		Namespace:           "projectcontour",
 		ReplicaCount:        2,
 		EnvoyReplicaCount:   2,
-		UseKubeVIP:          true,  // Enable for bare metal
-		DefaultIngressClass: true,  // Set as default
+		UseKubeVIP:          true,     // Enable for bare metal
+		DefaultIngressClass: true,     // Set as default
+		GatewayAPIVersion:   "v1.3.0", // Gateway API version
 		Values:              make(map[string]interface{}),
 	}
 }
@@ -180,8 +197,17 @@ func ParseConfig(cfg component.ComponentConfig) (*Config, error) {
 		config.DefaultIngressClass = defaultClass
 	}
 
+	if gatewayAPIVersion, ok := cfg.GetString("gateway_api_version"); ok {
+		config.GatewayAPIVersion = gatewayAPIVersion
+	}
+
 	if values, ok := cfg.GetMap("values"); ok {
 		config.Values = values
+	}
+
+	// Store cluster VIP in the override (used by buildHelmValues)
+	if clusterVIP, ok := cfg.GetString("cluster_vip"); ok {
+		SetClusterVIP(clusterVIP)
 	}
 
 	return config, nil

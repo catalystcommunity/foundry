@@ -109,7 +109,16 @@ func TestClearAuthToken(t *testing.T) {
 }
 
 func TestFileFallback(t *testing.T) {
+	// Use a temp directory to avoid affecting real ~/.foundry
+	tmpDir := t.TempDir()
+	originalEnv := os.Getenv("FOUNDRY_CONFIG_DIR")
+	os.Setenv("FOUNDRY_CONFIG_DIR", tmpDir)
 	t.Cleanup(func() {
+		if originalEnv != "" {
+			os.Setenv("FOUNDRY_CONFIG_DIR", originalEnv)
+		} else {
+			os.Unsetenv("FOUNDRY_CONFIG_DIR")
+		}
 		_ = deleteTokenFile()
 	})
 
@@ -204,7 +213,18 @@ func TestFileFallback(t *testing.T) {
 }
 
 func TestGetTokenFilePath(t *testing.T) {
+	// Save and restore env var
+	originalEnv := os.Getenv("FOUNDRY_CONFIG_DIR")
+	t.Cleanup(func() {
+		if originalEnv != "" {
+			os.Setenv("FOUNDRY_CONFIG_DIR", originalEnv)
+		} else {
+			os.Unsetenv("FOUNDRY_CONFIG_DIR")
+		}
+	})
+
 	t.Run("returns valid path", func(t *testing.T) {
+		os.Unsetenv("FOUNDRY_CONFIG_DIR")
 		path, err := getTokenFilePath()
 		require.NoError(t, err)
 		assert.NotEmpty(t, path)
@@ -215,6 +235,7 @@ func TestGetTokenFilePath(t *testing.T) {
 	})
 
 	t.Run("path is in user home directory", func(t *testing.T) {
+		os.Unsetenv("FOUNDRY_CONFIG_DIR")
 		path, err := getTokenFilePath()
 		require.NoError(t, err)
 
@@ -222,6 +243,17 @@ func TestGetTokenFilePath(t *testing.T) {
 		require.NoError(t, err)
 
 		assert.Contains(t, path, homeDir)
+	})
+
+	t.Run("respects FOUNDRY_CONFIG_DIR", func(t *testing.T) {
+		customDir := "/custom/foundry/dir"
+		os.Setenv("FOUNDRY_CONFIG_DIR", customDir)
+
+		path, err := getTokenFilePath()
+		require.NoError(t, err)
+
+		assert.Contains(t, path, customDir)
+		assert.Contains(t, path, FallbackFileName)
 	})
 }
 

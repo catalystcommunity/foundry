@@ -14,7 +14,7 @@ import (
 func TestDefaultConfig(t *testing.T) {
 	config := DefaultConfig()
 
-	assert.Equal(t, "", config.Version)
+	assert.Equal(t, "0.1.0", config.Version) // Official Project Contour chart version
 	assert.Equal(t, "projectcontour", config.Namespace)
 	assert.Equal(t, uint64(2), config.ReplicaCount)
 	assert.Equal(t, uint64(2), config.EnvoyReplicaCount)
@@ -29,7 +29,7 @@ func TestParseConfig_Defaults(t *testing.T) {
 	config, err := ParseConfig(cfg)
 	require.NoError(t, err)
 
-	assert.Equal(t, "", config.Version)
+	assert.Equal(t, "0.1.0", config.Version) // Official Project Contour chart version
 	assert.Equal(t, "projectcontour", config.Namespace)
 	assert.Equal(t, uint64(2), config.ReplicaCount)
 	assert.Equal(t, uint64(2), config.EnvoyReplicaCount)
@@ -85,8 +85,9 @@ func TestComponent_Dependencies(t *testing.T) {
 	comp := NewComponent(nil, nil)
 	deps := comp.Dependencies()
 
-	require.Len(t, deps, 1)
-	assert.Equal(t, "k3s", deps[0])
+	require.Len(t, deps, 2)
+	assert.Contains(t, deps, "k3s")
+	assert.Contains(t, deps, "gateway-api")
 }
 
 func TestComponent_Install_NilHelmClient(t *testing.T) {

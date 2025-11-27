@@ -336,6 +336,7 @@ metadata:
   namespace: kube-system
 data:
   cidr-global: "%s"
+  allow-share-global: "true"
 `, cidr)
 
 	return manifest, nil
