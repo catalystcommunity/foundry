@@ -9,10 +9,10 @@ import (
 func TestStorageCommand(t *testing.T) {
 	assert.NotNil(t, Command, "Command should not be nil")
 	assert.Equal(t, "storage", Command.Name)
-	assert.Len(t, Command.Commands, 3, "Should have 3 subcommands")
+	assert.Len(t, Command.Commands, 5, "Should have 5 subcommands")
 
 	// Verify subcommands exist
-	var foundConfigure, foundList, foundTest bool
+	var foundConfigure, foundList, foundTest, foundProvision, foundPVC bool
 	for _, cmd := range Command.Commands {
 		switch cmd.Name {
 		case "configure":
@@ -21,12 +21,18 @@ func TestStorageCommand(t *testing.T) {
 			foundList = true
 		case "test":
 			foundTest = true
+		case "provision":
+			foundProvision = true
+		case "pvc":
+			foundPVC = true
 		}
 	}
 
 	assert.True(t, foundConfigure, "Should have configure command")
 	assert.True(t, foundList, "Should have list command")
 	assert.True(t, foundTest, "Should have test command")
+	assert.True(t, foundProvision, "Should have provision command")
+	assert.True(t, foundPVC, "Should have pvc command")
 }
 
 func TestConfigureCommand(t *testing.T) {

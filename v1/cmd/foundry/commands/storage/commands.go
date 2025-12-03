@@ -5,19 +5,26 @@ import "github.com/urfave/cli/v3"
 // Command is the top-level storage command
 var Command = &cli.Command{
 	Name:  "storage",
-	Usage: "Manage storage backend configuration",
-	Description: `Storage backend configuration and management commands.
+	Usage: "Manage storage backend and PVC operations",
+	Description: `Storage backend configuration and PVC management commands.
 
-These commands help you configure and manage storage backends like TrueNAS
-for use with Foundry components (Zot registry, K8s persistent volumes, etc.).
+These commands help you configure storage backends like TrueNAS and manage
+Persistent Volume Claims in your Kubernetes cluster.
 
-Typical workflow:
-  1. foundry storage configure   - Interactive TrueNAS setup
-  2. foundry storage test         - Verify connectivity
-  3. foundry storage list         - Show configured storage backends`,
+Backend Configuration:
+  foundry storage configure   - Interactive TrueNAS setup
+  foundry storage test        - Verify connectivity
+  foundry storage list        - Show configured storage backends
+
+PVC Management:
+  foundry storage provision   - Create a new PVC
+  foundry storage pvc list    - List PVCs
+  foundry storage pvc delete  - Delete a PVC`,
 	Commands: []*cli.Command{
 		ConfigureCommand,
 		ListCommand,
 		TestCommand,
+		ProvisionCommand,
+		PVCCommand,
 	},
 }

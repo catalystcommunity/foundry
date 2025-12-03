@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/catalystcommunity/foundry/v1/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
@@ -45,13 +44,16 @@ func TestInitCommand_NonInteractive(t *testing.T) {
 	configPath := filepath.Join(tempDir, ".foundry", "stack.yaml")
 	assert.FileExists(t, configPath)
 
-	// Verify file can be loaded
-	cfg, err := config.Load(configPath)
+	// Verify file contains expected template content (placeholders)
+	// Note: Non-interactive mode creates a template with placeholders that
+	// must be edited before the config will pass validation
+	data, err := os.ReadFile(configPath)
 	require.NoError(t, err)
-	assert.Equal(t, "my-cluster", cfg.Cluster.Name)
-	assert.Equal(t, "cluster.local", cfg.Cluster.Domain)
-	// Note: In new schema, nodes are managed as hosts with cluster-* roles
-	// The init command may or may not create default hosts, depending on implementation
+	content := string(data)
+	assert.Contains(t, content, "cluster:")
+	assert.Contains(t, content, "network:")
+	assert.Contains(t, content, "hosts:")
+	assert.Contains(t, content, "components:")
 }
 
 func TestInitCommand_WithCustomName(t *testing.T) {
@@ -81,10 +83,12 @@ func TestInitCommand_WithCustomName(t *testing.T) {
 	configPath := filepath.Join(tempDir, ".foundry", "test-cluster.yaml")
 	assert.FileExists(t, configPath)
 
-	cfg, err := config.Load(configPath)
+	// Verify file contains expected template content
+	data, err := os.ReadFile(configPath)
 	require.NoError(t, err)
-	assert.NotNil(t, cfg)
-	assert.NotEmpty(t, cfg.Cluster.Name)
+	content := string(data)
+	assert.Contains(t, content, "cluster:")
+	assert.Contains(t, content, "components:")
 }
 
 func TestInitCommand_FileExists_NoForce(t *testing.T) {
@@ -156,24 +160,13 @@ func TestInitCommand_FileExists_WithForce(t *testing.T) {
 	err = cmd.Run(context.Background(), []string{"foundry", "config", "init", "--non-interactive", "--force"})
 	require.NoError(t, err)
 
-	// Verify file was overwritten with new config
-	cfg, err := config.Load(configPath)
+	// Verify file was overwritten with new template (not old content)
+	data, err := os.ReadFile(configPath)
 	require.NoError(t, err)
-	assert.NotNil(t, cfg)
-	assert.NotEmpty(t, cfg.Cluster.Name)
-}
-
-func TestGetDefaultConfig(t *testing.T) {
-	cfg := getDefaultConfig()
-
-	assert.Equal(t, "my-cluster", cfg.Cluster.Name)
-	assert.Equal(t, "cluster.local", cfg.Cluster.Domain)
-	// Note: In new schema, nodes are managed as hosts with cluster-* roles
-
-	// Verify components
-	assert.Contains(t, cfg.Components, "openbao")
-	assert.Contains(t, cfg.Components, "k3s")
-	assert.Contains(t, cfg.Components, "zot")
+	content := string(data)
+	assert.NotContains(t, content, "existing: content")
+	assert.Contains(t, content, "cluster:")
+	assert.Contains(t, content, "components:")
 }
 
 func TestPrompt(t *testing.T) {
@@ -221,89 +214,6 @@ func TestPrompt(t *testing.T) {
 			assert.Equal(t, tt.expected, result)
 
 			os.Stdin = oldStdin
-		})
-	}
-}
-
-func TestPromptChoice(t *testing.T) {
-	tests := []struct {
-		name         string
-		input        string
-		choices      []string
-		defaultValue string
-		expected     string
-		expectError  bool
-	}{
-		{
-			name:         "uses default on empty input",
-			input:        "\n",
-			choices:      []string{"option1", "option2"},
-			defaultValue: "option1",
-			expected:     "option1",
-		},
-		{
-			name:         "selects by number",
-			input:        "2\n",
-			choices:      []string{"option1", "option2"},
-			defaultValue: "option1",
-			expected:     "option2",
-		},
-		{
-			name:         "selects by name",
-			input:        "option2\n",
-			choices:      []string{"option1", "option2"},
-			defaultValue: "option1",
-			expected:     "option2",
-		},
-		{
-			name:         "case insensitive name match",
-			input:        "OPTION2\n",
-			choices:      []string{"option1", "option2"},
-			defaultValue: "option1",
-			expected:     "option2",
-		},
-		{
-			name:         "invalid number",
-			input:        "99\n",
-			choices:      []string{"option1", "option2"},
-			defaultValue: "option1",
-			expectError:  true,
-		},
-		{
-			name:         "invalid choice",
-			input:        "invalid\n",
-			choices:      []string{"option1", "option2"},
-			defaultValue: "option1",
-			expectError:  true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Redirect stdin and stdout
-			oldStdin := os.Stdin
-			oldStdout := os.Stdout
-			r, w, _ := os.Pipe()
-			os.Stdin = r
-			os.Stdout = os.NewFile(0, os.DevNull)
-
-			// Write test input
-			go func() {
-				w.Write([]byte(tt.input))
-				w.Close()
-			}()
-
-			result, err := promptChoice("test question", tt.choices, tt.defaultValue)
-
-			if tt.expectError {
-				assert.Error(t, err)
-			} else {
-				require.NoError(t, err)
-				assert.Equal(t, tt.expected, result)
-			}
-
-			os.Stdin = oldStdin
-			os.Stdout = oldStdout
 		})
 	}
 }

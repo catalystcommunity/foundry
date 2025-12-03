@@ -16,6 +16,15 @@ import (
 )
 
 func TestInstallCommand_DryRun(t *testing.T) {
+	// Create a temporary directory for test isolation
+	tmpDir := t.TempDir()
+
+	// Set HOME environment variable to use temp directory
+	// This ensures no real config file interferes with the test
+	oldHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", oldHome)
+
 	// Create a fresh registry for testing
 	testRegistry := component.NewRegistry()
 
@@ -33,10 +42,10 @@ func TestInstallCommand_DryRun(t *testing.T) {
 	require.NoError(t, err)
 
 	tests := []struct {
-		name         string
-		args         []string
-		expectError  bool
-		expectOutput []string
+		name          string
+		args          []string
+		expectError   bool
+		expectOutput  []string
 		errorContains string
 	}{
 		{
@@ -54,14 +63,14 @@ func TestInstallCommand_DryRun(t *testing.T) {
 		{
 			name:          "dry-run openbao (requires config)",
 			args:          []string{"test", "install", "openbao", "--dry-run"},
-			expectError:   true,  // Will fail without stack config
-			errorContains: "failed to load stack config",
+			expectError:   true, // Will fail without stack config
+			errorContains: "config file not found",
 		},
 		{
 			name:          "dry-run with version (requires config)",
 			args:          []string{"test", "install", "openbao", "--dry-run", "--version", "2.0.0"},
-			expectError:   true,  // Will fail without stack config
-			errorContains: "failed to load stack config",
+			expectError:   true, // Will fail without stack config
+			errorContains: "config file not found",
 		},
 	}
 
