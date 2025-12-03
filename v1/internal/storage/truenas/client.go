@@ -271,3 +271,372 @@ func (c *Client) Ping() error {
 	}
 	return nil
 }
+
+// GetSystemInfo returns TrueNAS system information
+func (c *Client) GetSystemInfo() (*SystemInfo, error) {
+	respBody, err := c.httpClient.Do("GET", "/api/v2.0/system/info", nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get system info: %w", err)
+	}
+
+	var info SystemInfo
+	if err := json.Unmarshal(respBody, &info); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return &info, nil
+}
+
+// ListDisks lists all disks
+func (c *Client) ListDisks() ([]Disk, error) {
+	respBody, err := c.httpClient.Do("GET", "/api/v2.0/disk", nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list disks: %w", err)
+	}
+
+	var disks []Disk
+	if err := json.Unmarshal(respBody, &disks); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return disks, nil
+}
+
+// GetUnusedDisks returns disks not assigned to any pool
+func (c *Client) GetUnusedDisks() ([]Disk, error) {
+	disks, err := c.ListDisks()
+	if err != nil {
+		return nil, err
+	}
+
+	unused := make([]Disk, 0)
+	for _, disk := range disks {
+		if disk.Pool == "" {
+			unused = append(unused, disk)
+		}
+	}
+
+	return unused, nil
+}
+
+// CreatePool creates a new storage pool
+func (c *Client) CreatePool(config PoolCreateConfig) (*Pool, error) {
+	if config.Name == "" {
+		return nil, fmt.Errorf("pool name cannot be empty")
+	}
+	if len(config.Topology.Data) == 0 {
+		return nil, fmt.Errorf("pool must have at least one data vdev")
+	}
+
+	respBody, err := c.httpClient.Do("POST", "/api/v2.0/pool", config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create pool: %w", err)
+	}
+
+	var pool Pool
+	if err := json.Unmarshal(respBody, &pool); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return &pool, nil
+}
+
+// ListServices lists all services
+func (c *Client) ListServices() ([]Service, error) {
+	respBody, err := c.httpClient.Do("GET", "/api/v2.0/service", nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list services: %w", err)
+	}
+
+	var services []Service
+	if err := json.Unmarshal(respBody, &services); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return services, nil
+}
+
+// GetService gets a specific service by name
+func (c *Client) GetService(name string) (*Service, error) {
+	services, err := c.ListServices()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, svc := range services {
+		if svc.Service == name {
+			return &svc, nil
+		}
+	}
+
+	return nil, fmt.Errorf("service %q not found", name)
+}
+
+// StartService starts a service
+func (c *Client) StartService(name string) error {
+	body := map[string]string{"service": name}
+	_, err := c.httpClient.Do("POST", "/api/v2.0/service/start", body)
+	if err != nil {
+		return fmt.Errorf("failed to start service %s: %w", name, err)
+	}
+	return nil
+}
+
+// StopService stops a service
+func (c *Client) StopService(name string) error {
+	body := map[string]string{"service": name}
+	_, err := c.httpClient.Do("POST", "/api/v2.0/service/stop", body)
+	if err != nil {
+		return fmt.Errorf("failed to stop service %s: %w", name, err)
+	}
+	return nil
+}
+
+// EnableService enables a service to start on boot
+func (c *Client) EnableService(name string) error {
+	// First get the service ID
+	svc, err := c.GetService(name)
+	if err != nil {
+		return err
+	}
+
+	path := fmt.Sprintf("/api/v2.0/service/id/%d", svc.ID)
+	config := ServiceUpdateConfig{Enable: true}
+	_, err = c.httpClient.Do("PUT", path, config)
+	if err != nil {
+		return fmt.Errorf("failed to enable service %s: %w", name, err)
+	}
+	return nil
+}
+
+// EnsureServiceRunning ensures a service is enabled and running
+func (c *Client) EnsureServiceRunning(name string) error {
+	svc, err := c.GetService(name)
+	if err != nil {
+		return err
+	}
+
+	// Enable if not enabled
+	if !svc.Enable {
+		if err := c.EnableService(name); err != nil {
+			return err
+		}
+	}
+
+	// Start if not running
+	if svc.State != "RUNNING" {
+		if err := c.StartService(name); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// ListISCSIPortals lists all iSCSI portals
+func (c *Client) ListISCSIPortals() ([]ISCSIPortal, error) {
+	respBody, err := c.httpClient.Do("GET", "/api/v2.0/iscsi/portal", nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list iSCSI portals: %w", err)
+	}
+
+	var portals []ISCSIPortal
+	if err := json.Unmarshal(respBody, &portals); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return portals, nil
+}
+
+// CreateISCSIPortal creates an iSCSI portal
+func (c *Client) CreateISCSIPortal(config ISCSIPortalConfig) (*ISCSIPortal, error) {
+	if len(config.Listen) == 0 {
+		return nil, fmt.Errorf("portal must have at least one listen address")
+	}
+
+	respBody, err := c.httpClient.Do("POST", "/api/v2.0/iscsi/portal", config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create iSCSI portal: %w", err)
+	}
+
+	var portal ISCSIPortal
+	if err := json.Unmarshal(respBody, &portal); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return &portal, nil
+}
+
+// ListISCSIInitiators lists all iSCSI initiator groups
+func (c *Client) ListISCSIInitiators() ([]ISCSIInitiator, error) {
+	respBody, err := c.httpClient.Do("GET", "/api/v2.0/iscsi/initiator", nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list iSCSI initiators: %w", err)
+	}
+
+	var initiators []ISCSIInitiator
+	if err := json.Unmarshal(respBody, &initiators); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return initiators, nil
+}
+
+// CreateISCSIInitiator creates an iSCSI initiator group
+func (c *Client) CreateISCSIInitiator(config ISCSIInitiatorConfig) (*ISCSIInitiator, error) {
+	respBody, err := c.httpClient.Do("POST", "/api/v2.0/iscsi/initiator", config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create iSCSI initiator: %w", err)
+	}
+
+	var initiator ISCSIInitiator
+	if err := json.Unmarshal(respBody, &initiator); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return &initiator, nil
+}
+
+// ListISCSITargets lists all iSCSI targets
+func (c *Client) ListISCSITargets() ([]ISCSITarget, error) {
+	respBody, err := c.httpClient.Do("GET", "/api/v2.0/iscsi/target", nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list iSCSI targets: %w", err)
+	}
+
+	var targets []ISCSITarget
+	if err := json.Unmarshal(respBody, &targets); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return targets, nil
+}
+
+// CreateISCSITarget creates an iSCSI target
+func (c *Client) CreateISCSITarget(config ISCSITargetConfig) (*ISCSITarget, error) {
+	if config.Name == "" {
+		return nil, fmt.Errorf("target name cannot be empty")
+	}
+
+	respBody, err := c.httpClient.Do("POST", "/api/v2.0/iscsi/target", config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create iSCSI target: %w", err)
+	}
+
+	var target ISCSITarget
+	if err := json.Unmarshal(respBody, &target); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return &target, nil
+}
+
+// DeleteISCSITarget deletes an iSCSI target
+func (c *Client) DeleteISCSITarget(id int) error {
+	path := fmt.Sprintf("/api/v2.0/iscsi/target/id/%d", id)
+	_, err := c.httpClient.Do("DELETE", path, nil)
+	if err != nil {
+		return fmt.Errorf("failed to delete iSCSI target: %w", err)
+	}
+	return nil
+}
+
+// ListISCSIExtents lists all iSCSI extents
+func (c *Client) ListISCSIExtents() ([]ISCSIExtent, error) {
+	respBody, err := c.httpClient.Do("GET", "/api/v2.0/iscsi/extent", nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list iSCSI extents: %w", err)
+	}
+
+	var extents []ISCSIExtent
+	if err := json.Unmarshal(respBody, &extents); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return extents, nil
+}
+
+// CreateISCSIExtent creates an iSCSI extent
+func (c *Client) CreateISCSIExtent(config ISCSIExtentConfig) (*ISCSIExtent, error) {
+	if config.Name == "" {
+		return nil, fmt.Errorf("extent name cannot be empty")
+	}
+
+	respBody, err := c.httpClient.Do("POST", "/api/v2.0/iscsi/extent", config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create iSCSI extent: %w", err)
+	}
+
+	var extent ISCSIExtent
+	if err := json.Unmarshal(respBody, &extent); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return &extent, nil
+}
+
+// DeleteISCSIExtent deletes an iSCSI extent
+func (c *Client) DeleteISCSIExtent(id int, removeFile bool) error {
+	path := fmt.Sprintf("/api/v2.0/iscsi/extent/id/%d", id)
+	body := map[string]bool{"remove": removeFile}
+	_, err := c.httpClient.Do("DELETE", path, body)
+	if err != nil {
+		return fmt.Errorf("failed to delete iSCSI extent: %w", err)
+	}
+	return nil
+}
+
+// ListISCSITargetExtents lists all target-to-extent mappings
+func (c *Client) ListISCSITargetExtents() ([]ISCSITargetExtent, error) {
+	respBody, err := c.httpClient.Do("GET", "/api/v2.0/iscsi/targetextent", nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list iSCSI target extents: %w", err)
+	}
+
+	var mappings []ISCSITargetExtent
+	if err := json.Unmarshal(respBody, &mappings); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return mappings, nil
+}
+
+// CreateISCSITargetExtent creates a target-to-extent mapping
+func (c *Client) CreateISCSITargetExtent(config ISCSITargetExtentConfig) (*ISCSITargetExtent, error) {
+	respBody, err := c.httpClient.Do("POST", "/api/v2.0/iscsi/targetextent", config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create iSCSI target extent: %w", err)
+	}
+
+	var mapping ISCSITargetExtent
+	if err := json.Unmarshal(respBody, &mapping); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return &mapping, nil
+}
+
+// DeleteISCSITargetExtent deletes a target-to-extent mapping
+func (c *Client) DeleteISCSITargetExtent(id int) error {
+	path := fmt.Sprintf("/api/v2.0/iscsi/targetextent/id/%d", id)
+	_, err := c.httpClient.Do("DELETE", path, nil)
+	if err != nil {
+		return fmt.Errorf("failed to delete iSCSI target extent: %w", err)
+	}
+	return nil
+}
+
+// GetISCSIGlobalConfig gets the iSCSI global configuration
+func (c *Client) GetISCSIGlobalConfig() (*ISCSIGlobalConfig, error) {
+	respBody, err := c.httpClient.Do("GET", "/api/v2.0/iscsi/global", nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get iSCSI global config: %w", err)
+	}
+
+	var config ISCSIGlobalConfig
+	if err := json.Unmarshal(respBody, &config); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return &config, nil
+}

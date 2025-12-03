@@ -106,7 +106,8 @@ func runInit(ctx context.Context, cmd *cli.Command) error {
 
 func promptForConfigValues() (string, error) {
 	fmt.Println("Creating a new Foundry stack configuration")
-	fmt.Println("(Press Enter to accept defaults)\n")
+	fmt.Println("(Press Enter to accept defaults)")
+	fmt.Println()
 
 	clusterName, err := prompt("Cluster name", "my-cluster")
 	if err != nil {

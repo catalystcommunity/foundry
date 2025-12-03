@@ -87,14 +87,14 @@ type Topology struct {
 
 // VDev represents a virtual device
 type VDev struct {
-	Type     string  `json:"type"`
-	Children []Disk  `json:"children,omitempty"`
-	Status   string  `json:"status"`
-	Stats    Stats   `json:"stats"`
+	Type     string         `json:"type"`
+	Children []TopologyDisk `json:"children,omitempty"`
+	Status   string         `json:"status"`
+	Stats    Stats          `json:"stats"`
 }
 
-// Disk represents a physical disk
-type Disk struct {
+// TopologyDisk represents a physical disk in pool topology
+type TopologyDisk struct {
 	Type   string `json:"type"`
 	Path   string `json:"path"`
 	Status string `json:"status"`
@@ -132,4 +132,178 @@ func (e *APIError) Error() string {
 		return e.Message
 	}
 	return e.ErrorMsg
+}
+
+// SystemInfo represents TrueNAS system information
+type SystemInfo struct {
+	Version       string `json:"version"`
+	Hostname      string `json:"hostname"`
+	PhysicalMem   int64  `json:"physmem"`
+	Model         string `json:"model"`
+	Cores         int    `json:"cores"`
+	LoadAvg       []float64 `json:"loadavg"`
+	Uptime        string `json:"uptime"`
+	UptimeSeconds int64  `json:"uptime_seconds"`
+	SystemProduct string `json:"system_product"`
+	License       *struct {
+		ContractType string `json:"contract_type"`
+	} `json:"license,omitempty"`
+}
+
+// Disk represents a TrueNAS disk
+type Disk struct {
+	Identifier   string `json:"identifier"`
+	Name         string `json:"name"`
+	Subsystem    string `json:"subsystem"`
+	Number       int    `json:"number"`
+	Serial       string `json:"serial"`
+	Size         int64  `json:"size"`
+	Description  string `json:"description"`
+	Model        string `json:"model"`
+	Rotationrate *int   `json:"rotationrate,omitempty"`
+	Type         string `json:"type"`
+	Pool         string `json:"pool,omitempty"`
+}
+
+// Service represents a TrueNAS service
+type Service struct {
+	ID      int    `json:"id"`
+	Service string `json:"service"`
+	Enable  bool   `json:"enable"`
+	State   string `json:"state"`
+	Pids    []int  `json:"pids,omitempty"`
+}
+
+// ServiceUpdateConfig represents configuration for updating a service
+type ServiceUpdateConfig struct {
+	Enable bool `json:"enable"`
+}
+
+// PoolCreateConfig represents configuration for creating a pool
+type PoolCreateConfig struct {
+	Name       string              `json:"name"`
+	Encryption bool                `json:"encryption"`
+	Topology   PoolCreateTopology  `json:"topology"`
+}
+
+// PoolCreateTopology represents topology for pool creation
+type PoolCreateTopology struct {
+	Data   []PoolCreateVDev `json:"data"`
+	Cache  []PoolCreateVDev `json:"cache,omitempty"`
+	Log    []PoolCreateVDev `json:"log,omitempty"`
+	Spare  []PoolCreateVDev `json:"spare,omitempty"`
+	Special []PoolCreateVDev `json:"special,omitempty"`
+}
+
+// PoolCreateVDev represents a vdev for pool creation
+type PoolCreateVDev struct {
+	Type  string   `json:"type"` // STRIPE, MIRROR, RAIDZ1, RAIDZ2, RAIDZ3
+	Disks []string `json:"disks"`
+}
+
+// ISCSIPortal represents an iSCSI portal
+type ISCSIPortal struct {
+	ID        int                  `json:"id"`
+	Tag       int                  `json:"tag"`
+	Comment   string               `json:"comment"`
+	Listen    []ISCSIPortalListen  `json:"listen"`
+}
+
+// ISCSIPortalListen represents a portal listen address
+type ISCSIPortalListen struct {
+	IP   string `json:"ip"`
+	Port int    `json:"port"`
+}
+
+// ISCSIPortalConfig represents configuration for creating an iSCSI portal
+type ISCSIPortalConfig struct {
+	Comment string               `json:"comment,omitempty"`
+	Listen  []ISCSIPortalListen  `json:"listen"`
+}
+
+// ISCSIInitiator represents an iSCSI initiator group
+type ISCSIInitiator struct {
+	ID         int      `json:"id"`
+	Tag        int      `json:"tag"`
+	Initiators []string `json:"initiators"`
+	Comment    string   `json:"comment"`
+}
+
+// ISCSIInitiatorConfig represents configuration for creating an initiator group
+type ISCSIInitiatorConfig struct {
+	Initiators []string `json:"initiators,omitempty"` // Empty means allow all
+	Comment    string   `json:"comment,omitempty"`
+}
+
+// ISCSITarget represents an iSCSI target
+type ISCSITarget struct {
+	ID     int                  `json:"id"`
+	Name   string               `json:"name"`
+	Alias  string               `json:"alias,omitempty"`
+	Mode   string               `json:"mode"`
+	Groups []ISCSITargetGroup   `json:"groups"`
+}
+
+// ISCSITargetGroup represents a target group association
+type ISCSITargetGroup struct {
+	Portal     int  `json:"portal"`
+	Initiator  int  `json:"initiator"`
+	Auth       *int `json:"auth,omitempty"`
+	AuthMethod string `json:"authmethod"`
+}
+
+// ISCSITargetConfig represents configuration for creating an iSCSI target
+type ISCSITargetConfig struct {
+	Name   string               `json:"name"`
+	Alias  string               `json:"alias,omitempty"`
+	Mode   string               `json:"mode,omitempty"` // ISCSI, FC, BOTH
+	Groups []ISCSITargetGroup   `json:"groups,omitempty"`
+}
+
+// ISCSIExtent represents an iSCSI extent
+type ISCSIExtent struct {
+	ID          int    `json:"id"`
+	Name        string `json:"name"`
+	Type        string `json:"type"` // DISK or FILE
+	Disk        string `json:"disk,omitempty"`
+	Path        string `json:"path,omitempty"`
+	Filesize    int64  `json:"filesize,omitempty"`
+	Blocksize   int    `json:"blocksize"`
+	RPM         string `json:"rpm"`
+	Enabled     bool   `json:"enabled"`
+	Comment     string `json:"comment,omitempty"`
+}
+
+// ISCSIExtentConfig represents configuration for creating an iSCSI extent
+type ISCSIExtentConfig struct {
+	Name        string `json:"name"`
+	Type        string `json:"type"` // DISK or FILE
+	Disk        string `json:"disk,omitempty"`
+	Path        string `json:"path,omitempty"`
+	Filesize    int64  `json:"filesize,omitempty"`
+	Blocksize   int    `json:"blocksize,omitempty"`
+	RPM         string `json:"rpm,omitempty"` // UNKNOWN, SSD, 5400, 7200, 10000, 15000
+	Comment     string `json:"comment,omitempty"`
+}
+
+// ISCSITargetExtent represents a target-to-extent mapping
+type ISCSITargetExtent struct {
+	ID       int `json:"id"`
+	Target   int `json:"target"`
+	Extent   int `json:"extent"`
+	LUNId    int `json:"lunid"`
+}
+
+// ISCSITargetExtentConfig represents configuration for creating a target-extent mapping
+type ISCSITargetExtentConfig struct {
+	Target int `json:"target"`
+	Extent int `json:"extent"`
+	LUNId  int `json:"lunid,omitempty"`
+}
+
+// ISCSIGlobalConfig represents iSCSI global configuration
+type ISCSIGlobalConfig struct {
+	Basename       string `json:"basename"`
+	ISNSServers    []string `json:"isns_servers"`
+	PoolAvailThreshold int `json:"pool_avail_threshold,omitempty"`
 }

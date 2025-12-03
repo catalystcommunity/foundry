@@ -22,7 +22,7 @@ func TestInitComponents(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify all expected components are registered
-	expectedComponents := []string{"openbao", "dns", "zot", "k3s", "gateway-api", "contour", "cert-manager"}
+	expectedComponents := []string{"openbao", "dns", "zot", "k3s", "gateway-api", "contour", "cert-manager", "storage", "minio"}
 	for _, name := range expectedComponents {
 		assert.True(t, testRegistry.Has(name), "component %s should be registered", name)
 	}
@@ -54,6 +54,8 @@ func TestInitComponents_ComponentNames(t *testing.T) {
 		{name: "gateway-api"},
 		{name: "contour"},
 		{name: "cert-manager"},
+		{name: "storage"},
+		{name: "minio"},
 	}
 
 	for _, tt := range tests {
@@ -108,6 +110,14 @@ func TestInitComponents_Dependencies(t *testing.T) {
 		{
 			name:         "cert-manager",
 			dependencies: []string{"k3s"},
+		},
+		{
+			name:         "storage",
+			dependencies: []string{"k3s"},
+		},
+		{
+			name:         "minio",
+			dependencies: []string{"storage"},
 		},
 	}
 

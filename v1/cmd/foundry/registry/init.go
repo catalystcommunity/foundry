@@ -7,7 +7,9 @@ import (
 	"github.com/catalystcommunity/foundry/v1/internal/component/dns"
 	"github.com/catalystcommunity/foundry/v1/internal/component/gatewayapi"
 	"github.com/catalystcommunity/foundry/v1/internal/component/k3s"
+	"github.com/catalystcommunity/foundry/v1/internal/component/minio"
 	"github.com/catalystcommunity/foundry/v1/internal/component/openbao"
+	"github.com/catalystcommunity/foundry/v1/internal/component/storage"
 	"github.com/catalystcommunity/foundry/v1/internal/component/zot"
 )
 
@@ -54,6 +56,20 @@ func InitComponents() error {
 	// Note: cert-manager requires Helm and K8s clients which are initialized at runtime
 	certManagerComp := certmanager.NewComponent(nil)
 	if err := component.Register(certManagerComp); err != nil {
+		return err
+	}
+
+	// Register storage - depends on K3s
+	// Storage provides PVC provisioning via local-path, NFS, or TrueNAS CSI
+	storageComp := storage.NewComponent(nil, nil)
+	if err := component.Register(storageComp); err != nil {
+		return err
+	}
+
+	// Register MinIO - depends on storage for PVCs
+	// MinIO provides S3-compatible object storage for Loki, Velero, etc.
+	minioComp := minio.NewComponent(nil, nil)
+	if err := component.Register(minioComp); err != nil {
 		return err
 	}
 
