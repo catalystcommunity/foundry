@@ -84,22 +84,20 @@ func TestInstall_NFS_Success(t *testing.T) {
 	assert.Equal(t, nfsChart, helmClient.chartsInstalled[0].Chart)
 }
 
-func TestInstall_TrueNASNFS_Success(t *testing.T) {
+func TestInstall_Longhorn_Success(t *testing.T) {
 	helmClient := &mockHelmClient{}
 	k8sClient := &mockK8sClient{}
 
 	cfg := &Config{
-		Backend:          BackendTrueNASNFS,
-		Namespace:        "democratic-csi",
-		StorageClassName: "truenas-nfs",
+		Backend:          BackendLonghorn,
+		Namespace:        "longhorn-system",
+		StorageClassName: "longhorn",
 		SetDefault:       true,
-		TrueNAS: &TrueNASCSIConfig{
-			APIURL:        "https://truenas.local",
-			APIKey:        "secret-key",
-			Pool:          "tank",
-			DatasetParent: "tank/k8s/volumes",
-			ShareHost:     "192.168.1.50",
-			ShareNetworks: []string{"192.168.1.0/24"},
+		Longhorn: &LonghornConfig{
+			ReplicaCount:                 3,
+			DataPath:                     "/var/lib/longhorn",
+			GuaranteedInstanceManagerCPU: 12,
+			DefaultDataLocality:          "disabled",
 		},
 	}
 
@@ -108,43 +106,45 @@ func TestInstall_TrueNASNFS_Success(t *testing.T) {
 
 	// Verify repo was added
 	require.Len(t, helmClient.reposAdded, 1)
-	assert.Equal(t, democraticCSIRepoName, helmClient.reposAdded[0].Name)
-	assert.Equal(t, democraticCSIRepoURL, helmClient.reposAdded[0].URL)
+	assert.Equal(t, longhornRepoName, helmClient.reposAdded[0].Name)
+	assert.Equal(t, longhornRepoURL, helmClient.reposAdded[0].URL)
 
 	// Verify chart was installed
 	require.Len(t, helmClient.chartsInstalled, 1)
-	assert.Equal(t, "democratic-csi-nfs", helmClient.chartsInstalled[0].ReleaseName)
-	assert.Equal(t, "democratic-csi", helmClient.chartsInstalled[0].Namespace)
-	assert.Equal(t, democraticCSIChart, helmClient.chartsInstalled[0].Chart)
+	assert.Equal(t, "longhorn", helmClient.chartsInstalled[0].ReleaseName)
+	assert.Equal(t, "longhorn-system", helmClient.chartsInstalled[0].Namespace)
+	assert.Equal(t, longhornChart, helmClient.chartsInstalled[0].Chart)
 	assert.Equal(t, 10*time.Minute, helmClient.chartsInstalled[0].Timeout)
 }
 
-func TestInstall_TrueNASiSCSI_Success(t *testing.T) {
-	helmClient := &mockHelmClient{}
+func TestInstall_Longhorn_AlreadyInstalled(t *testing.T) {
+	helmClient := &mockHelmClient{
+		listReleases: []helm.Release{
+			{
+				Name:      "longhorn",
+				Namespace: "longhorn-system",
+				Status:    "deployed",
+			},
+		},
+	}
 	k8sClient := &mockK8sClient{}
 
 	cfg := &Config{
-		Backend:          BackendTrueNASiSCSI,
-		Namespace:        "democratic-csi",
-		StorageClassName: "truenas-iscsi",
+		Backend:          BackendLonghorn,
+		Namespace:        "longhorn-system",
+		StorageClassName: "longhorn",
 		SetDefault:       true,
-		TrueNAS: &TrueNASCSIConfig{
-			APIURL:           "https://truenas.local",
-			APIKey:           "secret-key",
-			Pool:             "tank",
-			DatasetParent:    "tank/k8s/zvols",
-			PortalID:         1,
-			InitiatorGroupID: 1,
+		Longhorn: &LonghornConfig{
+			ReplicaCount: 3,
+			DataPath:     "/var/lib/longhorn",
 		},
 	}
 
 	err := Install(context.Background(), helmClient, k8sClient, cfg)
 	require.NoError(t, err)
 
-	// Verify chart was installed
-	require.Len(t, helmClient.chartsInstalled, 1)
-	assert.Equal(t, "democratic-csi-iscsi", helmClient.chartsInstalled[0].ReleaseName)
-	assert.Equal(t, "democratic-csi", helmClient.chartsInstalled[0].Namespace)
+	// Should not install again
+	assert.Empty(t, helmClient.chartsInstalled)
 }
 
 func TestInstall_NilHelmClient(t *testing.T) {
@@ -291,242 +291,61 @@ func TestBuildNFSValues(t *testing.T) {
 	assert.Equal(t, true, storageClass["archiveOnDelete"])
 }
 
-func TestBuildTrueNASNFSValues(t *testing.T) {
+func TestBuildLonghornValues(t *testing.T) {
 	cfg := &Config{
-		StorageClassName: "truenas-nfs",
+		StorageClassName: "longhorn",
 		SetDefault:       true,
-		TrueNAS: &TrueNASCSIConfig{
-			APIURL:        "https://truenas.local",
-			APIKey:        "secret-key",
-			Pool:          "tank",
-			DatasetParent: "tank/k8s/volumes",
-			ShareHost:     "192.168.1.50",
-			ShareNetworks: []string{"192.168.1.0/24"},
+		Longhorn: &LonghornConfig{
+			ReplicaCount:                 3,
+			DataPath:                     "/var/lib/longhorn",
+			GuaranteedInstanceManagerCPU: 12,
+			DefaultDataLocality:          "best-effort",
 		},
 		Values: map[string]interface{}{},
 	}
 
-	values := buildTrueNASNFSValues(cfg)
+	values := buildLonghornValues(cfg)
 
-	// Check CSI driver name
-	csiDriver, ok := values["csiDriver"].(map[string]interface{})
+	// Check default settings
+	defaultSettings, ok := values["defaultSettings"].(map[string]interface{})
 	require.True(t, ok)
-	assert.Equal(t, "org.democratic-csi.nfs", csiDriver["name"])
+	assert.Equal(t, 3, defaultSettings["defaultReplicaCount"])
+	assert.Equal(t, "/var/lib/longhorn", defaultSettings["defaultDataPath"])
+	assert.Equal(t, 12, defaultSettings["guaranteedInstanceManagerCPU"])
+	assert.Equal(t, "best-effort", defaultSettings["defaultDataLocality"])
 
-	// Check storage classes
-	storageClasses, ok := values["storageClasses"].([]map[string]interface{})
+	// Check persistence settings
+	persistence, ok := values["persistence"].(map[string]interface{})
 	require.True(t, ok)
-	require.Len(t, storageClasses, 1)
-	assert.Equal(t, "truenas-nfs", storageClasses[0]["name"])
-	assert.Equal(t, true, storageClasses[0]["defaultClass"])
+	assert.Equal(t, true, persistence["defaultClass"])
+	assert.Equal(t, 3, persistence["defaultClassReplicaCount"])
+	assert.Equal(t, "Delete", persistence["reclaimPolicy"])
 
-	// Check driver config
-	driver, ok := values["driver"].(map[string]interface{})
+	// Check ingress disabled
+	ingress, ok := values["ingress"].(map[string]interface{})
 	require.True(t, ok)
-	driverConfig, ok := driver["config"].(map[string]interface{})
-	require.True(t, ok)
-	assert.Equal(t, "freenas-nfs", driverConfig["driver"])
-
-	// Check HTTP connection
-	httpConn, ok := driverConfig["httpConnection"].(map[string]interface{})
-	require.True(t, ok)
-	assert.Equal(t, "https://truenas.local", httpConn["host"])
-	assert.Equal(t, "secret-key", httpConn["apiKey"])
-
-	// Check ZFS config
-	zfs, ok := driverConfig["zfs"].(map[string]interface{})
-	require.True(t, ok)
-	assert.Equal(t, "tank/k8s/volumes", zfs["datasetParentName"])
-
-	// Check NFS config
-	nfs, ok := driverConfig["nfs"].(map[string]interface{})
-	require.True(t, ok)
-	assert.Equal(t, "192.168.1.50", nfs["shareHost"])
-	shareNetworks, ok := nfs["shareAllowedNetworks"].([]string)
-	require.True(t, ok)
-	assert.Contains(t, shareNetworks, "192.168.1.0/24")
+	assert.Equal(t, false, ingress["enabled"])
 }
 
-func TestBuildTrueNASNFSValues_DefaultNetworks(t *testing.T) {
+func TestBuildLonghornValues_CustomValues(t *testing.T) {
 	cfg := &Config{
-		StorageClassName: "truenas-nfs",
-		SetDefault:       true,
-		TrueNAS: &TrueNASCSIConfig{
-			APIURL:        "https://truenas.local",
-			APIKey:        "secret-key",
-			Pool:          "tank",
-			DatasetParent: "tank/k8s/volumes",
-			ShareHost:     "192.168.1.50",
-			ShareNetworks: nil, // Empty - should default to 0.0.0.0/0
+		StorageClassName: "longhorn",
+		SetDefault:       false,
+		Longhorn: &LonghornConfig{
+			ReplicaCount: 2,
 		},
-		Values: map[string]interface{}{},
-	}
-
-	values := buildTrueNASNFSValues(cfg)
-
-	driver, ok := values["driver"].(map[string]interface{})
-	require.True(t, ok)
-	driverConfig, ok := driver["config"].(map[string]interface{})
-	require.True(t, ok)
-	nfs, ok := driverConfig["nfs"].(map[string]interface{})
-	require.True(t, ok)
-	shareNetworks, ok := nfs["shareAllowedNetworks"].([]string)
-	require.True(t, ok)
-	assert.Contains(t, shareNetworks, "0.0.0.0/0")
-}
-
-func TestBuildTrueNASiSCSIValues(t *testing.T) {
-	cfg := &Config{
-		StorageClassName: "truenas-iscsi",
-		SetDefault:       true,
-		TrueNAS: &TrueNASCSIConfig{
-			APIURL:           "https://truenas.local",
-			APIKey:           "secret-key",
-			Pool:             "tank",
-			DatasetParent:    "tank/k8s/zvols",
-			PortalID:         1,
-			InitiatorGroupID: 2,
+		Values: map[string]interface{}{
+			"customSetting": "customValue",
 		},
-		Values: map[string]interface{}{},
 	}
 
-	values := buildTrueNASiSCSIValues(cfg)
+	values := buildLonghornValues(cfg)
 
-	// Check CSI driver name
-	csiDriver, ok := values["csiDriver"].(map[string]interface{})
+	// Check custom values preserved
+	assert.Equal(t, "customValue", values["customSetting"])
+
+	// Check persistence reflects SetDefault
+	persistence, ok := values["persistence"].(map[string]interface{})
 	require.True(t, ok)
-	assert.Equal(t, "org.democratic-csi.iscsi", csiDriver["name"])
-
-	// Check storage classes
-	storageClasses, ok := values["storageClasses"].([]map[string]interface{})
-	require.True(t, ok)
-	require.Len(t, storageClasses, 1)
-	params, ok := storageClasses[0]["parameters"].(map[string]interface{})
-	require.True(t, ok)
-	assert.Equal(t, "ext4", params["fsType"])
-
-	// Check driver config
-	driver, ok := values["driver"].(map[string]interface{})
-	require.True(t, ok)
-	driverConfig, ok := driver["config"].(map[string]interface{})
-	require.True(t, ok)
-	assert.Equal(t, "freenas-iscsi", driverConfig["driver"])
-
-	// Check iSCSI config
-	iscsi, ok := driverConfig["iscsi"].(map[string]interface{})
-	require.True(t, ok)
-	targetGroups, ok := iscsi["targetGroups"].([]map[string]interface{})
-	require.True(t, ok)
-	require.Len(t, targetGroups, 1)
-	assert.Equal(t, 1, targetGroups[0]["targetGroupPortalGroup"])
-	assert.Equal(t, 2, targetGroups[0]["targetGroupInitiatorGroup"])
-
-	// Check node config
-	node, ok := values["node"].(map[string]interface{})
-	require.True(t, ok)
-	assert.Equal(t, true, node["hostPID"])
-}
-
-// mockOpenBAOClient implements OpenBAOClient for testing
-type mockOpenBAOClient struct {
-	secrets    map[string]map[string]interface{}
-	writeErr   error
-	readErr    error
-	writeCalls []mockOpenBAOWriteCall
-}
-
-type mockOpenBAOWriteCall struct {
-	mount string
-	path  string
-	data  map[string]interface{}
-}
-
-func newMockOpenBAOClient() *mockOpenBAOClient {
-	return &mockOpenBAOClient{
-		secrets:    make(map[string]map[string]interface{}),
-		writeCalls: make([]mockOpenBAOWriteCall, 0),
-	}
-}
-
-func (m *mockOpenBAOClient) WriteSecretV2(ctx context.Context, mount, path string, data map[string]interface{}) error {
-	m.writeCalls = append(m.writeCalls, mockOpenBAOWriteCall{mount: mount, path: path, data: data})
-	if m.writeErr != nil {
-		return m.writeErr
-	}
-	key := mount + "/" + path
-	m.secrets[key] = data
-	return nil
-}
-
-func (m *mockOpenBAOClient) ReadSecretV2(ctx context.Context, mount, path string) (map[string]interface{}, error) {
-	if m.readErr != nil {
-		return nil, m.readErr
-	}
-	key := mount + "/" + path
-	data, ok := m.secrets[key]
-	if !ok {
-		return nil, nil
-	}
-	return data, nil
-}
-
-func TestEnsureTrueNASAPIKey_ExistingKey(t *testing.T) {
-	ctx := context.Background()
-	client := newMockOpenBAOClient()
-	client.secrets["foundry-core/truenas"] = map[string]interface{}{
-		"api_key": "existing-key",
-	}
-
-	key, err := EnsureTrueNASAPIKey(ctx, client, "")
-
-	assert.NoError(t, err)
-	assert.Equal(t, "existing-key", key)
-	assert.Empty(t, client.writeCalls) // Should not write since key exists
-}
-
-func TestEnsureTrueNASAPIKey_StoreNewKey(t *testing.T) {
-	ctx := context.Background()
-	client := newMockOpenBAOClient()
-
-	key, err := EnsureTrueNASAPIKey(ctx, client, "new-api-key")
-
-	assert.NoError(t, err)
-	assert.Equal(t, "new-api-key", key)
-	require.Len(t, client.writeCalls, 1)
-	assert.Equal(t, "foundry-core", client.writeCalls[0].mount)
-	assert.Equal(t, "truenas", client.writeCalls[0].path)
-	assert.Equal(t, "new-api-key", client.writeCalls[0].data["api_key"])
-}
-
-func TestEnsureTrueNASAPIKey_NoKeyAvailable(t *testing.T) {
-	ctx := context.Background()
-	client := newMockOpenBAOClient()
-
-	_, err := EnsureTrueNASAPIKey(ctx, client, "")
-
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "no TrueNAS API key found")
-}
-
-func TestGetTrueNASAPIKey_Success(t *testing.T) {
-	ctx := context.Background()
-	client := newMockOpenBAOClient()
-	client.secrets["foundry-core/truenas"] = map[string]interface{}{
-		"api_key": "test-key",
-	}
-
-	key, err := GetTrueNASAPIKey(ctx, client)
-
-	assert.NoError(t, err)
-	assert.Equal(t, "test-key", key)
-}
-
-func TestGetTrueNASAPIKey_NotFound(t *testing.T) {
-	ctx := context.Background()
-	client := newMockOpenBAOClient()
-
-	_, err := GetTrueNASAPIKey(ctx, client)
-
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "not found")
+	assert.Equal(t, false, persistence["defaultClass"])
 }

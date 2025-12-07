@@ -16,8 +16,8 @@ const (
 	// ProviderAWS uses AWS S3 for backup storage
 	ProviderAWS BackupStorageProvider = "aws"
 
-	// ProviderMinIO uses MinIO (S3-compatible) for backup storage
-	ProviderMinIO BackupStorageProvider = "minio"
+	// ProviderS3 uses S3-compatible storage (Garage, MinIO, etc.) for backup storage
+	ProviderS3 BackupStorageProvider = "s3"
 )
 
 // Config holds Velero component configuration
@@ -28,16 +28,16 @@ type Config struct {
 	// Namespace for Velero deployment
 	Namespace string `json:"namespace" yaml:"namespace"`
 
-	// Provider specifies the backup storage provider (aws for S3-compatible, including MinIO)
+	// Provider specifies the backup storage provider (aws for AWS S3, s3 for S3-compatible like Garage)
 	Provider BackupStorageProvider `json:"provider" yaml:"provider"`
 
-	// S3Endpoint is the S3-compatible endpoint URL (required for MinIO)
+	// S3Endpoint is the S3-compatible endpoint URL (required for s3 provider)
 	S3Endpoint string `json:"s3_endpoint" yaml:"s3_endpoint"`
 
 	// S3Bucket is the bucket name for backups
 	S3Bucket string `json:"s3_bucket" yaml:"s3_bucket"`
 
-	// S3Region is the S3 region (default: us-east-1 for MinIO)
+	// S3Region is the S3 region (default: garage for Garage)
 	S3Region string `json:"s3_region" yaml:"s3_region"`
 
 	// S3AccessKey is the S3 access key ID
@@ -49,7 +49,7 @@ type Config struct {
 	// S3InsecureSkipTLSVerify skips TLS verification for S3 endpoint
 	S3InsecureSkipTLSVerify bool `json:"s3_insecure_skip_tls_verify" yaml:"s3_insecure_skip_tls_verify"`
 
-	// S3ForcePathStyle uses path-style S3 URLs (required for MinIO)
+	// S3ForcePathStyle uses path-style S3 URLs (required for Garage and other S3-compatible storage)
 	S3ForcePathStyle bool `json:"s3_force_path_style" yaml:"s3_force_path_style"`
 
 	// DefaultBackupStorageLocation is whether this is the default BSL
@@ -184,7 +184,7 @@ func (c *Component) Uninstall(ctx context.Context) error {
 
 // Dependencies returns the list of components that Velero depends on
 func (c *Component) Dependencies() []string {
-	return []string{"minio"} // Velero needs MinIO for S3-compatible backup storage
+	return []string{"garage"} // Velero needs Garage for S3-compatible backup storage
 }
 
 // DefaultConfig returns a Config with sensible defaults
@@ -192,12 +192,12 @@ func DefaultConfig() *Config {
 	return &Config{
 		Version:                        "8.0.0", // Velero Helm chart version
 		Namespace:                      "velero",
-		Provider:                       ProviderMinIO,
-		S3Endpoint:                     "http://minio.minio.svc.cluster.local:9000",
+		Provider:                       ProviderS3,
+		S3Endpoint:                     "http://garage.garage.svc.cluster.local:3900",
 		S3Bucket:                       "velero",
-		S3Region:                       "us-east-1",
-		S3InsecureSkipTLSVerify:        true, // MinIO typically uses self-signed certs
-		S3ForcePathStyle:               true, // Required for MinIO
+		S3Region:                       "garage",
+		S3InsecureSkipTLSVerify:        true, // Garage typically runs without TLS internally
+		S3ForcePathStyle:               true, // Required for Garage
 		DefaultBackupStorageLocation:   true,
 		DefaultVolumeSnapshotLocations: false,
 		BackupRetentionDays:            30,
@@ -208,8 +208,7 @@ func DefaultConfig() *Config {
 		SnapshotsEnabled:               false, // Disabled by default, requires CSI support
 		CSISnapshotTimeout:             "10m",
 		ResourceRequests: map[string]string{
-			"cpu":    "100m",
-			"memory": "128Mi",
+			"memory": "128Mi", // No CPU request for homelab environments with limited resources
 		},
 		ResourceLimits: map[string]string{},
 		Values:         make(map[string]interface{}),
@@ -329,19 +328,19 @@ func ParseConfig(cfg component.ComponentConfig) (*Config, error) {
 // Validate validates the Velero configuration
 func (c *Config) Validate() error {
 	switch c.Provider {
-	case ProviderAWS, ProviderMinIO:
+	case ProviderAWS, ProviderS3:
 		// Valid providers
 	default:
-		return fmt.Errorf("unsupported provider: %s (supported: aws, minio)", c.Provider)
+		return fmt.Errorf("unsupported provider: %s (supported: aws, s3)", c.Provider)
 	}
 
 	if c.S3Bucket == "" {
 		return fmt.Errorf("s3_bucket is required")
 	}
 
-	// MinIO requires endpoint
-	if c.Provider == ProviderMinIO && c.S3Endpoint == "" {
-		return fmt.Errorf("s3_endpoint is required when using MinIO provider")
+	// S3-compatible storage requires endpoint
+	if c.Provider == ProviderS3 && c.S3Endpoint == "" {
+		return fmt.Errorf("s3_endpoint is required when using S3-compatible provider")
 	}
 
 	if c.BackupRetentionDays < 0 {

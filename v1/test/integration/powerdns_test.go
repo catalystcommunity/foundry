@@ -218,13 +218,12 @@ func TestPowerDNSIntegration(t *testing.T) {
 
 		// Initialize infrastructure DNS
 		infraConfig := dns.InfrastructureRecordConfig{
-			Zone:       "infra.example.com",
-			OpenBAOIP:  "192.168.1.10",
-			DNSIP:      "192.168.1.10",
-			ZotIP:      "192.168.1.10",
-			TrueNASIP:  "192.168.1.15",
-			K8sVIP:     "192.168.1.100",
-			IsPublic:   false,
+			Zone:        "infra.example.com",
+			OpenBAOIP:   "192.168.1.10",
+			DNSIP:       "192.168.1.10",
+			ZotIP:       "192.168.1.10",
+			K8sVIP:      "192.168.1.100",
+			IsPublic:    false,
 			PublicCNAME: "",
 		}
 
@@ -249,9 +248,6 @@ func TestPowerDNSIntegration(t *testing.T) {
 					case "zot.infra.example.com.":
 						foundRecords["zot"] = true
 						assert.Equal(t, "192.168.1.10", r.Content)
-					case "truenas.infra.example.com.":
-						foundRecords["truenas"] = true
-						assert.Equal(t, "192.168.1.15", r.Content)
 					case "k8s.infra.example.com.":
 						foundRecords["k8s"] = true
 						assert.Equal(t, "192.168.1.100", r.Content)
@@ -263,7 +259,6 @@ func TestPowerDNSIntegration(t *testing.T) {
 		assert.True(t, foundRecords["openbao"], "Should have openbao record")
 		assert.True(t, foundRecords["dns"], "Should have dns record")
 		assert.True(t, foundRecords["zot"], "Should have zot record")
-		assert.True(t, foundRecords["truenas"], "Should have truenas record")
 		assert.True(t, foundRecords["k8s"], "Should have k8s record")
 	})
 

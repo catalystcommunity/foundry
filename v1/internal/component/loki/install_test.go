@@ -35,8 +35,8 @@ func TestInstall_Success(t *testing.T) {
 	assert.Equal(t, "loki", helmClient.chartsInstalled[0].Namespace)
 	assert.Equal(t, lokiChart, helmClient.chartsInstalled[0].Chart)
 	assert.True(t, helmClient.chartsInstalled[0].CreateNamespace)
-	assert.True(t, helmClient.chartsInstalled[0].Wait)
-	assert.Equal(t, 10*time.Minute, helmClient.chartsInstalled[0].Timeout)
+	assert.False(t, helmClient.chartsInstalled[0].Wait) // Don't wait - Loki takes time to start
+	assert.Equal(t, 2*time.Minute, helmClient.chartsInstalled[0].Timeout)
 }
 
 func TestInstall_WithPromtail(t *testing.T) {
@@ -218,11 +218,11 @@ func TestBuildHelmValues_S3Storage(t *testing.T) {
 		DeploymentMode: "SingleBinary",
 		StorageBackend: BackendS3,
 		RetentionDays:  30,
-		S3Endpoint:     "http://minio:9000",
+		S3Endpoint:     "http://garage:3900",
 		S3Bucket:       "loki",
 		S3AccessKey:    "mykey",
 		S3SecretKey:    "mysecret",
-		S3Region:       "us-east-1",
+		S3Region:       "garage",
 		StorageSize:    "10Gi",
 		Values:         map[string]interface{}{},
 	}
@@ -236,13 +236,19 @@ func TestBuildHelmValues_S3Storage(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, "s3", storage["type"])
 
+	// Check bucket names (new format for Loki chart 6.x+)
+	bucketNames, ok := storage["bucketNames"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, "loki", bucketNames["chunks"])
+	assert.Equal(t, "loki", bucketNames["ruler"])
+	assert.Equal(t, "loki", bucketNames["admin"])
+
 	s3Config, ok := storage["s3"].(map[string]interface{})
 	require.True(t, ok)
-	assert.Equal(t, "http://minio:9000", s3Config["endpoint"])
-	assert.Equal(t, "loki", s3Config["bucketnames"])
-	assert.Equal(t, "mykey", s3Config["access_key_id"])
-	assert.Equal(t, "mysecret", s3Config["secret_access_key"])
-	assert.Equal(t, "us-east-1", s3Config["region"])
+	assert.Equal(t, "http://garage:3900", s3Config["endpoint"])
+	assert.Equal(t, "mykey", s3Config["accessKeyId"])
+	assert.Equal(t, "mysecret", s3Config["secretAccessKey"])
+	assert.Equal(t, "garage", s3Config["region"])
 	assert.Equal(t, true, s3Config["insecure"])
 	assert.Equal(t, true, s3Config["s3ForcePathStyle"])
 }

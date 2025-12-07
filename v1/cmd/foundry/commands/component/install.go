@@ -10,10 +10,22 @@ import (
 	"path/filepath"
 
 	"github.com/catalystcommunity/foundry/v1/internal/component"
+	"github.com/catalystcommunity/foundry/v1/internal/component/certmanager"
+	"github.com/catalystcommunity/foundry/v1/internal/component/contour"
 	"github.com/catalystcommunity/foundry/v1/internal/component/dns"
+	"github.com/catalystcommunity/foundry/v1/internal/component/externaldns"
+	"github.com/catalystcommunity/foundry/v1/internal/component/gatewayapi"
+	"github.com/catalystcommunity/foundry/v1/internal/component/grafana"
+	"github.com/catalystcommunity/foundry/v1/internal/component/garage"
+	"github.com/catalystcommunity/foundry/v1/internal/component/loki"
 	"github.com/catalystcommunity/foundry/v1/internal/component/openbao"
+	"github.com/catalystcommunity/foundry/v1/internal/component/prometheus"
+	componentStorage "github.com/catalystcommunity/foundry/v1/internal/component/storage"
+	"github.com/catalystcommunity/foundry/v1/internal/component/velero"
 	"github.com/catalystcommunity/foundry/v1/internal/config"
+	"github.com/catalystcommunity/foundry/v1/internal/helm"
 	"github.com/catalystcommunity/foundry/v1/internal/host"
+	"github.com/catalystcommunity/foundry/v1/internal/k8s"
 	"github.com/catalystcommunity/foundry/v1/internal/secrets"
 	"github.com/catalystcommunity/foundry/v1/internal/ssh"
 	"github.com/urfave/cli/v3"
@@ -46,10 +58,19 @@ var InstallCommand = &cli.Command{
 The component will be installed according to the configuration in ~/.foundry/stack.yaml.
 
 Examples:
+  # Phase 2 (container-based) components:
   foundry component install openbao
   foundry component install dns
   foundry component install zot
-  foundry component install k3s`,
+
+  # Phase 3 (Kubernetes-based) components:
+  foundry component install storage --backend local-path
+  foundry component install garage
+  foundry component install prometheus
+  foundry component install loki
+  foundry component install grafana
+  foundry component install external-dns
+  foundry component install velero`,
 	Flags: []cli.Flag{
 		&cli.BoolFlag{
 			Name:    "dry-run",
@@ -60,8 +81,36 @@ Examples:
 			Name:  "version",
 			Usage: "Override the version to install",
 		},
+		// Storage-specific flags
+		&cli.StringFlag{
+			Name:  "backend",
+			Usage: "Storage backend: local-path, nfs, truenas-nfs, truenas-iscsi (for storage component)",
+			Value: "local-path",
+		},
+		&cli.StringFlag{
+			Name:  "nfs-server",
+			Usage: "NFS server address (for nfs backend)",
+		},
+		&cli.StringFlag{
+			Name:  "nfs-path",
+			Usage: "NFS export path (for nfs backend)",
+		},
 	},
 	Action: runInstall,
+}
+
+// k8sComponents lists all components that are installed via kubeconfig (Helm/K8s)
+var k8sComponents = map[string]bool{
+	"gateway-api":   true,
+	"contour":       true,
+	"cert-manager":  true,
+	"storage":       true,
+	"garage":        true,
+	"prometheus":    true,
+	"loki":          true,
+	"grafana":       true,
+	"external-dns":  true,
+	"velero":        true,
 }
 
 func runInstall(ctx context.Context, cmd *cli.Command) error {
@@ -105,6 +154,225 @@ func runInstall(ctx context.Context, cmd *cli.Command) error {
 		fmt.Println()
 	}
 
+	// Check if this is a K8s-based component
+	if k8sComponents[name] {
+		return installK8sComponent(ctx, cmd, name, stackConfig, dryRun, version)
+	}
+
+	// SSH-based component installation (Phase 2 components)
+	return installSSHComponent(ctx, cmd, name, stackConfig, dryRun, version)
+}
+
+// installK8sComponent installs a Kubernetes-based component using kubeconfig
+func installK8sComponent(ctx context.Context, cmd *cli.Command, name string, stackConfig *config.Config, dryRun bool, version string) error {
+	fmt.Printf("Installing Kubernetes component: %s\n", name)
+
+	// Get kubeconfig path
+	configDir, err := config.GetConfigDir()
+	if err != nil {
+		return fmt.Errorf("failed to get config directory: %w", err)
+	}
+	kubeconfigPath := filepath.Join(configDir, "kubeconfig")
+
+	// Verify kubeconfig exists
+	kubeconfigBytes, err := os.ReadFile(kubeconfigPath)
+	if err != nil {
+		return fmt.Errorf("kubeconfig not found at %s: %w\n\nHint: Install K3s first with 'foundry stack install' or 'foundry component install k3s'", kubeconfigPath, err)
+	}
+
+	if dryRun {
+		fmt.Printf("\nWould install Kubernetes component: %s\n", name)
+		if version != "" {
+			fmt.Printf("Version: %s\n", version)
+		}
+		fmt.Println("\nNote: This is a dry-run. No changes will be made.")
+		return nil
+	}
+
+	// Create Helm and K8s clients
+	helmClient, err := helm.NewClient(kubeconfigBytes, "default")
+	if err != nil {
+		return fmt.Errorf("failed to create helm client: %w", err)
+	}
+
+	k8sClient, err := k8s.NewClientFromKubeconfig(kubeconfigBytes)
+	if err != nil {
+		return fmt.Errorf("failed to create k8s client: %w", err)
+	}
+
+	// Build component config
+	cfg := component.ComponentConfig{}
+	if version != "" {
+		cfg["version"] = version
+	}
+
+	// Add cluster VIP for components that need it
+	if stackConfig.Cluster.VIP != "" {
+		cfg["cluster_vip"] = stackConfig.Cluster.VIP
+	}
+
+	// Create component-specific instance with clients and install
+	var componentWithClients component.Component
+	switch name {
+	case "gateway-api":
+		componentWithClients = gatewayapi.NewComponent(k8sClient)
+	case "contour":
+		componentWithClients = contour.NewComponent(helmClient, k8sClient)
+	case "cert-manager":
+		componentWithClients = certmanager.NewComponent(nil)
+	case "storage":
+		// Handle storage-specific flags
+		backend := cmd.String("backend")
+		cfg["backend"] = backend
+		if backend == "nfs" {
+			nfsServer := cmd.String("nfs-server")
+			nfsPath := cmd.String("nfs-path")
+			if nfsServer == "" || nfsPath == "" {
+				return fmt.Errorf("--nfs-server and --nfs-path are required for nfs backend")
+			}
+			cfg["nfs"] = map[string]interface{}{
+				"server": nfsServer,
+				"path":   nfsPath,
+			}
+		}
+		componentWithClients = componentStorage.NewComponent(helmClient, k8sClient)
+	case "garage":
+		componentWithClients = garage.NewComponent(helmClient, k8sClient)
+	case "prometheus":
+		componentWithClients = prometheus.NewComponent(helmClient, k8sClient)
+	case "loki":
+		// Get Garage credentials from the Garage secret
+		garageKey, garageSecret, err := getGarageCredentials(k8sClient)
+		if err != nil {
+			return fmt.Errorf("failed to get Garage credentials: %w", err)
+		}
+		cfg["s3_endpoint"] = "http://garage.garage.svc.cluster.local:3900"
+		cfg["s3_access_key"] = garageKey
+		cfg["s3_secret_key"] = garageSecret
+		cfg["s3_bucket"] = "loki"
+		cfg["s3_region"] = "garage"
+		componentWithClients = loki.NewComponent(helmClient, k8sClient)
+	case "grafana":
+		// Get Prometheus and Loki endpoints for data sources
+		cfg["prometheus_url"] = "http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090"
+		cfg["loki_url"] = "http://loki.loki.svc.cluster.local:3100"
+		componentWithClients = grafana.NewComponent(helmClient, k8sClient)
+	case "external-dns":
+		// Get PowerDNS configuration if available
+		if stackConfig.DNS != nil && stackConfig.SetupState != nil && stackConfig.SetupState.DNSInstalled {
+			dnsAddr, err := stackConfig.GetPrimaryDNSAddress()
+			if err == nil {
+				cfg["provider"] = "pdns"
+				// PowerDNS config must be a nested map
+				pdnsConfig := map[string]interface{}{
+					"api_url": fmt.Sprintf("http://%s:8081", dnsAddr),
+				}
+				// Try to get API key from OpenBAO
+				apiKey, err := getDNSAPIKey(stackConfig)
+				if err == nil {
+					pdnsConfig["api_key"] = apiKey
+				}
+				cfg["powerdns"] = pdnsConfig
+			}
+		}
+		componentWithClients = externaldns.NewComponent(helmClient, k8sClient)
+	case "velero":
+		// Get Garage credentials from the Garage secret
+		garageKey, garageSecret, err := getGarageCredentials(k8sClient)
+		if err != nil {
+			return fmt.Errorf("failed to get Garage credentials: %w", err)
+		}
+		cfg["s3_endpoint"] = "http://garage.garage.svc.cluster.local:3900"
+		cfg["s3_access_key"] = garageKey
+		cfg["s3_secret_key"] = garageSecret
+		cfg["s3_bucket"] = "velero"
+		cfg["s3_region"] = "garage"
+		componentWithClients = velero.NewComponent(helmClient, k8sClient)
+	default:
+		return fmt.Errorf("unknown kubernetes component: %s", name)
+	}
+
+	fmt.Printf("\nInstalling component: %s\n", name)
+
+	// Install the component
+	if err := componentWithClients.Install(ctx, cfg); err != nil {
+		return fmt.Errorf("installation failed: %w", err)
+	}
+
+	fmt.Printf("\n✓ Component %s installed successfully\n", name)
+
+	// Update setup state
+	if err := updateSetupState(stackConfig, name, cfg); err != nil {
+		fmt.Printf("\n⚠ Warning: Failed to update setup state: %v\n", err)
+	}
+
+	return nil
+}
+
+// getGarageCredentials retrieves Garage credentials from the garage secret
+func getGarageCredentials(k8sClient *k8s.Client) (string, string, error) {
+	if k8sClient == nil {
+		return "", "", fmt.Errorf("k8s client is nil")
+	}
+
+	secret, err := k8sClient.GetSecret(context.Background(), "garage", "garage")
+	if err != nil {
+		return "", "", fmt.Errorf("failed to get garage secret: %w", err)
+	}
+
+	adminKey, ok := secret.Data["adminKey"]
+	if !ok {
+		return "", "", fmt.Errorf("adminKey not found in garage secret")
+	}
+
+	adminSecret, ok := secret.Data["adminSecret"]
+	if !ok {
+		return "", "", fmt.Errorf("adminSecret not found in garage secret")
+	}
+
+	return string(adminKey), string(adminSecret), nil
+}
+
+// getDNSAPIKey retrieves the DNS API key from OpenBAO
+func getDNSAPIKey(stackConfig *config.Config) (string, error) {
+	configDir, err := config.GetConfigDir()
+	if err != nil {
+		return "", err
+	}
+
+	addr, err := stackConfig.GetPrimaryOpenBAOAddress()
+	if err != nil {
+		return "", err
+	}
+	openBAOAddr := fmt.Sprintf("http://%s:8200", addr)
+
+	keysPath := filepath.Join(configDir, "openbao-keys", stackConfig.Cluster.Name, "keys.json")
+	keysData, err := os.ReadFile(keysPath)
+	if err != nil {
+		return "", err
+	}
+
+	var keys struct {
+		RootToken string `json:"root_token"`
+	}
+	if err := json.Unmarshal(keysData, &keys); err != nil {
+		return "", err
+	}
+
+	openBAOClient := openbao.NewClient(openBAOAddr, keys.RootToken)
+	ctx := context.Background()
+	data, err := openBAOClient.ReadSecretV2(ctx, "foundry-core", "dns")
+	if err != nil {
+		return "", err
+	}
+	if apiKey, ok := data["api_key"].(string); ok {
+		return apiKey, nil
+	}
+	return "", fmt.Errorf("api_key not found in OpenBAO")
+}
+
+// installSSHComponent installs a container-based component via SSH
+func installSSHComponent(ctx context.Context, cmd *cli.Command, name string, stackConfig *config.Config, dryRun bool, version string) error {
 	// Determine target host for this component
 	targetHost, err := getTargetHostForComponent(name, stackConfig)
 	if err != nil {
@@ -121,6 +389,12 @@ func runInstall(ctx context.Context, cmd *cli.Command) error {
 		}
 		fmt.Println("\nNote: This is a dry-run. No changes will be made.")
 		return nil
+	}
+
+	// Get component from registry
+	comp := component.Get(name)
+	if comp == nil {
+		return component.ErrComponentNotFound(name)
 	}
 
 	// Establish SSH connection to target host
@@ -180,9 +454,6 @@ func runInstall(ctx context.Context, cmd *cli.Command) error {
 			cfg["local_zones"] = []string{stackConfig.Cluster.Domain}
 		}
 	}
-
-	// TODO: Load additional component-specific config from stack.yaml
-	// For now, we'll use empty config and rely on component defaults
 
 	fmt.Printf("\nInstalling component: %s\n", name)
 
@@ -673,7 +944,79 @@ func isDependencyInstalled(dep string, cfg *config.Config) bool {
 		return cfg.SetupState.ZotInstalled
 	case "k3s", "kubernetes":
 		return cfg.SetupState.K8sInstalled
+	// K8s-based components - check via Helm release status
+	case "storage", "garage", "prometheus", "loki", "grafana", "external-dns", "velero",
+		"gateway-api", "contour", "cert-manager":
+		// First check if K3s is installed
+		if !cfg.SetupState.K8sInstalled {
+			return false
+		}
+		// Check via Helm releases directly
+		return isHelmReleaseInstalled(dep)
 	default:
 		return false
 	}
+}
+
+// isHelmReleaseInstalled checks if a Helm release is installed for a given component
+func isHelmReleaseInstalled(componentName string) bool {
+	// Get kubeconfig
+	configDir, err := config.GetConfigDir()
+	if err != nil {
+		return false
+	}
+	kubeconfigPath := filepath.Join(configDir, "kubeconfig")
+	kubeconfigBytes, err := os.ReadFile(kubeconfigPath)
+	if err != nil {
+		return false
+	}
+
+	// Create Helm client
+	helmClient, err := helm.NewClient(kubeconfigBytes, "default")
+	if err != nil {
+		return false
+	}
+	defer helmClient.Close()
+
+	// Map component names to release names and namespaces
+	releaseInfo := map[string]struct {
+		name      string
+		namespace string
+	}{
+		"storage":      {"local-path-provisioner", "kube-system"},
+		"garage":       {"garage", "garage"},
+		"prometheus":   {"kube-prometheus-stack", "monitoring"},
+		"loki":         {"loki", "loki"},
+		"grafana":      {"grafana", "grafana"},
+		"external-dns": {"external-dns", "external-dns"},
+		"velero":       {"velero", "velero"},
+		"gateway-api":  {"gateway-api", "gateway-system"},
+		"contour":      {"contour", "projectcontour"},
+		"cert-manager": {"cert-manager", "cert-manager"},
+	}
+
+	info, ok := releaseInfo[componentName]
+	if !ok {
+		return false
+	}
+
+	// Special case for storage - check if StorageClass exists (K3s bundles local-path)
+	if componentName == "storage" {
+		// Storage is always available if K3s is running (bundled local-path-provisioner)
+		return true
+	}
+
+	// Check for Helm release
+	releases, err := helmClient.List(context.Background(), info.namespace)
+	if err != nil {
+		return false
+	}
+
+	for _, rel := range releases {
+		if rel.Name == info.name && rel.Status == "deployed" {
+			return true
+		}
+	}
+
+	return false
 }

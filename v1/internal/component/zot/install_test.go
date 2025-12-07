@@ -189,20 +189,20 @@ func TestInstall_WithStorageBackend(t *testing.T) {
 	runtime := newMockRuntime()
 	cfg := DefaultConfig()
 	cfg.StorageBackend = &StorageConfig{
-		Type:      "truenas",
-		MountPath: "/mnt/truenas/zot",
+		Type:      "nfs",
+		MountPath: "/mnt/nfs/zot",
 	}
 
 	err := Install(executor, runtime, cfg)
 	require.NoError(t, err)
 
 	// Verify storage backend directory was created
-	assert.True(t, executor.hasCommand("mkdir -p /mnt/truenas/zot"))
+	assert.True(t, executor.hasCommand("mkdir -p /mnt/nfs/zot"))
 
 	// Verify storage backend is mounted in systemd service
 	hasStorageMount := false
 	for _, cmd := range executor.commands {
-		if strings.Contains(cmd, "-v /mnt/truenas/zot:/var/lib/zot") {
+		if strings.Contains(cmd, "-v /mnt/nfs/zot:/var/lib/zot") {
 			hasStorageMount = true
 			break
 		}
@@ -270,14 +270,14 @@ func TestCreateDirectories_WithStorageBackend(t *testing.T) {
 	executor := newMockExecutor()
 	cfg := DefaultConfig()
 	cfg.StorageBackend = &StorageConfig{
-		Type:      "truenas",
-		MountPath: "/mnt/truenas/zot",
+		Type:      "nfs",
+		MountPath: "/mnt/nfs/zot",
 	}
 
 	err := createDirectories(executor, cfg)
 	require.NoError(t, err)
 
-	assert.True(t, executor.hasCommand("mkdir -p /mnt/truenas/zot"))
+	assert.True(t, executor.hasCommand("mkdir -p /mnt/nfs/zot"))
 }
 
 func TestWriteConfigFile_Success(t *testing.T) {
@@ -351,8 +351,8 @@ func TestCreateSystemdService_WithStorageBackend(t *testing.T) {
 	runtime := newMockRuntime()
 	cfg := DefaultConfig()
 	cfg.StorageBackend = &StorageConfig{
-		Type:      "truenas",
-		MountPath: "/mnt/truenas/zot",
+		Type:      "nfs",
+		MountPath: "/mnt/nfs/zot",
 	}
 
 	err := createSystemdService(executor, runtime, cfg)
@@ -361,7 +361,7 @@ func TestCreateSystemdService_WithStorageBackend(t *testing.T) {
 	// Verify storage backend mount
 	hasStorageMount := false
 	for _, cmd := range executor.commands {
-		if strings.Contains(cmd, "-v /mnt/truenas/zot:/var/lib/zot") {
+		if strings.Contains(cmd, "-v /mnt/nfs/zot:/var/lib/zot") {
 			hasStorageMount = true
 			break
 		}

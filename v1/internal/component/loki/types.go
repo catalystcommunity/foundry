@@ -16,7 +16,7 @@ const (
 	// BackendFilesystem uses local filesystem storage (simple, for dev/test)
 	BackendFilesystem StorageBackend = "filesystem"
 
-	// BackendS3 uses S3-compatible storage (MinIO or other)
+	// BackendS3 uses S3-compatible storage (Garage or other)
 	BackendS3 StorageBackend = "s3"
 )
 
@@ -161,7 +161,7 @@ func (c *Component) Uninstall(ctx context.Context) error {
 
 // Dependencies returns the list of components that Loki depends on
 func (c *Component) Dependencies() []string {
-	return []string{"storage", "minio"} // Loki needs storage and MinIO for S3
+	return []string{"storage", "garage"} // Loki needs storage and Garage for S3
 }
 
 // DefaultConfig returns a Config with sensible defaults
@@ -170,13 +170,13 @@ func DefaultConfig() *Config {
 		Version:             "6.23.0", // loki Helm chart version
 		Namespace:           "loki",
 		DeploymentMode:      "SingleBinary", // Simple for homelab
-		StorageBackend:      BackendS3,      // Use MinIO by default
+		StorageBackend:      BackendS3,      // Use Garage by default
 		RetentionDays:       30,
 		StorageClass:        "", // Use cluster default
 		StorageSize:         "10Gi",
-		S3Endpoint:          "http://minio.minio.svc.cluster.local:9000",
+		S3Endpoint:          "http://garage.garage.svc.cluster.local:3900",
 		S3Bucket:            "loki",
-		S3Region:            "us-east-1",
+		S3Region:            "garage",
 		PromtailEnabled:     true,
 		GrafanaAgentEnabled: false,
 		IngressEnabled:      false,

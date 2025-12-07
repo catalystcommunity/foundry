@@ -84,14 +84,10 @@ type GrafanaConfig struct {
 }
 
 // StorageConfig represents a structured data type
+// Currently a placeholder for future storage configuration (e.g., Longhorn settings)
 type StorageConfig struct {
-	TrueNAS *TrueNASConfig `json:"truenas,omitempty" yaml:"truenas,omitempty"`
-}
-
-// TrueNASConfig represents a structured data type
-type TrueNASConfig struct {
-	APIURL string `json:"api_url" yaml:"api_url"`
-	APIKey string `json:"api_key" yaml:"api_key"`
+	// Backend specifies the storage backend type (local-path, nfs, longhorn)
+	Backend string `json:"backend,omitempty" yaml:"backend,omitempty"`
 }
 
 // Config represents a structured data type

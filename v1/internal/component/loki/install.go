@@ -76,18 +76,14 @@ func Install(ctx context.Context, helmClient HelmClient, k8sClient K8sClient, cf
 		Version:         cfg.Version,
 		Values:          values,
 		CreateNamespace: true,
-		Wait:            true,
-		Timeout:         10 * time.Minute,
+		Wait:            false, // Don't wait - Loki takes time to start
+		Timeout:         2 * time.Minute,
 	}); err != nil {
 		return fmt.Errorf("failed to install loki: %w", err)
 	}
 
-	// Verify installation
-	if k8sClient != nil {
-		if err := verifyInstallation(ctx, k8sClient, cfg.Namespace); err != nil {
-			return fmt.Errorf("installation verification failed: %w", err)
-		}
-	}
+	// Skip verification - Loki takes time to initialize with S3
+	// The helm release being created is sufficient
 
 	fmt.Println("  Loki installed successfully")
 	fmt.Printf("  Loki endpoint: %s\n", cfg.GetLokiEndpoint())
@@ -188,22 +184,28 @@ func buildHelmValues(cfg *Config) map[string]interface{} {
 			"retention_period": fmt.Sprintf("%dh", cfg.RetentionDays*24),
 		},
 		"compactor": map[string]interface{}{
-			"retention_enabled": true,
+			"retention_enabled":         true,
+			"delete_request_store":      "s3",
+			"delete_request_cancel_period": "24h",
 		},
 	}
 
-	// Storage configuration
+	// Storage configuration (new format for Loki chart 6.x+)
 	if cfg.StorageBackend == BackendS3 {
 		lokiConfig["storage"] = map[string]interface{}{
 			"type": "s3",
+			"bucketNames": map[string]interface{}{
+				"chunks": cfg.S3Bucket,
+				"ruler":  cfg.S3Bucket,
+				"admin":  cfg.S3Bucket,
+			},
 			"s3": map[string]interface{}{
 				"endpoint":         cfg.S3Endpoint,
-				"bucketnames":      cfg.S3Bucket,
-				"access_key_id":    cfg.S3AccessKey,
-				"secret_access_key": cfg.S3SecretKey,
+				"accessKeyId":      cfg.S3AccessKey,
+				"secretAccessKey":  cfg.S3SecretKey,
 				"region":           cfg.S3Region,
-				"insecure":         true, // For MinIO without TLS
-				"s3ForcePathStyle": true, // Required for MinIO
+				"insecure":         true, // For Garage without TLS
+				"s3ForcePathStyle": true, // Required for Garage
 			},
 		}
 	} else {

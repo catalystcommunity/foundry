@@ -87,57 +87,44 @@ func TestParseConfig_NFS(t *testing.T) {
 	assert.True(t, config.NFS.ArchiveOnDelete)
 }
 
-func TestParseConfig_TrueNASNFS(t *testing.T) {
+func TestParseConfig_Longhorn(t *testing.T) {
 	cfg := component.ComponentConfig{
-		"backend":            "truenas-nfs",
-		"storage_class_name": "truenas-nfs",
-		"truenas": map[string]interface{}{
-			"api_url":        "https://truenas.local",
-			"api_key":        "secret-key",
-			"pool":           "tank",
-			"dataset_parent": "tank/k8s/volumes",
-			"share_host":     "192.168.1.50",
-			"share_networks": []interface{}{"192.168.1.0/24", "10.0.0.0/8"},
+		"backend":            "longhorn",
+		"storage_class_name": "longhorn",
+		"longhorn": map[string]interface{}{
+			"replica_count":                   float64(3),
+			"data_path":                       "/mnt/storage/longhorn",
+			"guaranteed_instance_manager_cpu": float64(15),
+			"default_data_locality":           "best-effort",
 		},
 	}
 
 	config, err := ParseConfig(cfg)
 	require.NoError(t, err)
 
-	assert.Equal(t, BackendTrueNASNFS, config.Backend)
-	assert.Equal(t, "truenas-nfs", config.StorageClassName)
-	assert.NotNil(t, config.TrueNAS)
-	assert.Equal(t, "https://truenas.local", config.TrueNAS.APIURL)
-	assert.Equal(t, "secret-key", config.TrueNAS.APIKey)
-	assert.Equal(t, "tank", config.TrueNAS.Pool)
-	assert.Equal(t, "tank/k8s/volumes", config.TrueNAS.DatasetParent)
-	assert.Equal(t, "192.168.1.50", config.TrueNAS.ShareHost)
-	assert.Len(t, config.TrueNAS.ShareNetworks, 2)
-	assert.Contains(t, config.TrueNAS.ShareNetworks, "192.168.1.0/24")
-	assert.Contains(t, config.TrueNAS.ShareNetworks, "10.0.0.0/8")
+	assert.Equal(t, BackendLonghorn, config.Backend)
+	assert.Equal(t, "longhorn", config.StorageClassName)
+	assert.NotNil(t, config.Longhorn)
+	assert.Equal(t, 3, config.Longhorn.ReplicaCount)
+	assert.Equal(t, "/mnt/storage/longhorn", config.Longhorn.DataPath)
+	assert.Equal(t, 15, config.Longhorn.GuaranteedInstanceManagerCPU)
+	assert.Equal(t, "best-effort", config.Longhorn.DefaultDataLocality)
 }
 
-func TestParseConfig_TrueNASiSCSI(t *testing.T) {
+func TestParseConfig_Longhorn_Defaults(t *testing.T) {
 	cfg := component.ComponentConfig{
-		"backend":            "truenas-iscsi",
-		"storage_class_name": "truenas-iscsi",
-		"truenas": map[string]interface{}{
-			"api_url":            "https://truenas.local",
-			"api_key":            "secret-key",
-			"pool":               "tank",
-			"dataset_parent":     "tank/k8s/zvols",
-			"portal_id":          float64(1),
-			"initiator_group_id": float64(1),
-		},
+		"backend":            "longhorn",
+		"storage_class_name": "longhorn",
 	}
 
 	config, err := ParseConfig(cfg)
 	require.NoError(t, err)
 
-	assert.Equal(t, BackendTrueNASiSCSI, config.Backend)
-	assert.NotNil(t, config.TrueNAS)
-	assert.Equal(t, 1, config.TrueNAS.PortalID)
-	assert.Equal(t, 1, config.TrueNAS.InitiatorGroupID)
+	assert.Equal(t, BackendLonghorn, config.Backend)
+	assert.NotNil(t, config.Longhorn)
+	// Validate sets defaults
+	assert.Equal(t, 3, config.Longhorn.ReplicaCount)
+	assert.Equal(t, "/var/lib/longhorn", config.Longhorn.DataPath)
 }
 
 func TestParseConfig_WithCustomValues(t *testing.T) {
@@ -209,54 +196,46 @@ func TestValidate_NFS_MissingConfig(t *testing.T) {
 	assert.Contains(t, err.Error(), "nfs configuration required")
 }
 
-func TestValidate_TrueNASNFS_MissingAPIURL(t *testing.T) {
+func TestValidate_Longhorn_Success(t *testing.T) {
 	config := &Config{
-		Backend:          BackendTrueNASNFS,
-		StorageClassName: "truenas",
-		TrueNAS: &TrueNASCSIConfig{
-			APIKey:        "key",
-			Pool:          "tank",
-			DatasetParent: "tank/k8s",
-			ShareHost:     "192.168.1.50",
-		},
-	}
-
-	err := config.Validate()
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "truenas api_url is required")
-}
-
-func TestValidate_TrueNASNFS_MissingShareHost(t *testing.T) {
-	config := &Config{
-		Backend:          BackendTrueNASNFS,
-		StorageClassName: "truenas",
-		TrueNAS: &TrueNASCSIConfig{
-			APIURL:        "https://truenas.local",
-			APIKey:        "key",
-			Pool:          "tank",
-			DatasetParent: "tank/k8s",
-		},
-	}
-
-	err := config.Validate()
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "truenas share_host is required")
-}
-
-func TestValidate_TrueNASiSCSI_Success(t *testing.T) {
-	config := &Config{
-		Backend:          BackendTrueNASiSCSI,
-		StorageClassName: "truenas-iscsi",
-		TrueNAS: &TrueNASCSIConfig{
-			APIURL:        "https://truenas.local",
-			APIKey:        "key",
-			Pool:          "tank",
-			DatasetParent: "tank/k8s/zvols",
+		Backend:          BackendLonghorn,
+		StorageClassName: "longhorn",
+		Longhorn: &LonghornConfig{
+			ReplicaCount: 3,
+			DataPath:     "/var/lib/longhorn",
 		},
 	}
 
 	err := config.Validate()
 	assert.NoError(t, err)
+}
+
+func TestValidate_Longhorn_InvalidReplicaCount(t *testing.T) {
+	config := &Config{
+		Backend:          BackendLonghorn,
+		StorageClassName: "longhorn",
+		Longhorn: &LonghornConfig{
+			ReplicaCount: 0,
+			DataPath:     "/var/lib/longhorn",
+		},
+	}
+
+	err := config.Validate()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "replica_count must be at least 1")
+}
+
+func TestValidate_Longhorn_DefaultsApplied(t *testing.T) {
+	config := &Config{
+		Backend:          BackendLonghorn,
+		StorageClassName: "longhorn",
+	}
+
+	err := config.Validate()
+	assert.NoError(t, err)
+	assert.NotNil(t, config.Longhorn)
+	assert.Equal(t, 3, config.Longhorn.ReplicaCount)
+	assert.Equal(t, "/var/lib/longhorn", config.Longhorn.DataPath)
 }
 
 func TestValidate_UnsupportedBackend(t *testing.T) {
@@ -312,9 +291,10 @@ func TestComponent_Status_NoHelmClient(t *testing.T) {
 	status, err := comp.Status(context.Background())
 
 	assert.NoError(t, err)
-	assert.False(t, status.Installed)
-	assert.False(t, status.Healthy)
-	assert.Contains(t, status.Message, "not initialized")
+	// When no helm client, assumes K3s bundled local-path provisioner is available
+	assert.True(t, status.Installed)
+	assert.True(t, status.Healthy)
+	assert.Contains(t, status.Message, "assuming K3s bundled local-path provisioner")
 }
 
 // mockHelmClient is a mock implementation of HelmClient for testing
@@ -420,7 +400,8 @@ func TestComponent_Status_NoRelease(t *testing.T) {
 	status, err := comp.Status(context.Background())
 
 	assert.NoError(t, err)
-	assert.False(t, status.Installed)
-	assert.False(t, status.Healthy)
-	assert.Contains(t, status.Message, "no storage provisioner found")
+	// When no releases found, assumes K3s bundled local-path provisioner is available
+	assert.True(t, status.Installed)
+	assert.True(t, status.Healthy)
+	assert.Contains(t, status.Message, "assuming K3s bundled local-path provisioner")
 }

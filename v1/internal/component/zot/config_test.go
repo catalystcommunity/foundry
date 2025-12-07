@@ -190,8 +190,8 @@ func TestGenerateConfig_CompleteConfiguration(t *testing.T) {
 		Port:             5000,
 		PullThroughCache: true,
 		StorageBackend: &StorageConfig{
-			Type:      "truenas",
-			MountPath: "/mnt/truenas/zot",
+			Type:      "nfs",
+			MountPath: "/mnt/nfs/zot",
 		},
 		Auth: &AuthConfig{
 			Type: "basic",

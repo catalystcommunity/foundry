@@ -113,50 +113,13 @@ func TestComponentConfig_Validate(t *testing.T) {
 	}
 }
 
-func TestTrueNASConfig_Validate(t *testing.T) {
-	tests := []struct {
-		name    string
-		config  TrueNASConfig
-		wantErr bool
-		errMsg  string
-	}{
-		{
-			name: "valid truenas config",
-			config: TrueNASConfig{
-				APIURL: "https://truenas.example.com",
-				APIKey: "test-key",
-			},
-			wantErr: false,
-		},
-		{
-			name: "missing api_url",
-			config: TrueNASConfig{
-				APIKey: "test-key",
-			},
-			wantErr: true,
-			errMsg:  "truenas api_url is required",
-		},
-		{
-			name: "missing api_key",
-			config: TrueNASConfig{
-				APIURL: "https://truenas.example.com",
-			},
-			wantErr: true,
-			errMsg:  "truenas api_key is required",
-		},
+func TestStorageConfig_Validate(t *testing.T) {
+	// StorageConfig is now a simple struct with just Backend field
+	config := &StorageConfig{
+		Backend: "longhorn",
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := tt.config.Validate()
-			if tt.wantErr {
-				require.Error(t, err)
-				assert.Contains(t, err.Error(), tt.errMsg)
-			} else {
-				require.NoError(t, err)
-			}
-		})
-	}
+	err := config.Validate()
+	require.NoError(t, err)
 }
 
 func TestConfig_UnmarshalYAML(t *testing.T) {
@@ -192,8 +155,6 @@ components:
     ha: true
   zot:
     version: "2.0.0"
-    storage:
-      backend: truenas
 
 observability:
   prometheus:
@@ -202,9 +163,7 @@ observability:
     retention: 90d
 
 storage:
-  truenas:
-    api_url: https://truenas.example.com
-    api_key: secret-key
+  backend: longhorn
 `
 
 	var config Config
@@ -235,9 +194,7 @@ storage:
 	assert.Equal(t, "30d", *config.Observability.Prometheus.Retention)
 
 	require.NotNil(t, config.Storage)
-	require.NotNil(t, config.Storage.TrueNAS)
-	assert.Equal(t, "https://truenas.example.com", config.Storage.TrueNAS.APIURL)
-	assert.Equal(t, "secret-key", config.Storage.TrueNAS.APIKey)
+	assert.Equal(t, "longhorn", config.Storage.Backend)
 
 	// Validate the unmarshaled config
 	err = config.Validate()

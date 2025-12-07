@@ -8,7 +8,7 @@ import (
 
 // All type definitions (NetworkConfig, DHCPRange, DNSConfig, DNSZone, ClusterConfig, NodeConfig,
 // ComponentMap, ComponentConfig, ObsConfig, PrometheusConfig, LokiConfig, GrafanaConfig,
-// StorageConfig, TrueNASConfig, and Config) are generated from CSIL in types.gen.go
+// StorageConfig, and Config) are generated from CSIL in types.gen.go
 // Validation methods below extend the generated types
 
 // Valid node roles
@@ -116,24 +116,7 @@ func (o *ObsConfig) Validate() error {
 
 // Validate performs validation on StorageConfig
 func (s *StorageConfig) Validate() error {
-	if s.TrueNAS != nil {
-		if err := s.TrueNAS.Validate(); err != nil {
-			return fmt.Errorf("truenas validation failed: %w", err)
-		}
-	}
-	return nil
-}
-
-// Validate performs validation on TrueNASConfig
-func (t *TrueNASConfig) Validate() error {
-	if t.APIURL == "" {
-		return fmt.Errorf("truenas api_url is required")
-	}
-
-	if t.APIKey == "" {
-		return fmt.Errorf("truenas api_key is required")
-	}
-
+	// StorageConfig validation - backend is optional, validated by component installer
 	return nil
 }
 
@@ -164,7 +147,7 @@ func (n *NetworkConfig) Validate() error {
 
 	// NOTE: Network-based host validation removed - moved to role-based hosts
 	// K8sVIP moved to cluster.vip
-	// Host arrays (OpenBAOHosts, DNSHosts, ZotHosts, TrueNASHosts) removed
+	// Host arrays (OpenBAOHosts, DNSHosts, ZotHosts) removed
 	// Hosts are now in config.hosts[] with roles
 	// IP validation happens in host.Validate() in host package
 

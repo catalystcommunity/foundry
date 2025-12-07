@@ -17,7 +17,7 @@ func TestDefaultConfig(t *testing.T) {
 	assert.Equal(t, "67.4.0", config.Version)
 	assert.Equal(t, "monitoring", config.Namespace)
 	assert.Equal(t, 15, config.RetentionDays)
-	assert.Equal(t, "10Gi", config.RetentionSize)
+	assert.Equal(t, "10GB", config.RetentionSize) // Must end with 'B' per Prometheus CRD spec
 	assert.Equal(t, "", config.StorageClass)
 	assert.Equal(t, "20Gi", config.StorageSize)
 	assert.True(t, config.AlertmanagerEnabled)

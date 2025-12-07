@@ -76,8 +76,31 @@ func DetectRuntimeInstallation(executor CommandExecutor) RuntimeType {
 		return RuntimeDocker
 	}
 
-	// Check if it's nerdctl
-	if strings.Contains(output, "nerdctl") {
+	// Check if it's nerdctl by multiple methods:
+	// 1. Version output explicitly contains "nerdctl"
+	// 2. The nerdctl binary exists at /usr/local/bin/nerdctl
+	// 3. The docker symlink points to nerdctl
+	isNerdctl := strings.Contains(output, "nerdctl")
+
+	if !isNerdctl {
+		// Check if nerdctl binary exists directly
+		nerdctlResult, err := executor.Exec("test -x /usr/local/bin/nerdctl && echo 'ok'")
+		if err == nil && nerdctlResult.ExitCode == 0 && strings.TrimSpace(nerdctlResult.Stdout) == "ok" {
+			isNerdctl = true
+		}
+	}
+
+	if !isNerdctl {
+		// Check if docker is a symlink to nerdctl
+		symlinkResult, err := executor.Exec("readlink -f $(which docker) 2>/dev/null")
+		if err == nil && symlinkResult.ExitCode == 0 {
+			if strings.Contains(symlinkResult.Stdout, "nerdctl") {
+				isNerdctl = true
+			}
+		}
+	}
+
+	if isNerdctl {
 		// It's nerdctl, but is it complete?
 		// Check if CNI plugins are installed
 		cniResult, err := executor.Exec("test -f /opt/cni/bin/bridge && echo 'ok'")

@@ -1,4 +1,4 @@
-package minio
+package garage
 
 import (
 	"context"
@@ -14,17 +14,16 @@ import (
 func TestDefaultConfig(t *testing.T) {
 	config := DefaultConfig()
 
-	assert.Equal(t, "5.2.0", config.Version)
-	assert.Equal(t, "minio", config.Namespace)
-	assert.Equal(t, ModeStandalone, config.Mode)
+	assert.Equal(t, "1.0.1", config.Version)
+	assert.Equal(t, "garage", config.Namespace)
+	assert.Equal(t, 1, config.ReplicationFactor)
 	assert.Equal(t, 1, config.Replicas)
-	assert.Equal(t, "minioadmin", config.RootUser)
-	assert.Equal(t, "", config.RootPassword)
 	assert.Equal(t, "", config.StorageClass)
-	assert.Equal(t, "10Gi", config.StorageSize)
+	assert.Equal(t, "50Gi", config.StorageSize)
+	assert.Equal(t, "garage", config.S3Region)
+	assert.Equal(t, "", config.AdminKey)
+	assert.Equal(t, "", config.AdminSecret)
 	assert.Empty(t, config.Buckets)
-	assert.False(t, config.IngressEnabled)
-	assert.False(t, config.TLSEnabled)
 	assert.NotNil(t, config.Values)
 }
 
@@ -34,48 +33,49 @@ func TestParseConfig_Defaults(t *testing.T) {
 	config, err := ParseConfig(cfg)
 	require.NoError(t, err)
 
-	assert.Equal(t, "5.2.0", config.Version)
-	assert.Equal(t, "minio", config.Namespace)
-	assert.Equal(t, ModeStandalone, config.Mode)
+	assert.Equal(t, "1.0.1", config.Version)
+	assert.Equal(t, "garage", config.Namespace)
+	assert.Equal(t, 1, config.ReplicationFactor)
+	assert.Equal(t, 1, config.Replicas)
+	// Admin credentials should be auto-generated
+	assert.NotEmpty(t, config.AdminKey)
+	assert.NotEmpty(t, config.AdminSecret)
+	assert.Len(t, config.AdminKey, 64)   // 32 bytes = 64 hex chars
+	assert.Len(t, config.AdminSecret, 64)
 }
 
 func TestParseConfig_CustomValues(t *testing.T) {
 	cfg := component.ComponentConfig{
-		"version":       "5.3.0",
-		"namespace":     "custom-minio",
-		"mode":          "distributed",
-		"replicas":      4,
-		"root_user":     "admin",
-		"root_password": "secret123",
-		"storage_class": "local-path",
-		"storage_size":  "50Gi",
-		"buckets":       []interface{}{"loki", "velero", "backups"},
-		"ingress_enabled": true,
-		"ingress_host":    "minio.example.com",
-		"tls_enabled":     true,
+		"version":            "1.0.2",
+		"namespace":          "custom-garage",
+		"replication_factor": 3,
+		"replicas":           3,
+		"storage_class":      "longhorn",
+		"storage_size":       "100Gi",
+		"s3_region":          "us-east-1",
+		"admin_key":          "my-admin-key",
+		"admin_secret":       "my-admin-secret",
+		"buckets":            []interface{}{"loki", "velero"},
 	}
 
 	config, err := ParseConfig(cfg)
 	require.NoError(t, err)
 
-	assert.Equal(t, "5.3.0", config.Version)
-	assert.Equal(t, "custom-minio", config.Namespace)
-	assert.Equal(t, ModeDistributed, config.Mode)
-	assert.Equal(t, 4, config.Replicas)
-	assert.Equal(t, "admin", config.RootUser)
-	assert.Equal(t, "secret123", config.RootPassword)
-	assert.Equal(t, "local-path", config.StorageClass)
-	assert.Equal(t, "50Gi", config.StorageSize)
-	assert.Len(t, config.Buckets, 3)
+	assert.Equal(t, "1.0.2", config.Version)
+	assert.Equal(t, "custom-garage", config.Namespace)
+	assert.Equal(t, 3, config.ReplicationFactor)
+	assert.Equal(t, 3, config.Replicas)
+	assert.Equal(t, "longhorn", config.StorageClass)
+	assert.Equal(t, "100Gi", config.StorageSize)
+	assert.Equal(t, "us-east-1", config.S3Region)
+	assert.Equal(t, "my-admin-key", config.AdminKey)
+	assert.Equal(t, "my-admin-secret", config.AdminSecret)
+	assert.Len(t, config.Buckets, 2)
 	assert.Contains(t, config.Buckets, "loki")
 	assert.Contains(t, config.Buckets, "velero")
-	assert.Contains(t, config.Buckets, "backups")
-	assert.True(t, config.IngressEnabled)
-	assert.Equal(t, "minio.example.com", config.IngressHost)
-	assert.True(t, config.TLSEnabled)
 }
 
-func TestParseConfig_WithCustomValues(t *testing.T) {
+func TestParseConfig_WithCustomHelmValues(t *testing.T) {
 	cfg := component.ComponentConfig{
 		"values": map[string]interface{}{
 			"custom": "value",
@@ -93,77 +93,66 @@ func TestParseConfig_WithCustomValues(t *testing.T) {
 	assert.NotNil(t, config.Values["nested"])
 }
 
-func TestValidate_StandaloneMode(t *testing.T) {
+func TestValidate_Success(t *testing.T) {
 	config := &Config{
-		Mode:     ModeStandalone,
-		Replicas: 1,
+		ReplicationFactor: 1,
+		Replicas:          1,
 	}
 
 	err := config.Validate()
 	assert.NoError(t, err)
 }
 
-func TestValidate_DistributedMode_Success(t *testing.T) {
+func TestValidate_MultiReplica_Success(t *testing.T) {
 	config := &Config{
-		Mode:     ModeDistributed,
-		Replicas: 4,
+		ReplicationFactor: 3,
+		Replicas:          3,
 	}
 
 	err := config.Validate()
 	assert.NoError(t, err)
 }
 
-func TestValidate_DistributedMode_TooFewReplicas(t *testing.T) {
+func TestValidate_ReplicationFactorTooLow(t *testing.T) {
 	config := &Config{
-		Mode:     ModeDistributed,
-		Replicas: 2,
+		ReplicationFactor: 0,
+		Replicas:          3,
 	}
 
 	err := config.Validate()
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "at least 4 replicas")
+	assert.Contains(t, err.Error(), "replication_factor must be at least 1")
 }
 
-func TestValidate_UnsupportedMode(t *testing.T) {
+func TestValidate_ReplicasTooLow(t *testing.T) {
 	config := &Config{
-		Mode: DeploymentMode("invalid"),
+		ReplicationFactor: 1,
+		Replicas:          0,
 	}
 
 	err := config.Validate()
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "unsupported deployment mode")
+	assert.Contains(t, err.Error(), "replicas must be at least 1")
 }
 
-func TestValidate_IngressEnabled_NoHost(t *testing.T) {
+func TestValidate_ReplicationFactorGreaterThanReplicas(t *testing.T) {
 	config := &Config{
-		Mode:           ModeStandalone,
-		IngressEnabled: true,
-		IngressHost:    "",
+		ReplicationFactor: 3,
+		Replicas:          2,
 	}
 
 	err := config.Validate()
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "ingress_host is required")
-}
-
-func TestValidate_IngressEnabled_WithHost(t *testing.T) {
-	config := &Config{
-		Mode:           ModeStandalone,
-		IngressEnabled: true,
-		IngressHost:    "minio.example.com",
-	}
-
-	err := config.Validate()
-	assert.NoError(t, err)
+	assert.Contains(t, err.Error(), "cannot be greater than replicas")
 }
 
 func TestGetEndpoint(t *testing.T) {
 	config := &Config{
-		Namespace: "minio",
+		Namespace: "garage",
 	}
 
 	endpoint := config.GetEndpoint()
-	assert.Equal(t, "http://minio.minio.svc.cluster.local:9000", endpoint)
+	assert.Equal(t, "http://garage.garage.svc.cluster.local:3900", endpoint)
 }
 
 func TestGetEndpoint_CustomNamespace(t *testing.T) {
@@ -172,21 +161,30 @@ func TestGetEndpoint_CustomNamespace(t *testing.T) {
 	}
 
 	endpoint := config.GetEndpoint()
-	assert.Equal(t, "http://minio.custom-ns.svc.cluster.local:9000", endpoint)
+	assert.Equal(t, "http://garage.custom-ns.svc.cluster.local:3900", endpoint)
 }
 
-func TestGetConsoleEndpoint(t *testing.T) {
+func TestGetAdminEndpoint(t *testing.T) {
 	config := &Config{
-		Namespace: "minio",
+		Namespace: "garage",
 	}
 
-	endpoint := config.GetConsoleEndpoint()
-	assert.Equal(t, "http://minio-console.minio.svc.cluster.local:9001", endpoint)
+	endpoint := config.GetAdminEndpoint()
+	assert.Equal(t, "http://garage.garage.svc.cluster.local:3903", endpoint)
+}
+
+func TestGetRPCEndpoint(t *testing.T) {
+	config := &Config{
+		Namespace: "garage",
+	}
+
+	endpoint := config.GetRPCEndpoint()
+	assert.Equal(t, "http://garage.garage.svc.cluster.local:3901", endpoint)
 }
 
 func TestComponent_Name(t *testing.T) {
 	comp := NewComponent(nil, nil)
-	assert.Equal(t, "minio", comp.Name())
+	assert.Equal(t, "garage", comp.Name())
 }
 
 func TestComponent_Dependencies(t *testing.T) {
@@ -275,14 +273,14 @@ func (m *mockK8sClient) GetPods(ctx context.Context, namespace string) ([]*k8s.P
 	return m.pods, m.podsErr
 }
 
-func TestComponent_Status_MinIOInstalled(t *testing.T) {
+func TestComponent_Status_GarageInstalled(t *testing.T) {
 	helmClient := &mockHelmClient{
 		listReleases: []helm.Release{
 			{
-				Name:       "minio",
-				Namespace:  "minio",
+				Name:       "garage",
+				Namespace:  "garage",
 				Status:     "deployed",
-				AppVersion: "2024.1.1",
+				AppVersion: "1.0.1",
 			},
 		},
 	}
@@ -293,10 +291,10 @@ func TestComponent_Status_MinIOInstalled(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, status.Installed)
 	assert.True(t, status.Healthy)
-	assert.Equal(t, "2024.1.1", status.Version)
+	assert.Equal(t, "1.0.1", status.Version)
 }
 
-func TestComponent_Status_MinIONotInstalled(t *testing.T) {
+func TestComponent_Status_GarageNotInstalled(t *testing.T) {
 	helmClient := &mockHelmClient{
 		listReleases: []helm.Release{},
 	}
@@ -310,14 +308,14 @@ func TestComponent_Status_MinIONotInstalled(t *testing.T) {
 	assert.Contains(t, status.Message, "not found")
 }
 
-func TestComponent_Status_MinIOFailed(t *testing.T) {
+func TestComponent_Status_GarageFailed(t *testing.T) {
 	helmClient := &mockHelmClient{
 		listReleases: []helm.Release{
 			{
-				Name:       "minio",
-				Namespace:  "minio",
+				Name:       "garage",
+				Namespace:  "garage",
 				Status:     "failed",
-				AppVersion: "2024.1.1",
+				AppVersion: "1.0.1",
 			},
 		},
 	}
@@ -332,17 +330,29 @@ func TestComponent_Status_MinIOFailed(t *testing.T) {
 
 func TestGetConnectionInfo(t *testing.T) {
 	cfg := &Config{
-		Namespace:    "minio",
-		RootUser:     "admin",
-		RootPassword: "secret",
-		TLSEnabled:   true,
+		Namespace:   "garage",
+		AdminKey:    "access-key",
+		AdminSecret: "secret-key",
+		S3Region:    "garage",
 	}
 
 	info := GetConnectionInfo(cfg)
 
-	assert.Equal(t, "minio.minio.svc.cluster.local:9000", info.Endpoint)
-	assert.Equal(t, "admin", info.AccessKey)
-	assert.Equal(t, "secret", info.SecretKey)
-	assert.True(t, info.UseSSL)
-	assert.Equal(t, "us-east-1", info.Region)
+	assert.Equal(t, "garage.garage.svc.cluster.local:3900", info.Endpoint)
+	assert.Equal(t, "access-key", info.AccessKey)
+	assert.Equal(t, "secret-key", info.SecretKey)
+	assert.False(t, info.UseSSL)
+	assert.Equal(t, "garage", info.Region)
+}
+
+func TestGenerateRandomKey(t *testing.T) {
+	key1 := generateRandomKey(32)
+	key2 := generateRandomKey(32)
+
+	// Keys should be 64 chars (32 bytes * 2 for hex encoding)
+	assert.Len(t, key1, 64)
+	assert.Len(t, key2, 64)
+
+	// Keys should be different
+	assert.NotEqual(t, key1, key2)
 }

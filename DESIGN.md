@@ -28,7 +28,7 @@ Individual commands (`foundry component install`, `foundry network plan`, etc.) 
 - **Interactive by Default, Automatable by Trust**: Humans in the loop by default; automation available for any operation the user trusts
 - **Stateless by Design**: No local state files - query actual infrastructure state on demand
 - **Location Agnostic**: Run from anywhere with network access (laptop, bastion host, control plane VM)
-- **Container Everything**: All services run in containers (except TrueNAS and K3s itself)
+- **Container Everything**: All services run in containers (except K3s itself)
 - **Protocol Over Hardware**: Services reference each other via URLs and protocols, not infrastructure details
 - **Scales Infinitely**: From 1 developer on a single server to 1000+ developers across thousands of nodes; distributed by design
 
@@ -143,8 +143,6 @@ network:
     - 192.168.1.10  # Can be same as OpenBAO
   zot_hosts:
     - 192.168.1.10
-  truenas_hosts:
-    - 192.168.1.15  # Optional
 
   # K3s VIP (must be unique)
   k8s_vip: 192.168.1.100
@@ -202,10 +200,10 @@ observability:
     retention: 90d
 
 storage:
-  truenas:
-    # DNS: truenas.catalyst.local → TrueNAS IP (specific A record)
-    api_url: https://truenas.catalyst.local
-    api_key: ${secret:foundry-core/truenas:api_key}
+  backend: longhorn  # Options: local-path, longhorn, nfs
+  longhorn:
+    replica_count: 3
+    data_path: /var/lib/longhorn
 
 # Setup state (managed by 'foundry setup')
 _setup_state:
@@ -263,7 +261,7 @@ Secret paths are automatically scoped to their service context. When a service r
 # Format: namespace/path/to/secret:key=value
 myservice-stable/database/prod:password=my_local_dev_password
 myservice-toy/database/prod:password=toy_password
-foundry/truenas:api_key=local_truenas_key
+foundry/garage:admin_key=local_garage_key
 external/github:api_token=ghp_localdevtoken123
 ```
 
@@ -339,8 +337,6 @@ Users and service accounts are managed in OpenBAO:
 - `openbao.catalyst.local` → Host IP (e.g., 10.16.0.42)
 - `dns.catalyst.local` → Host IP
 - `zot.catalyst.local` → Host IP
-- `truenas.catalyst.local` → TrueNAS IP (if configured)
-
 **Kubernetes Services** (wildcard A record):
 - `*.catalyst.local` → VIP (e.g., 10.16.0.43)
 - Catches all K8s app hostnames: `grafana.catalyst.local`, `myapp.catalyst.local`
@@ -382,9 +378,6 @@ External-DNS will manage public domains with split-horizon or third-party DNS pr
 **Minimum Deployment** (2 IPs):
 1. **Infrastructure host**: OpenBAO + PowerDNS + Zot containers (e.g., 192.168.1.10)
 2. **K3s VIP**: Virtual IP for Kubernetes API (e.g., 192.168.1.100) - **must be unique**
-
-**With TrueNAS** (3 IPs):
-3. **TrueNAS**: Separate device/VM (e.g., 192.168.1.15)
 
 **IP Configuration Options**:
 - **DHCP reservations** (recommended): Configure MAC → IP bindings in router
@@ -548,18 +541,17 @@ foundry secret list [path]
 
 #### Storage Management
 
-Storage backend configuration (TrueNAS, future cloud providers).
+Storage backend configuration (Longhorn, NFS, local-path).
 
 ```bash
-foundry storage configure [--interactive]
-  # Configure storage backend
-  # Interactive wizard for TrueNAS API, credentials, etc.
-
 foundry storage list
   # List configured storage backends and volumes
 
-foundry storage test
-  # Verify connectivity and permissions
+foundry storage provision
+  # Provision storage backend (install Longhorn, etc.)
+
+foundry storage pvc create --name NAME --size SIZE
+  # Create a PersistentVolumeClaim
 ```
 
 #### Config Management
@@ -697,7 +689,7 @@ foundry config init --interactive
   # Prompts for:
   # - Network configuration (gateway, subnet, DHCP range)
   # - DNS zones (infrastructure and kubernetes)
-  # - IP allocations (infrastructure host, K3s VIP, TrueNAS)
+  # - IP allocations (infrastructure host, K3s VIP)
   # - Cluster configuration
   # Creates ~/.foundry/<name>.yaml
 
@@ -715,7 +707,7 @@ foundry stack install --config ~/.foundry/<name>.yaml
   # f. Store Foundry's OpenBAO auth token
   # g. Install PowerDNS container
   # h. Create DNS zone (catalyst.local with flat namespace)
-  # i. Add specific A records for infrastructure (openbao, dns, zot, truenas)
+  # i. Add specific A records for infrastructure (openbao, dns, zot)
   # j. Add wildcard A record for K8s services (*.catalyst.local → VIP)
   # k. Install Zot container
   # l. Install K3s cluster (with VIP, configured to use PowerDNS)
@@ -743,7 +735,7 @@ Foundry automatically handles dependencies:
 
 3. **DNS Zone** (flat namespace)
    - Single zone: `catalyst.local` (or user's configured domain)
-   - Specific A records: `openbao.catalyst.local`, `zot.catalyst.local`, `truenas.catalyst.local` → host IPs
+   - Specific A records: `openbao.catalyst.local`, `zot.catalyst.local` → host IPs
    - Wildcard A record: `*.catalyst.local` → VIP (for all K8s services)
 
 4. **Zot** (container on infrastructure host)
@@ -763,17 +755,17 @@ Foundry automatically handles dependencies:
    - Cert-manager (TLS automation)
 
 7. **Storage** (Phase 3)
-   - TrueNAS integration (CSI drivers)
-   - MinIO (if TrueNAS doesn't provide S3-compatible storage)
+   - Longhorn (distributed block storage)
+   - Garage (S3-compatible object storage)
 
 8. **Observability** (Phase 3)
    - External-DNS (updates PowerDNS kubernetes zone)
    - Prometheus
-   - Loki
+   - Loki (uses Garage for S3 storage)
    - Grafana
 
 9. **Backup & Recovery** (Phase 3)
-   - Velero (using MinIO or TrueNAS S3 backend)
+   - Velero (uses Garage for S3 backup storage)
 
 10. **CI/CD** (Phase 4, optional)
     - ArgoCD
@@ -956,7 +948,7 @@ components:
 
 **Zone Strategy** (Flat Namespace):
 - **Single zone**: All services under one domain (e.g., `catalyst.local`)
-- **Specific A records**: Infrastructure services (openbao, dns, zot, truenas) → host IPs
+- **Specific A records**: Infrastructure services (openbao, dns, zot) → host IPs
 - **Wildcard A record**: All K8s services (`*.catalyst.local`) → VIP
 - **Phase 3**: Public domain support via External-DNS
 
@@ -1018,7 +1010,6 @@ components:
   zot:
     version: "2.0.0"
     storage:
-      backend: truenas
       size: 500Gi
     auth: openbao  # OIDC via OpenBAO
 ```
@@ -1094,27 +1085,30 @@ components:
 - Cluster backup and disaster recovery
 - PVC snapshots
 - Scheduled backups
-- S3-compatible object storage backend (MinIO or TrueNAS)
+- S3-compatible object storage backend (Garage)
 
-### MinIO (Conditional)
+### Garage
 
 **Purpose**: S3-compatible object storage
 
-**Deployment**: Helm chart in K8s (only if TrueNAS doesn't provide S3-compatible storage)
+**Deployment**: Helm chart in K8s
 
 **Usage**:
 - Velero backup storage
+- Loki log storage
 - General object storage for services
-- PVC-backed (potentially by TrueNAS)
+- Runs on Longhorn PVCs
 
 **Configuration**:
 ```yaml
 components:
-  minio:
-    deploy: auto  # Deploy if TrueNAS S3 unavailable
-    storage:
-      size: 1Ti
-      backend: truenas  # PVC backed by TrueNAS if available
+  garage:
+    replicas: 3
+    replication_factor: 3
+    storage_size: 100Gi
+    buckets:
+      - velero
+      - loki
 ```
 
 ### ArgoCD (Optional)
@@ -1128,15 +1122,26 @@ components:
 - RBAC via OpenBAO
 - Application templates for new services
 
-### TrueNAS (External)
+### Longhorn
 
-**Purpose**: Persistent storage backend
+**Purpose**: Distributed block storage for Kubernetes
 
-**Integration**:
-- Not installed by Foundry (assumed pre-existing)
-- `foundry storage configure` sets up API access
-- Creates datasets/zvols for PVC provisioning
-- CSI driver installation in K8s
+**Deployment**: Helm chart in K8s
+
+**Features**:
+- StorageClass for PersistentVolumeClaims
+- Automatic replication across nodes
+- Snapshot and backup capabilities
+- No RAID required (handles redundancy)
+
+**Configuration**:
+```yaml
+storage:
+  backend: longhorn
+  longhorn:
+    replica_count: 3
+    data_path: /var/lib/longhorn
+```
 
 ## Testing Strategy
 
@@ -1206,9 +1211,7 @@ Following project best practices:
 - [ ] PowerDNS zone management (infrastructure and kubernetes zones)
 - [ ] Split-horizon DNS configuration
 - [ ] `foundry dns` commands (zone/record management)
-- [ ] `foundry storage configure` for TrueNAS (optional, for Zot)
 - [ ] `foundry component install zot`
-- [ ] Configure Zot with TrueNAS storage backend (if TrueNAS configured)
 - [ ] `foundry cluster init` (K3s setup with VIP, Zot registry, PowerDNS)
 - [ ] `foundry cluster node add/remove`
 - [ ] `foundry component install` for Contour, cert-manager
@@ -1221,8 +1224,8 @@ Following project best practices:
 **Goals**: Complete the core stack
 
 **Deliverables**:
-- [ ] Complete TrueNAS integration (CSI drivers, PVC provisioning)
-- [ ] MinIO installation (if needed)
+- [ ] Longhorn installation (distributed block storage)
+- [ ] Garage installation (S3-compatible object storage)
 - [ ] `foundry component install` for Prometheus, Loki, Grafana
 - [ ] External-DNS installation
 - [ ] Velero installation and backup configuration

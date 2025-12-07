@@ -118,10 +118,10 @@ func TestFoundryVarsResolver_Resolve(t *testing.T) {
 			want: "stable-secret-456",
 		},
 		{
-			name: "resolve foundry-core truenas key",
+			name: "resolve foundry-core openbao token",
 			ctx:  NewResolutionContext("foundry-core"),
-			ref:  SecretRef{Path: "truenas", Key: "api_key"},
-			want: "truenas-key-789",
+			ref:  SecretRef{Path: "openbao", Key: "token"},
+			want: "root-token",
 		},
 		{
 			name:    "secret not found",

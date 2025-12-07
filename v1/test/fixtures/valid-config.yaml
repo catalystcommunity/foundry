@@ -41,6 +41,4 @@ observability:
     retention: 90d
 
 storage:
-  truenas:
-    api_url: https://truenas.example.com
-    api_key: ${secret:foundry-core/truenas:api_key}
+  backend: longhorn

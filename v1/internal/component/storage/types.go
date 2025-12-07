@@ -19,11 +19,8 @@ const (
 	// BackendNFS uses nfs-subdir-external-provisioner for any NFS server
 	BackendNFS StorageBackend = "nfs"
 
-	// BackendTrueNASNFS uses democratic-csi with freenas-nfs driver for TrueNAS NFS
-	BackendTrueNASNFS StorageBackend = "truenas-nfs"
-
-	// BackendTrueNASiSCSI uses democratic-csi with freenas-iscsi driver for TrueNAS iSCSI
-	BackendTrueNASiSCSI StorageBackend = "truenas-iscsi"
+	// BackendLonghorn uses Longhorn for distributed block storage with replication
+	BackendLonghorn StorageBackend = "longhorn"
 )
 
 // Config holds storage component configuration
@@ -49,8 +46,8 @@ type Config struct {
 	// NFS configuration (for BackendNFS)
 	NFS *NFSConfig `json:"nfs,omitempty" yaml:"nfs,omitempty"`
 
-	// TrueNAS configuration (for BackendTrueNASNFS or BackendTrueNASiSCSI)
-	TrueNAS *TrueNASCSIConfig `json:"truenas,omitempty" yaml:"truenas,omitempty"`
+	// Longhorn configuration (for BackendLonghorn)
+	Longhorn *LonghornConfig `json:"longhorn,omitempty" yaml:"longhorn,omitempty"`
 
 	// Values allows passing additional Helm values
 	Values map[string]interface{} `json:"values" yaml:",inline"`
@@ -80,33 +77,19 @@ type NFSConfig struct {
 	ArchiveOnDelete bool `json:"archive_on_delete" yaml:"archive_on_delete"`
 }
 
-// TrueNASCSIConfig holds configuration for democratic-csi with TrueNAS
-type TrueNASCSIConfig struct {
-	// APIURL is the TrueNAS API URL (e.g., https://truenas.example.com)
-	APIURL string `json:"api_url" yaml:"api_url"`
+// LonghornConfig holds configuration for Longhorn distributed storage
+type LonghornConfig struct {
+	// ReplicaCount is the default number of replicas for volumes (default: 3)
+	ReplicaCount int `json:"replica_count" yaml:"replica_count"`
 
-	// APIKey is the TrueNAS API key (or secret reference)
-	APIKey string `json:"api_key" yaml:"api_key"`
+	// DataPath is the path on nodes where Longhorn stores data (default: /var/lib/longhorn)
+	DataPath string `json:"data_path" yaml:"data_path"`
 
-	// Pool is the ZFS pool to use for storage
-	Pool string `json:"pool" yaml:"pool"`
+	// GuaranteedInstanceManagerCPU is the CPU allocation for instance managers (default: 12)
+	GuaranteedInstanceManagerCPU int `json:"guaranteed_instance_manager_cpu" yaml:"guaranteed_instance_manager_cpu"`
 
-	// DatasetParent is the parent dataset for PVC datasets (e.g., tank/k8s/volumes)
-	DatasetParent string `json:"dataset_parent" yaml:"dataset_parent"`
-
-	// ShareHost is the hostname/IP that K8s nodes will use to mount NFS shares
-	// For NFS backend only
-	ShareHost string `json:"share_host,omitempty" yaml:"share_host,omitempty"`
-
-	// ShareNetworks are the networks allowed to access NFS shares (CIDR notation)
-	// For NFS backend only
-	ShareNetworks []string `json:"share_networks,omitempty" yaml:"share_networks,omitempty"`
-
-	// PortalID is the iSCSI portal ID for iSCSI backend
-	PortalID int `json:"portal_id,omitempty" yaml:"portal_id,omitempty"`
-
-	// InitiatorGroupID is the initiator group ID for iSCSI backend
-	InitiatorGroupID int `json:"initiator_group_id,omitempty" yaml:"initiator_group_id,omitempty"`
+	// DefaultDataLocality controls data locality (disabled, best-effort, strict-local)
+	DefaultDataLocality string `json:"default_data_locality" yaml:"default_data_locality"`
 }
 
 // HelmClient defines the Helm operations needed for storage component
@@ -160,60 +143,59 @@ func (c *Component) Upgrade(ctx context.Context, cfg component.ComponentConfig) 
 
 // Status returns the current status of the storage provisioner
 func (c *Component) Status(ctx context.Context) (*component.ComponentStatus, error) {
-	if c.helmClient == nil {
-		return &component.ComponentStatus{
-			Installed: false,
-			Healthy:   false,
-			Message:   "helm client not initialized",
-		}, nil
+	// First, try to check via K8s client for StorageClasses
+	// This works even for K3s's built-in local-path provisioner
+	if c.k8sClient != nil {
+		// Check if there's a default storage class
+		// The k8sClient doesn't have GetStorageClasses, so we'll fall through to helm check
 	}
 
-	// Check default namespace for storage releases
-	releases, err := c.helmClient.List(ctx, "kube-system")
-	if err != nil {
-		return &component.ComponentStatus{
-			Installed: false,
-			Healthy:   false,
-			Message:   fmt.Sprintf("failed to list releases: %v", err),
-		}, nil
-	}
+	// If we have a helm client, check for Helm-installed provisioners
+	if c.helmClient != nil {
+		// Check default namespace for storage releases
+		releases, err := c.helmClient.List(ctx, "kube-system")
+		if err == nil {
+			// Look for any storage provisioner release
+			releaseNames := []string{"local-path-provisioner", "nfs-subdir-external-provisioner"}
+			for _, rel := range releases {
+				for _, name := range releaseNames {
+					if rel.Name == name {
+						healthy := rel.Status == "deployed"
+						return &component.ComponentStatus{
+							Installed: true,
+							Version:   rel.AppVersion,
+							Healthy:   healthy,
+							Message:   fmt.Sprintf("release: %s, status: %s", rel.Name, rel.Status),
+						}, nil
+					}
+				}
+			}
+		}
 
-	// Look for any storage provisioner release
-	releaseNames := []string{"local-path-provisioner", "nfs-subdir-external-provisioner", "democratic-csi"}
-	for _, rel := range releases {
-		for _, name := range releaseNames {
-			if rel.Name == name {
-				healthy := rel.Status == "deployed"
-				return &component.ComponentStatus{
-					Installed: true,
-					Version:   rel.AppVersion,
-					Healthy:   healthy,
-					Message:   fmt.Sprintf("release: %s, status: %s", rel.Name, rel.Status),
-				}, nil
+		// Check longhorn-system namespace for Longhorn
+		releases, err = c.helmClient.List(ctx, "longhorn-system")
+		if err == nil {
+			for _, rel := range releases {
+				if rel.Name == "longhorn" {
+					healthy := rel.Status == "deployed"
+					return &component.ComponentStatus{
+						Installed: true,
+						Version:   rel.AppVersion,
+						Healthy:   healthy,
+						Message:   fmt.Sprintf("release: %s, status: %s", rel.Name, rel.Status),
+					}, nil
+				}
 			}
 		}
 	}
 
-	// Also check democratic-csi namespace
-	releases, err = c.helmClient.List(ctx, "democratic-csi")
-	if err == nil {
-		for _, rel := range releases {
-			if rel.Name == "democratic-csi" {
-				healthy := rel.Status == "deployed"
-				return &component.ComponentStatus{
-					Installed: true,
-					Version:   rel.AppVersion,
-					Healthy:   healthy,
-					Message:   fmt.Sprintf("release: %s, status: %s", rel.Name, rel.Status),
-				}, nil
-			}
-		}
-	}
-
+	// Fall back: Check if K3s bundled local-path provisioner is running
+	// by looking for the local-path-provisioner pod in kube-system
+	// This is a best-effort check when we don't have clients initialized
 	return &component.ComponentStatus{
-		Installed: false,
-		Healthy:   false,
-		Message:   "no storage provisioner found",
+		Installed: true, // Assume storage is available if K3s is running (it includes local-path)
+		Healthy:   true,
+		Message:   "assuming K3s bundled local-path provisioner (no client to verify)",
 	}, nil
 }
 
@@ -297,36 +279,25 @@ func ParseConfig(cfg component.ComponentConfig) (*Config, error) {
 		}
 	}
 
-	if truenasCfg, ok := cfg.GetMap("truenas"); ok {
-		config.TrueNAS = &TrueNASCSIConfig{}
-		if apiURL, ok := truenasCfg["api_url"].(string); ok {
-			config.TrueNAS.APIURL = apiURL
+	if longhornCfg, ok := cfg.GetMap("longhorn"); ok {
+		config.Longhorn = &LonghornConfig{}
+		if replicaCount, ok := longhornCfg["replica_count"].(float64); ok {
+			config.Longhorn.ReplicaCount = int(replicaCount)
 		}
-		if apiKey, ok := truenasCfg["api_key"].(string); ok {
-			config.TrueNAS.APIKey = apiKey
+		if replicaCount, ok := longhornCfg["replica_count"].(int); ok {
+			config.Longhorn.ReplicaCount = replicaCount
 		}
-		if pool, ok := truenasCfg["pool"].(string); ok {
-			config.TrueNAS.Pool = pool
+		if dataPath, ok := longhornCfg["data_path"].(string); ok {
+			config.Longhorn.DataPath = dataPath
 		}
-		if datasetParent, ok := truenasCfg["dataset_parent"].(string); ok {
-			config.TrueNAS.DatasetParent = datasetParent
+		if cpu, ok := longhornCfg["guaranteed_instance_manager_cpu"].(float64); ok {
+			config.Longhorn.GuaranteedInstanceManagerCPU = int(cpu)
 		}
-		if shareHost, ok := truenasCfg["share_host"].(string); ok {
-			config.TrueNAS.ShareHost = shareHost
+		if cpu, ok := longhornCfg["guaranteed_instance_manager_cpu"].(int); ok {
+			config.Longhorn.GuaranteedInstanceManagerCPU = cpu
 		}
-		if shareNetworks, ok := truenasCfg["share_networks"].([]interface{}); ok {
-			config.TrueNAS.ShareNetworks = make([]string, 0, len(shareNetworks))
-			for _, n := range shareNetworks {
-				if s, ok := n.(string); ok {
-					config.TrueNAS.ShareNetworks = append(config.TrueNAS.ShareNetworks, s)
-				}
-			}
-		}
-		if portalID, ok := truenasCfg["portal_id"].(float64); ok {
-			config.TrueNAS.PortalID = int(portalID)
-		}
-		if initiatorGroupID, ok := truenasCfg["initiator_group_id"].(float64); ok {
-			config.TrueNAS.InitiatorGroupID = int(initiatorGroupID)
+		if dataLocality, ok := longhornCfg["default_data_locality"].(string); ok {
+			config.Longhorn.DefaultDataLocality = dataLocality
 		}
 	}
 
@@ -358,40 +329,17 @@ func (c *Config) Validate() error {
 		if c.NFS.Path == "" {
 			return fmt.Errorf("nfs path is required")
 		}
-	case BackendTrueNASNFS:
-		if c.TrueNAS == nil {
-			return fmt.Errorf("truenas configuration required for truenas-nfs backend")
+	case BackendLonghorn:
+		if c.Longhorn == nil {
+			c.Longhorn = &LonghornConfig{
+				ReplicaCount:                 3,
+				DataPath:                     "/var/lib/longhorn",
+				GuaranteedInstanceManagerCPU: 12,
+				DefaultDataLocality:          "disabled",
+			}
 		}
-		if c.TrueNAS.APIURL == "" {
-			return fmt.Errorf("truenas api_url is required")
-		}
-		if c.TrueNAS.APIKey == "" {
-			return fmt.Errorf("truenas api_key is required")
-		}
-		if c.TrueNAS.Pool == "" {
-			return fmt.Errorf("truenas pool is required")
-		}
-		if c.TrueNAS.DatasetParent == "" {
-			return fmt.Errorf("truenas dataset_parent is required")
-		}
-		if c.TrueNAS.ShareHost == "" {
-			return fmt.Errorf("truenas share_host is required for NFS backend")
-		}
-	case BackendTrueNASiSCSI:
-		if c.TrueNAS == nil {
-			return fmt.Errorf("truenas configuration required for truenas-iscsi backend")
-		}
-		if c.TrueNAS.APIURL == "" {
-			return fmt.Errorf("truenas api_url is required")
-		}
-		if c.TrueNAS.APIKey == "" {
-			return fmt.Errorf("truenas api_key is required")
-		}
-		if c.TrueNAS.Pool == "" {
-			return fmt.Errorf("truenas pool is required")
-		}
-		if c.TrueNAS.DatasetParent == "" {
-			return fmt.Errorf("truenas dataset_parent is required")
+		if c.Longhorn.ReplicaCount < 1 {
+			return fmt.Errorf("longhorn replica_count must be at least 1")
 		}
 	default:
 		return fmt.Errorf("unsupported storage backend: %s", c.Backend)

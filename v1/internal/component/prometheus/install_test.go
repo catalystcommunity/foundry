@@ -147,7 +147,7 @@ func TestBuildHelmValues_Default(t *testing.T) {
 	require.True(t, ok)
 
 	assert.Equal(t, "15d", prometheusSpec["retention"])
-	assert.Equal(t, "10Gi", prometheusSpec["retentionSize"])
+	assert.Equal(t, "10GB", prometheusSpec["retentionSize"]) // Must end with 'B' per Prometheus CRD spec
 	assert.Equal(t, "30s", prometheusSpec["scrapeInterval"])
 
 	// Check Grafana is disabled

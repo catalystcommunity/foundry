@@ -22,7 +22,22 @@ func TestInitComponents(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify all expected components are registered
-	expectedComponents := []string{"openbao", "dns", "zot", "k3s", "gateway-api", "contour", "cert-manager", "storage", "minio"}
+	expectedComponents := []string{
+		"openbao",
+		"dns",
+		"zot",
+		"k3s",
+		"gateway-api",
+		"contour",
+		"cert-manager",
+		"storage",
+		"garage",
+		"prometheus",
+		"loki",
+		"grafana",
+		"external-dns",
+		"velero",
+	}
 	for _, name := range expectedComponents {
 		assert.True(t, testRegistry.Has(name), "component %s should be registered", name)
 	}
@@ -55,7 +70,12 @@ func TestInitComponents_ComponentNames(t *testing.T) {
 		{name: "contour"},
 		{name: "cert-manager"},
 		{name: "storage"},
-		{name: "minio"},
+		{name: "garage"},
+		{name: "prometheus"},
+		{name: "loki"},
+		{name: "grafana"},
+		{name: "external-dns"},
+		{name: "velero"},
 	}
 
 	for _, tt := range tests {
@@ -116,8 +136,28 @@ func TestInitComponents_Dependencies(t *testing.T) {
 			dependencies: []string{"k3s"},
 		},
 		{
-			name:         "minio",
+			name:         "garage",
 			dependencies: []string{"storage"},
+		},
+		{
+			name:         "prometheus",
+			dependencies: []string{"storage"},
+		},
+		{
+			name:         "loki",
+			dependencies: []string{"storage", "garage"},
+		},
+		{
+			name:         "grafana",
+			dependencies: []string{"prometheus", "loki"},
+		},
+		{
+			name:         "external-dns",
+			dependencies: []string{}, // No strict dependencies
+		},
+		{
+			name:         "velero",
+			dependencies: []string{"garage"},
 		},
 	}
 

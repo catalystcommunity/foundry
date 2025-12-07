@@ -279,27 +279,32 @@ Foundry manages SSH keys through multiple stages:
    - Future operations retrieve keys from OpenBAO
    - Provides secure, centralized key storage
 
-## Optional Components
+## Storage Components
 
-### TrueNAS
+### Longhorn (Recommended)
 
-If you plan to use TrueNAS for persistent storage:
+Foundry uses Longhorn for distributed block storage by default.
 
 **Requirements:**
-- TrueNAS Scale or TrueNAS Core instance accessible from infrastructure hosts
-- API access enabled
-- API key generated
-- Network connectivity on ports 80/443
+- At least 1 worker node with available disk space
+- `/var/lib/longhorn` directory (or configured data path)
 
-**Configuration:**
-- TrueNAS is configured via `foundry storage configure`
-- API key should be stored in OpenBAO
-- Datasets and NFS shares are created automatically
+**Features:**
+- No external storage required
+- Automatic replication across nodes
+- Snapshot and backup support
+
+### Garage (S3-Compatible Storage)
+
+Garage provides S3-compatible object storage for Loki and Velero.
+
+**Requirements:**
+- Runs on Longhorn PVCs
+- No external dependencies
 
 **Notes:**
-- TrueNAS is OPTIONAL
-- Local storage can be used instead
-- CSI drivers for other storage backends may be added in future phases
+- Automatically installed as part of the stack
+- Used by Loki for log storage and Velero for backups
 
 ## Building Foundry from Source
 
