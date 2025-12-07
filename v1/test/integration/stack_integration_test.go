@@ -206,13 +206,12 @@ func createTestInfrastructureZone(t *testing.T, ctx context.Context, client *dns
 
 	// Initialize infrastructure DNS with all core service records
 	infraConfig := dns.InfrastructureRecordConfig{
-		Zone:       "infra.example.com",
-		OpenBAOIP:  "192.168.1.10",
-		DNSIP:      "192.168.1.10",
-		ZotIP:      "192.168.1.10",
-		TrueNASIP:  "192.168.1.15",
-		K8sVIP:     "192.168.1.100",
-		IsPublic:   false,
+		Zone:        "infra.example.com",
+		OpenBAOIP:   "192.168.1.10",
+		DNSIP:       "192.168.1.10",
+		ZotIP:       "192.168.1.10",
+		K8sVIP:      "192.168.1.100",
+		IsPublic:    false,
 		PublicCNAME: "",
 	}
 
@@ -229,11 +228,10 @@ func verifyInfrastructureRecords(t *testing.T, ctx context.Context, client *dns.
 
 	// Expected infrastructure records
 	expectedRecords := map[string]string{
-		"openbao.infra.example.com.":  "192.168.1.10",
-		"dns.infra.example.com.":      "192.168.1.10",
-		"zot.infra.example.com.":      "192.168.1.10",
-		"truenas.infra.example.com.":  "192.168.1.15",
-		"k8s.infra.example.com.":      "192.168.1.100",
+		"openbao.infra.example.com.": "192.168.1.10",
+		"dns.infra.example.com.":     "192.168.1.10",
+		"zot.infra.example.com.":     "192.168.1.10",
+		"k8s.infra.example.com.":     "192.168.1.100",
 	}
 
 	foundRecords := make(map[string]bool)

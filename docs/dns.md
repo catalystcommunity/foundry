@@ -18,7 +18,6 @@ Foundry uses PowerDNS with a **flat namespace architecture** - one DNS zone for 
 - `openbao.catalyst.local` → Host IP (e.g., 10.16.0.42)
 - `dns.catalyst.local` → Host IP
 - `zot.catalyst.local` → Host IP
-- `truenas.catalyst.local` → TrueNAS IP (if configured)
 
 **Kubernetes Services (wildcard A record):**
 - `*.catalyst.local` → VIP (e.g., 10.16.0.43)

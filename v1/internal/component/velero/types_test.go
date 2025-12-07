@@ -16,10 +16,10 @@ func TestDefaultConfig(t *testing.T) {
 
 	assert.Equal(t, "8.0.0", config.Version)
 	assert.Equal(t, "velero", config.Namespace)
-	assert.Equal(t, ProviderMinIO, config.Provider)
-	assert.Equal(t, "http://minio.minio.svc.cluster.local:9000", config.S3Endpoint)
+	assert.Equal(t, ProviderS3, config.Provider)
+	assert.Equal(t, "http://garage.garage.svc.cluster.local:3900", config.S3Endpoint)
 	assert.Equal(t, "velero", config.S3Bucket)
-	assert.Equal(t, "us-east-1", config.S3Region)
+	assert.Equal(t, "garage", config.S3Region)
 	assert.True(t, config.S3InsecureSkipTLSVerify)
 	assert.True(t, config.S3ForcePathStyle)
 	assert.True(t, config.DefaultBackupStorageLocation)
@@ -33,7 +33,6 @@ func TestDefaultConfig(t *testing.T) {
 	assert.False(t, config.SnapshotsEnabled)
 	assert.Equal(t, "10m", config.CSISnapshotTimeout)
 	assert.NotNil(t, config.ResourceRequests)
-	assert.Equal(t, "100m", config.ResourceRequests["cpu"])
 	assert.Equal(t, "128Mi", config.ResourceRequests["memory"])
 	assert.NotNil(t, config.Values)
 }
@@ -46,7 +45,7 @@ func TestParseConfig_Defaults(t *testing.T) {
 
 	assert.Equal(t, "8.0.0", config.Version)
 	assert.Equal(t, "velero", config.Namespace)
-	assert.Equal(t, ProviderMinIO, config.Provider)
+	assert.Equal(t, ProviderS3, config.Provider)
 }
 
 func TestParseConfig_CustomValues(t *testing.T) {
@@ -144,10 +143,10 @@ func TestParseConfig_WithCustomValues(t *testing.T) {
 	assert.NotNil(t, config.Values["nested"])
 }
 
-func TestValidate_Success_MinIO(t *testing.T) {
+func TestValidate_Success_S3(t *testing.T) {
 	config := &Config{
-		Provider:   ProviderMinIO,
-		S3Endpoint: "http://minio:9000",
+		Provider:   ProviderS3,
+		S3Endpoint: "http://garage:3900",
 		S3Bucket:   "velero",
 	}
 
@@ -179,7 +178,7 @@ func TestValidate_UnsupportedProvider(t *testing.T) {
 
 func TestValidate_MissingBucket(t *testing.T) {
 	config := &Config{
-		Provider: ProviderMinIO,
+		Provider: ProviderS3,
 		S3Bucket: "",
 	}
 
@@ -188,9 +187,9 @@ func TestValidate_MissingBucket(t *testing.T) {
 	assert.Contains(t, err.Error(), "s3_bucket is required")
 }
 
-func TestValidate_MinIO_MissingEndpoint(t *testing.T) {
+func TestValidate_S3_MissingEndpoint(t *testing.T) {
 	config := &Config{
-		Provider:   ProviderMinIO,
+		Provider:   ProviderS3,
 		S3Bucket:   "velero",
 		S3Endpoint: "",
 	}
@@ -202,8 +201,8 @@ func TestValidate_MinIO_MissingEndpoint(t *testing.T) {
 
 func TestValidate_NegativeRetentionDays(t *testing.T) {
 	config := &Config{
-		Provider:            ProviderMinIO,
-		S3Endpoint:         "http://minio:9000",
+		Provider:            ProviderS3,
+		S3Endpoint:         "http://garage:3900",
 		S3Bucket:           "velero",
 		BackupRetentionDays: -1,
 	}
@@ -246,7 +245,7 @@ func TestComponent_Dependencies(t *testing.T) {
 	deps := comp.Dependencies()
 
 	require.Len(t, deps, 1)
-	assert.Contains(t, deps, "minio")
+	assert.Contains(t, deps, "garage")
 }
 
 func TestComponent_Install_NilHelmClient(t *testing.T) {

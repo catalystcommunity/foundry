@@ -99,7 +99,7 @@ func buildHelmValues(cfg *Config) map[string]interface{} {
 	}
 
 	// Initialize provider plugins based on provider type
-	// The AWS plugin is used for all S3-compatible storage (including MinIO)
+	// The AWS plugin is used for all S3-compatible storage (including Garage)
 	values["initContainers"] = []map[string]interface{}{
 		{
 			"name":            "velero-plugin-for-aws",
@@ -133,6 +133,9 @@ func buildHelmValues(cfg *Config) map[string]interface{} {
 		configuration["defaultVolumeSnapshotLocations"] = map[string]string{
 			"aws": cfg.GetBackupStorageLocationName(),
 		}
+	} else {
+		// Explicitly disable volume snapshot locations when snapshots are not enabled
+		configuration["volumeSnapshotLocation"] = []map[string]interface{}{}
 	}
 
 	values["configuration"] = configuration
@@ -166,6 +169,16 @@ func buildHelmValues(cfg *Config) map[string]interface{} {
 	// Deployment configuration
 	values["deployNodeAgent"] = false // Disabled by default, enable for file-level backups
 
+	// Override kubectl image for upgrade jobs (chart default uses version that may not exist)
+	values["kubectl"] = map[string]interface{}{
+		"image": map[string]interface{}{
+			"repository": "docker.io/bitnami/kubectl",
+			"tag":        "1.31",
+		},
+	}
+	// Disable upgrade jobs since we don't need them for fresh installs
+	values["upgradeCRDs"] = false
+
 	// Snapshot configuration
 	if cfg.SnapshotsEnabled {
 		values["snapshotsEnabled"] = true
@@ -194,8 +207,8 @@ func buildBackupStorageLocation(cfg *Config) map[string]interface{} {
 		"region": cfg.S3Region,
 	}
 
-	// MinIO-specific configuration
-	if cfg.Provider == ProviderMinIO {
+	// S3-compatible storage configuration (Garage, MinIO, etc.)
+	if cfg.Provider == ProviderS3 {
 		s3Config["s3ForcePathStyle"] = cfg.S3ForcePathStyle
 		s3Config["s3Url"] = cfg.S3Endpoint
 		if cfg.S3InsecureSkipTLSVerify {

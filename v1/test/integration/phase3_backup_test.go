@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/catalystcommunity/foundry/v1/internal/component/minio"
+	"github.com/catalystcommunity/foundry/v1/internal/component/garage"
 	"github.com/catalystcommunity/foundry/v1/internal/component/storage"
 	"github.com/catalystcommunity/foundry/v1/internal/component/velero"
 	"github.com/catalystcommunity/foundry/v1/internal/helm"
@@ -18,9 +18,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestPhase3_VeleroDeployment tests Velero deployment with MinIO backend
+// TestPhase3_VeleroDeployment tests Velero deployment with Garage S3 backend
 // This test validates:
-// 1. MinIO is deployed for backup storage
+// 1. Garage is deployed for S3-compatible backup storage
 // 2. Velero can be deployed via Helm
 // 3. Velero pods are running
 // 4. Backup storage location is configured
@@ -59,15 +59,15 @@ func TestPhase3_VeleroDeployment(t *testing.T) {
 	deployLocalPathProvisionerForBackup(t, ctx, helmClient, k8sClient)
 	t.Log("✓ local-path-provisioner deployed")
 
-	// Step 4: Deploy MinIO for backup storage
-	t.Log("\n[4/8] Deploying MinIO for backup storage...")
-	deployMinIOForBackup(t, ctx, helmClient, k8sClient)
-	t.Log("✓ MinIO deployed")
+	// Step 4: Deploy Garage for backup storage
+	t.Log("\n[4/8] Deploying Garage for S3-compatible backup storage...")
+	deployGarageForBackup(t, ctx, helmClient, k8sClient)
+	t.Log("✓ Garage deployed")
 
-	// Step 5: Wait for MinIO to be ready
-	t.Log("\n[5/8] Waiting for MinIO to be ready...")
-	waitForMinIOReady(t, ctx, k8sClient)
-	t.Log("✓ MinIO is ready")
+	// Step 5: Wait for Garage to be ready
+	t.Log("\n[5/8] Waiting for Garage to be ready...")
+	waitForGarageReady(t, ctx, k8sClient)
+	t.Log("✓ Garage is ready")
 
 	// Step 6: Deploy Velero
 	t.Log("\n[6/8] Deploying Velero...")
@@ -88,7 +88,7 @@ func TestPhase3_VeleroDeployment(t *testing.T) {
 	t.Log("Summary:")
 	t.Log("  ✓ Kind cluster operational")
 	t.Log("  ✓ Storage provisioner working")
-	t.Log("  ✓ MinIO deployed for backup storage")
+	t.Log("  ✓ Garage deployed for S3-compatible backup storage")
 	t.Log("  ✓ Velero deployed via Helm")
 	t.Log("  ✓ Velero pods running")
 	t.Log("  ✓ Backup storage location configured")
@@ -96,7 +96,7 @@ func TestPhase3_VeleroDeployment(t *testing.T) {
 
 // TestPhase3_FullBackupRestore tests the complete backup and restore workflow
 // This is a comprehensive test that:
-// 1. Deploys the backup infrastructure (MinIO + Velero)
+// 1. Deploys the backup infrastructure (Garage + Velero)
 // 2. Creates test resources
 // 3. Creates a backup
 // 4. Deletes test resources
@@ -137,15 +137,15 @@ func TestPhase3_FullBackupRestore(t *testing.T) {
 	deployLocalPathProvisionerForBackup(t, ctx, helmClient, k8sClient)
 	t.Log("✓ local-path-provisioner deployed")
 
-	// Step 4: Deploy MinIO
-	t.Log("\n[4/12] Deploying MinIO for backup storage...")
-	deployMinIOForBackup(t, ctx, helmClient, k8sClient)
-	t.Log("✓ MinIO deployed")
+	// Step 4: Deploy Garage
+	t.Log("\n[4/12] Deploying Garage for S3-compatible backup storage...")
+	deployGarageForBackup(t, ctx, helmClient, k8sClient)
+	t.Log("✓ Garage deployed")
 
-	// Step 5: Wait for MinIO to be ready
-	t.Log("\n[5/12] Waiting for MinIO to be ready...")
-	waitForMinIOReady(t, ctx, k8sClient)
-	t.Log("✓ MinIO is ready")
+	// Step 5: Wait for Garage to be ready
+	t.Log("\n[5/12] Waiting for Garage to be ready...")
+	waitForGarageReady(t, ctx, k8sClient)
+	t.Log("✓ Garage is ready")
 
 	// Step 6: Deploy Velero
 	t.Log("\n[6/12] Deploying Velero...")
@@ -186,7 +186,7 @@ func TestPhase3_FullBackupRestore(t *testing.T) {
 	t.Log("Summary:")
 	t.Log("  ✓ Kind cluster operational")
 	t.Log("  ✓ Storage provisioner working")
-	t.Log("  ✓ MinIO deployed and running")
+	t.Log("  ✓ Garage deployed and running")
 	t.Log("  ✓ Velero deployed and running")
 	t.Log("  ✓ Test resources created")
 	t.Log("  ✓ Backup functionality verified")
@@ -215,54 +215,52 @@ func deployLocalPathProvisionerForBackup(t *testing.T, ctx context.Context, helm
 	waitForPodsInNamespaceForBackup(t, ctx, k8sClient, "kube-system", "local-path", 2*time.Minute)
 }
 
-// deployMinIOForBackup deploys MinIO for Velero backup storage
-func deployMinIOForBackup(t *testing.T, ctx context.Context, helmClient *helm.Client, k8sClient *k8s.Client) {
-	cfg := &minio.Config{
-		Version:        "5.2.0",
-		Namespace:      "minio",
-		Mode:           minio.ModeStandalone,
-		Replicas:       1,
-		RootUser:       "minioadmin",
-		RootPassword:   "minioadmin123", // Test password only
-		StorageClass:   "local-path",
-		StorageSize:    "2Gi",
-		Buckets:        []string{"velero"}, // Create velero bucket
-		IngressEnabled: false,
-		TLSEnabled:     false,
+// deployGarageForBackup deploys Garage for Velero S3-compatible backup storage
+func deployGarageForBackup(t *testing.T, ctx context.Context, helmClient *helm.Client, k8sClient *k8s.Client) {
+	cfg := &garage.Config{
+		Version:           "1.0.1",
+		Namespace:         "garage",
+		ReplicationFactor: 1, // Single node for testing
+		Replicas:          1,
+		StorageClass:      "local-path",
+		StorageSize:       "2Gi",
+		S3Region:          "garage",
+		AdminKey:          "testadminkey",    // Test key only
+		AdminSecret:       "testadminsecret", // Test secret only
+		Buckets:           []string{"velero"},
 	}
 
-	err := minio.Install(ctx, helmClient, k8sClient, cfg)
-	require.NoError(t, err, "Should install MinIO")
+	err := garage.Install(ctx, helmClient, k8sClient, cfg)
+	require.NoError(t, err, "Should install Garage")
 }
 
-// waitForMinIOReady waits for MinIO to be ready
-func waitForMinIOReady(t *testing.T, ctx context.Context, k8sClient *k8s.Client) {
-	waitForPodsInNamespaceForBackup(t, ctx, k8sClient, "minio", "minio", 5*time.Minute)
+// waitForGarageReady waits for Garage to be ready
+func waitForGarageReady(t *testing.T, ctx context.Context, k8sClient *k8s.Client) {
+	waitForPodsInNamespaceForBackup(t, ctx, k8sClient, "garage", "garage", 5*time.Minute)
 
-	// Additional wait for bucket creation
+	// Additional wait for Garage to initialize
 	time.Sleep(10 * time.Second)
 }
 
-// deployVelero deploys Velero with MinIO backend
+// deployVelero deploys Velero with Garage S3-compatible backend
 func deployVelero(t *testing.T, ctx context.Context, helmClient *helm.Client, k8sClient *k8s.Client) {
 	cfg := &velero.Config{
 		Version:                      "8.0.0",
 		Namespace:                    "velero",
-		Provider:                     velero.ProviderMinIO,
-		S3Endpoint:                   "http://minio.minio.svc.cluster.local:9000",
+		Provider:                     velero.ProviderS3,
+		S3Endpoint:                   "http://garage.garage.svc.cluster.local:3900",
 		S3Bucket:                     "velero",
-		S3Region:                     "us-east-1",
-		S3AccessKey:                  "minioadmin",
-		S3SecretKey:                  "minioadmin123",
+		S3Region:                     "garage",
+		S3AccessKey:                  "testadminkey",
+		S3SecretKey:                  "testadminsecret",
 		S3InsecureSkipTLSVerify:      true,
-		S3ForcePathStyle:             true,
+		S3ForcePathStyle:             true, // Required for Garage
 		DefaultBackupStorageLocation: true,
 		BackupRetentionDays:          7,
 		ScheduleName:                 "test-schedule",
 		ScheduleCron:                 "", // No schedule for test
 		SnapshotsEnabled:             false,
 		ResourceRequests: map[string]string{
-			"cpu":    "100m",
 			"memory": "128Mi",
 		},
 	}
@@ -388,34 +386,34 @@ func verifyRestoreCapability(t *testing.T, ctx context.Context, k8sClient *k8s.C
 	}
 	assert.True(t, veleroReady, "Velero should be ready for restore operations")
 
-	// Verify MinIO is accessible (backup storage)
-	minioPods, err := k8sClient.GetPods(ctx, "minio")
-	require.NoError(t, err, "Should get minio pods")
+	// Verify Garage is accessible (S3-compatible backup storage)
+	garagePods, err := k8sClient.GetPods(ctx, "garage")
+	require.NoError(t, err, "Should get garage pods")
 
-	minioReady := false
-	for _, pod := range minioPods {
-		if containsSubstringP3(pod.Name, "minio") && pod.Status == "Running" {
-			minioReady = true
+	garageReady := false
+	for _, pod := range garagePods {
+		if containsSubstringP3(pod.Name, "garage") && pod.Status == "Running" {
+			garageReady = true
 			break
 		}
 	}
-	assert.True(t, minioReady, "MinIO should be ready for restore operations")
+	assert.True(t, garageReady, "Garage should be ready for restore operations")
 }
 
 // verifyBackupInfrastructureHealth verifies the full backup infrastructure
 func verifyBackupInfrastructureHealth(t *testing.T, ctx context.Context, k8sClient *k8s.Client) {
-	// Check MinIO namespace
-	minioPods, err := k8sClient.GetPods(ctx, "minio")
-	require.NoError(t, err, "Should get minio pods")
+	// Check Garage namespace
+	garagePods, err := k8sClient.GetPods(ctx, "garage")
+	require.NoError(t, err, "Should get garage pods")
 
-	minioRunning := 0
-	for _, pod := range minioPods {
+	garageRunning := 0
+	for _, pod := range garagePods {
 		if pod.Status == "Running" {
-			minioRunning++
+			garageRunning++
 		}
 	}
-	t.Logf("  MinIO: %d/%d pods running", minioRunning, len(minioPods))
-	assert.Greater(t, minioRunning, 0, "Should have running MinIO pods")
+	t.Logf("  Garage: %d/%d pods running", garageRunning, len(garagePods))
+	assert.Greater(t, garageRunning, 0, "Should have running Garage pods")
 
 	// Check Velero namespace
 	veleroPods, err := k8sClient.GetPods(ctx, "velero")

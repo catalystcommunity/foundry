@@ -172,14 +172,14 @@ func TestBuildHelmValues_Default(t *testing.T) {
 	assert.True(t, metrics["enabled"].(bool))
 }
 
-func TestBuildHelmValues_MinIOConfiguration(t *testing.T) {
+func TestBuildHelmValues_S3Configuration(t *testing.T) {
 	cfg := &Config{
-		Provider:                ProviderMinIO,
-		S3Endpoint:             "http://minio:9000",
+		Provider:                ProviderS3,
+		S3Endpoint:             "http://garage:3900",
 		S3Bucket:               "velero",
 		S3Region:               "us-east-1",
-		S3AccessKey:            "minioadmin",
-		S3SecretKey:            "minioadmin",
+		S3AccessKey:            "garageadmin",
+		S3SecretKey:            "garageadmin",
 		S3InsecureSkipTLSVerify: true,
 		S3ForcePathStyle:       true,
 		Values:                 map[string]interface{}{},
@@ -196,7 +196,7 @@ func TestBuildHelmValues_MinIOConfiguration(t *testing.T) {
 
 	bslConfig, ok := bsl[0]["config"].(map[string]interface{})
 	require.True(t, ok)
-	assert.Equal(t, "http://minio:9000", bslConfig["s3Url"])
+	assert.Equal(t, "http://garage:3900", bslConfig["s3Url"])
 	assert.True(t, bslConfig["s3ForcePathStyle"].(bool))
 	assert.Equal(t, "true", bslConfig["insecureSkipTLSVerify"])
 }
@@ -223,19 +223,19 @@ func TestBuildHelmValues_AWSConfiguration(t *testing.T) {
 	bslConfig, ok := bsl[0]["config"].(map[string]interface{})
 	require.True(t, ok)
 	assert.Equal(t, "us-west-2", bslConfig["region"])
-	// Should not have MinIO-specific settings
+	// Should not have S3-compatible storage-specific settings
 	assert.Nil(t, bslConfig["s3Url"])
 	assert.Nil(t, bslConfig["s3ForcePathStyle"])
 }
 
 func TestBuildHelmValues_WithSnapshots(t *testing.T) {
 	cfg := &Config{
-		Provider:         ProviderMinIO,
-		S3Endpoint:      "http://minio:9000",
+		Provider:         ProviderS3,
+		S3Endpoint:      "http://garage:3900",
 		S3Bucket:        "velero",
 		S3Region:        "us-east-1",
-		S3AccessKey:     "minioadmin",
-		S3SecretKey:     "minioadmin",
+		S3AccessKey:     "garageadmin",
+		S3SecretKey:     "garageadmin",
 		SnapshotsEnabled: true,
 		Values:          map[string]interface{}{},
 	}
@@ -254,12 +254,12 @@ func TestBuildHelmValues_WithSnapshots(t *testing.T) {
 
 func TestBuildHelmValues_WithSchedule(t *testing.T) {
 	cfg := &Config{
-		Provider:                   ProviderMinIO,
-		S3Endpoint:                "http://minio:9000",
+		Provider:                   ProviderS3,
+		S3Endpoint:                "http://garage:3900",
 		S3Bucket:                  "velero",
 		S3Region:                  "us-east-1",
-		S3AccessKey:               "minioadmin",
-		S3SecretKey:               "minioadmin",
+		S3AccessKey:               "garageadmin",
+		S3SecretKey:               "garageadmin",
 		ScheduleName:              "daily-backup",
 		ScheduleCron:              "0 2 * * *",
 		BackupRetentionDays:       30,
@@ -286,12 +286,12 @@ func TestBuildHelmValues_WithSchedule(t *testing.T) {
 
 func TestBuildHelmValues_WithIncludedNamespaces(t *testing.T) {
 	cfg := &Config{
-		Provider:                   ProviderMinIO,
-		S3Endpoint:                "http://minio:9000",
+		Provider:                   ProviderS3,
+		S3Endpoint:                "http://garage:3900",
 		S3Bucket:                  "velero",
 		S3Region:                  "us-east-1",
-		S3AccessKey:               "minioadmin",
-		S3SecretKey:               "minioadmin",
+		S3AccessKey:               "garageadmin",
+		S3SecretKey:               "garageadmin",
 		ScheduleName:              "prod-backup",
 		ScheduleCron:              "0 1 * * *",
 		ScheduleIncludedNamespaces: []string{"production", "staging"},
@@ -313,12 +313,12 @@ func TestBuildHelmValues_WithIncludedNamespaces(t *testing.T) {
 
 func TestBuildHelmValues_WithResourceLimits(t *testing.T) {
 	cfg := &Config{
-		Provider:    ProviderMinIO,
-		S3Endpoint: "http://minio:9000",
+		Provider:    ProviderS3,
+		S3Endpoint: "http://garage:3900",
 		S3Bucket:   "velero",
 		S3Region:   "us-east-1",
-		S3AccessKey: "minioadmin",
-		S3SecretKey: "minioadmin",
+		S3AccessKey: "garageadmin",
+		S3SecretKey: "garageadmin",
 		ResourceRequests: map[string]string{
 			"cpu":    "200m",
 			"memory": "256Mi",
@@ -348,12 +348,12 @@ func TestBuildHelmValues_WithResourceLimits(t *testing.T) {
 
 func TestBuildHelmValues_CustomValues(t *testing.T) {
 	cfg := &Config{
-		Provider:    ProviderMinIO,
-		S3Endpoint: "http://minio:9000",
+		Provider:    ProviderS3,
+		S3Endpoint: "http://garage:3900",
 		S3Bucket:   "velero",
 		S3Region:   "us-east-1",
-		S3AccessKey: "minioadmin",
-		S3SecretKey: "minioadmin",
+		S3AccessKey: "garageadmin",
+		S3SecretKey: "garageadmin",
 		Values: map[string]interface{}{
 			"custom": "value",
 			"nested": map[string]interface{}{
@@ -371,12 +371,12 @@ func TestBuildHelmValues_CustomValues(t *testing.T) {
 
 func TestBuildHelmValues_NoSchedule(t *testing.T) {
 	cfg := &Config{
-		Provider:     ProviderMinIO,
-		S3Endpoint:  "http://minio:9000",
+		Provider:     ProviderS3,
+		S3Endpoint:  "http://garage:3900",
 		S3Bucket:    "velero",
 		S3Region:    "us-east-1",
-		S3AccessKey:  "minioadmin",
-		S3SecretKey:  "minioadmin",
+		S3AccessKey:  "garageadmin",
+		S3SecretKey:  "garageadmin",
 		ScheduleCron: "", // No schedule
 		Values:      map[string]interface{}{},
 	}
@@ -388,10 +388,10 @@ func TestBuildHelmValues_NoSchedule(t *testing.T) {
 	assert.False(t, hasSchedules)
 }
 
-func TestBuildBackupStorageLocation_MinIO(t *testing.T) {
+func TestBuildBackupStorageLocation_S3(t *testing.T) {
 	cfg := &Config{
-		Provider:                     ProviderMinIO,
-		S3Endpoint:                  "http://minio:9000",
+		Provider:                     ProviderS3,
+		S3Endpoint:                  "http://garage:3900",
 		S3Bucket:                    "velero",
 		S3Region:                    "us-east-1",
 		S3InsecureSkipTLSVerify:      true,
@@ -409,7 +409,7 @@ func TestBuildBackupStorageLocation_MinIO(t *testing.T) {
 	config, ok := bsl["config"].(map[string]interface{})
 	require.True(t, ok)
 	assert.Equal(t, "us-east-1", config["region"])
-	assert.Equal(t, "http://minio:9000", config["s3Url"])
+	assert.Equal(t, "http://garage:3900", config["s3Url"])
 	assert.True(t, config["s3ForcePathStyle"].(bool))
 	assert.Equal(t, "true", config["insecureSkipTLSVerify"])
 }
@@ -432,7 +432,7 @@ func TestBuildBackupStorageLocation_AWS(t *testing.T) {
 	config, ok := bsl["config"].(map[string]interface{})
 	require.True(t, ok)
 	assert.Equal(t, "us-west-2", config["region"])
-	// Should not have MinIO-specific settings
+	// Should not have S3-compatible storage-specific settings
 	assert.Nil(t, config["s3Url"])
 }
 

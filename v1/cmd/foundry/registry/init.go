@@ -5,11 +5,16 @@ import (
 	"github.com/catalystcommunity/foundry/v1/internal/component/certmanager"
 	"github.com/catalystcommunity/foundry/v1/internal/component/contour"
 	"github.com/catalystcommunity/foundry/v1/internal/component/dns"
+	"github.com/catalystcommunity/foundry/v1/internal/component/externaldns"
 	"github.com/catalystcommunity/foundry/v1/internal/component/gatewayapi"
+	"github.com/catalystcommunity/foundry/v1/internal/component/grafana"
 	"github.com/catalystcommunity/foundry/v1/internal/component/k3s"
-	"github.com/catalystcommunity/foundry/v1/internal/component/minio"
+	"github.com/catalystcommunity/foundry/v1/internal/component/garage"
+	"github.com/catalystcommunity/foundry/v1/internal/component/loki"
 	"github.com/catalystcommunity/foundry/v1/internal/component/openbao"
+	"github.com/catalystcommunity/foundry/v1/internal/component/prometheus"
 	"github.com/catalystcommunity/foundry/v1/internal/component/storage"
+	"github.com/catalystcommunity/foundry/v1/internal/component/velero"
 	"github.com/catalystcommunity/foundry/v1/internal/component/zot"
 )
 
@@ -66,10 +71,45 @@ func InitComponents() error {
 		return err
 	}
 
-	// Register MinIO - depends on storage for PVCs
-	// MinIO provides S3-compatible object storage for Loki, Velero, etc.
-	minioComp := minio.NewComponent(nil, nil)
-	if err := component.Register(minioComp); err != nil {
+	// Register Garage - depends on storage for PVCs
+	// Garage provides S3-compatible object storage for Loki, Velero, etc.
+	garageComp := garage.NewComponent(nil, nil)
+	if err := component.Register(garageComp); err != nil {
+		return err
+	}
+
+	// Register Prometheus - depends on storage for PVCs
+	// Prometheus provides metrics collection and alerting
+	prometheusComp := prometheus.NewComponent(nil, nil)
+	if err := component.Register(prometheusComp); err != nil {
+		return err
+	}
+
+	// Register Loki - depends on storage and garage for log storage
+	// Loki provides centralized log aggregation
+	lokiComp := loki.NewComponent(nil, nil)
+	if err := component.Register(lokiComp); err != nil {
+		return err
+	}
+
+	// Register Grafana - depends on prometheus and loki for data sources
+	// Grafana provides unified observability dashboards
+	grafanaComp := grafana.NewComponent(nil, nil)
+	if err := component.Register(grafanaComp); err != nil {
+		return err
+	}
+
+	// Register External-DNS - depends on k3s
+	// External-DNS automatically manages DNS records for Kubernetes resources
+	externaldnsComp := externaldns.NewComponent(nil, nil)
+	if err := component.Register(externaldnsComp); err != nil {
+		return err
+	}
+
+	// Register Velero - depends on garage for backups
+	// Velero provides cluster backup and restore capabilities
+	veleroComp := velero.NewComponent(nil, nil)
+	if err := component.Register(veleroComp); err != nil {
 		return err
 	}
 

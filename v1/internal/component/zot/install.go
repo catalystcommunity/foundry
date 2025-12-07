@@ -61,7 +61,7 @@ func createDirectories(conn container.SSHExecutor, cfg *Config) error {
 		cfg.ConfigDir,
 	}
 
-	// If using TrueNAS storage, add that path
+	// If using external storage (e.g., NFS mount), add that path
 	if cfg.StorageBackend != nil && cfg.StorageBackend.MountPath != "" {
 		dirs = append(dirs, cfg.StorageBackend.MountPath)
 	}

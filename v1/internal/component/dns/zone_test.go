@@ -744,19 +744,6 @@ func TestInfrastructureRecordConfigValidate(t *testing.T) {
 			wantZone: "infraexample.com.",
 		},
 		{
-			name: "valid config with TrueNAS",
-			config: InfrastructureRecordConfig{
-				Zone:       "infraexample.com",
-				OpenBAOIP:  "192.168.1.10",
-				DNSIP:      "192.168.1.10",
-				ZotIP:      "192.168.1.10",
-				TrueNASIP:  "192.168.1.15",
-				K8sVIP:     "192.168.1.100",
-			},
-			wantErr:  false,
-			wantZone: "infraexample.com.",
-		},
-		{
 			name: "valid config with public zone",
 			config: InfrastructureRecordConfig{
 				Zone:        "infraexample.com",
@@ -873,27 +860,6 @@ func TestInitializeInfrastructureDNS(t *testing.T) {
 				"k8s.infraexample.com.",
 			},
 			wantRecordTypes: []string{"A", "A", "A", "A"},
-		},
-		{
-			name: "initialize infrastructure DNS - with TrueNAS",
-			config: InfrastructureRecordConfig{
-				Zone:       "infraexample.com",
-				OpenBAOIP:  "192.168.1.10",
-				DNSIP:      "192.168.1.10",
-				ZotIP:      "192.168.1.10",
-				TrueNASIP:  "192.168.1.15",
-				K8sVIP:     "192.168.1.100",
-			},
-			wantErr:         false,
-			wantRecordCount: 5, // openbao, dns, zot, truenas, k8s
-			wantRecordNames: []string{
-				"openbao.infraexample.com.",
-				"dns.infraexample.com.",
-				"zot.infraexample.com.",
-				"truenas.infraexample.com.",
-				"k8s.infraexample.com.",
-			},
-			wantRecordTypes: []string{"A", "A", "A", "A", "A"},
 		},
 		{
 			name: "initialize infrastructure DNS - public zone",

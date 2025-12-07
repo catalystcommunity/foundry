@@ -144,8 +144,7 @@ func TestLoad_ValidConfigFile(t *testing.T) {
 
 	// Verify storage
 	require.NotNil(t, config.Storage)
-	require.NotNil(t, config.Storage.TrueNAS)
-	assert.Equal(t, "https://truenas.example.com", config.Storage.TrueNAS.APIURL)
+	assert.Equal(t, "longhorn", config.Storage.Backend)
 }
 
 func TestLoad_FilePermissions(t *testing.T) {

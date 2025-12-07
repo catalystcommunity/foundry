@@ -67,8 +67,8 @@ func TestParseConfig_PortAsFloat(t *testing.T) {
 func TestParseConfig_WithStorage(t *testing.T) {
 	cfg := component.ComponentConfig{
 		"storage": map[string]interface{}{
-			"type":       "truenas",
-			"mount_path": "/mnt/truenas/zot",
+			"type":       "nfs",
+			"mount_path": "/mnt/nfs/zot",
 		},
 	}
 
@@ -76,8 +76,8 @@ func TestParseConfig_WithStorage(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NotNil(t, config.StorageBackend)
-	assert.Equal(t, "truenas", config.StorageBackend.Type)
-	assert.Equal(t, "/mnt/truenas/zot", config.StorageBackend.MountPath)
+	assert.Equal(t, "nfs", config.StorageBackend.Type)
+	assert.Equal(t, "/mnt/nfs/zot", config.StorageBackend.MountPath)
 }
 
 func TestParseConfig_WithAuth(t *testing.T) {
@@ -107,8 +107,8 @@ func TestParseConfig_Complete(t *testing.T) {
 		"port":               5050,
 		"pull_through_cache": false,
 		"storage": map[string]interface{}{
-			"type":       "truenas",
-			"mount_path": "/mnt/truenas/zot",
+			"type":       "nfs",
+			"mount_path": "/mnt/nfs/zot",
 		},
 		"auth": map[string]interface{}{
 			"type": "basic",
@@ -128,8 +128,8 @@ func TestParseConfig_Complete(t *testing.T) {
 	assert.False(t, config.PullThroughCache)
 
 	require.NotNil(t, config.StorageBackend)
-	assert.Equal(t, "truenas", config.StorageBackend.Type)
-	assert.Equal(t, "/mnt/truenas/zot", config.StorageBackend.MountPath)
+	assert.Equal(t, "nfs", config.StorageBackend.Type)
+	assert.Equal(t, "/mnt/nfs/zot", config.StorageBackend.MountPath)
 
 	require.NotNil(t, config.Auth)
 	assert.Equal(t, "basic", config.Auth.Type)

@@ -1,75 +1,175 @@
 # Storage Configuration
 
-## TrueNAS Integration
+Foundry uses a Kubernetes-native storage architecture with Longhorn for block storage and Garage for S3-compatible object storage.
 
-Foundry integrates with TrueNAS for network storage capabilities.
+## Architecture Overview
 
-### Features
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  Worker Nodes                                                        │
+│  - Longhorn uses directory on existing filesystem                   │
+│  - Each node contributes storage capacity                           │
+│  - Replicas distributed across nodes                                │
+└─────────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  Longhorn                                                           │
+│  - Provides StorageClass for all PVCs                               │
+│  - Handles replication across nodes                                 │
+│  - Snapshots and backup capabilities                                │
+└─────────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  Garage (S3-compatible object storage)                              │
+│  - Runs on Longhorn PVCs                                            │
+│  - Provides S3 API for Velero, Loki, etc.                           │
+│  - Designed for robustness over raw performance                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
 
-- **Dataset Management**: Create and manage ZFS datasets
-- **NFS Shares**: Configure NFS exports for container and Kubernetes storage
-- **Pool Information**: Query available storage pools
-- **API Integration**: Automated configuration via TrueNAS API
+## Storage Backends
 
-### Use Cases
+### Longhorn (Recommended)
 
-#### Zot Registry Storage
+Longhorn provides distributed block storage for Kubernetes with built-in replication.
 
-Configure Zot to use TrueNAS NFS storage for container images:
+**Features:**
+- Distributed across nodes (no single point of failure)
+- Automatic replication (configurable replica count)
+- Snapshot and backup support
+- No RAID required (Longhorn handles redundancy)
 
-1. TrueNAS creates a dataset and NFS share
-2. Zot mounts the NFS share
-3. Container images stored on TrueNAS
+**Configuration:**
+```yaml
+storage:
+  backend: longhorn
+  longhorn:
+    replica_count: 3
+    data_path: /var/lib/longhorn
+    default_data_locality: best-effort
+```
 
-This provides:
-- Persistent storage for container images
-- High-capacity backend storage
-- ZFS snapshot and replication capabilities
+### Local-Path (Simple)
 
-#### Kubernetes Persistent Volumes
+K3s bundled local-path provisioner for single-node or development clusters.
 
-TrueNAS can provide NFS-backed persistent volumes for Kubernetes workloads.
+**Configuration:**
+```yaml
+storage:
+  backend: local-path
+```
+
+### NFS (External Storage)
+
+NFS subdir provisioner for existing NFS servers.
+
+**Configuration:**
+```yaml
+storage:
+  backend: nfs
+  nfs:
+    server: nfs.example.local
+    path: /exports/k8s
+```
+
+## Object Storage (Garage)
+
+Garage provides S3-compatible object storage for services that need it:
+- **Velero**: Cluster backups
+- **Loki**: Log storage
+- **Zot**: Container image storage (optional)
+
+### Why Garage?
+
+- Lightweight and robust
+- S3-compatible API
+- Runs on Longhorn PVCs (no external dependencies)
+- Designed for self-hosted environments
 
 ### Configuration
 
-TrueNAS configuration is stored in your Foundry config:
-
 ```yaml
-storage:
-  truenas:
-    host: truenas.example.com
-    api_key: ${SECRET:secret/foundry-core/truenas:api_key}
-    api_version: v2.0
+garage:
+  enabled: true
+  replicas: 3
+  replication_factor: 3
+  storage_size: 100Gi
+  buckets:
+    - velero
+    - loki
 ```
 
-API keys are stored in OpenBAO for security.
+### S3 Endpoint
 
-### Commands
+Once deployed, Garage is accessible at:
+```
+http://garage.garage.svc.cluster.local:3900
+```
 
-List storage pools:
+Services like Loki and Velero are automatically configured to use this endpoint.
+
+## Commands
+
+List storage configuration:
 ```bash
 foundry storage list
 ```
 
-Test TrueNAS connectivity:
+Provision storage:
 ```bash
-foundry storage test
+foundry storage provision
 ```
 
-### API Operations
+Create PVC:
+```bash
+foundry storage pvc create --name my-data --size 10Gi
+```
 
-The TrueNAS API client supports:
+## Disk Recommendations
 
-- **Datasets**: Create, list, query datasets
-- **NFS Shares**: Create, list, query NFS exports
-- **Pools**: List available storage pools
-- **Health**: Ping and version checks
+**Worker Nodes:**
+- Single partition with OS and data
+- Longhorn uses a directory (e.g., `/var/lib/longhorn`)
+- No RAID needed (Longhorn handles replication)
 
-For advanced operations, see the internal API client at `internal/truenas/client.go`.
+**Storage Nodes (Optional):**
+- Dedicated storage nodes with additional disks
+- Each disk mounted separately (no RAID)
+- Longhorn uses each mount point
 
-## Future Storage Support
+## Component Dependencies
 
-Foundry is designed to support additional storage backends in future phases:
-- Rook/Ceph for distributed storage
-- Local persistent volumes
-- Other NFS/SMB providers
+Install order is handled automatically:
+
+1. **Longhorn** (provides StorageClass)
+2. **Garage** (uses Longhorn PVCs, provides S3)
+3. **Loki** (uses Garage for log storage)
+4. **Velero** (uses Garage for backup storage)
+
+## Troubleshooting
+
+### Check Longhorn Status
+
+```bash
+kubectl -n longhorn-system get pods
+kubectl -n longhorn-system get storageclass
+```
+
+### Check Garage Status
+
+```bash
+kubectl -n garage get pods
+kubectl -n garage get svc
+```
+
+### Verify S3 Connectivity
+
+```bash
+# Port-forward Garage
+kubectl -n garage port-forward svc/garage 3900:3900
+
+# Test with aws-cli
+aws --endpoint-url http://localhost:3900 s3 ls
+```

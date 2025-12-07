@@ -3,7 +3,6 @@
 
 myapp-prod/database/main:password=prod-secret-123
 myapp-stable/database/main:password=stable-secret-456
-foundry-core/truenas:api_key=truenas-key-789
 foundry-core/openbao:token=root-token
 
 # Test with underscores and special paths

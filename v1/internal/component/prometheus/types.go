@@ -158,7 +158,7 @@ func DefaultConfig() *Config {
 		Version:                 "67.4.0", // kube-prometheus-stack chart version
 		Namespace:               "monitoring",
 		RetentionDays:           15,
-		RetentionSize:           "10Gi",
+		RetentionSize:           "10GB", // Must end with 'B' per Prometheus CRD spec
 		StorageClass:            "", // Use cluster default
 		StorageSize:             "20Gi",
 		AlertmanagerEnabled:     true,

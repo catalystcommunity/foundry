@@ -34,17 +34,11 @@ func TestValidateSecretRefs(t *testing.T) {
 			name: "valid secret refs",
 			config: &Config{
 				Cluster: ClusterConfig{
-					Name:   "test",
+					Name:   "${secret:foundry-core/cluster:name}",
 					Domain: "example.com",
 				},
 				Components: ComponentMap{
 					"k3s": ComponentConfig{},
-				},
-				Storage: &StorageConfig{
-					TrueNAS: &TrueNASConfig{
-						APIURL: "https://truenas.example.com",
-						APIKey: "${secret:foundry-core/truenas:api_key}",
-					},
 				},
 			},
 			wantErr: false,
@@ -53,17 +47,11 @@ func TestValidateSecretRefs(t *testing.T) {
 			name: "invalid secret ref format",
 			config: &Config{
 				Cluster: ClusterConfig{
-					Name:   "test",
+					Name:   "${secret:invalid}",
 					Domain: "example.com",
 				},
 				Components: ComponentMap{
 					"k3s": ComponentConfig{},
-				},
-				Storage: &StorageConfig{
-					TrueNAS: &TrueNASConfig{
-						APIURL: "https://truenas.example.com",
-						APIKey: "${secret:invalid}",
-					},
 				},
 			},
 			wantErr: true,
@@ -111,79 +99,57 @@ func TestResolveSecrets(t *testing.T) {
 			name: "resolve single secret",
 			config: &Config{
 				Cluster: ClusterConfig{
-					Name:   "test",
+					Name:   "${secret:cluster:name}",
 					Domain: "example.com",
 				},
 				Components: ComponentMap{
 					"k3s": ComponentConfig{},
 				},
-				Storage: &StorageConfig{
-					TrueNAS: &TrueNASConfig{
-						APIURL: "https://truenas.example.com",
-						APIKey: "${secret:truenas:api_key}",
-					},
-				},
 			},
 			ctx: secrets.NewResolutionContext("foundry-core"),
 			resolver: &mockSecretResolver{
 				values: map[string]string{
-					"foundry-core/truenas:api_key": "resolved-key-123",
+					"foundry-core/cluster:name": "resolved-cluster-name",
 				},
 			},
 			wantErr: false,
 			check: func(t *testing.T, cfg *Config) {
-				require.NotNil(t, cfg.Storage)
-				require.NotNil(t, cfg.Storage.TrueNAS)
-				assert.Equal(t, "resolved-key-123", cfg.Storage.TrueNAS.APIKey)
+				assert.Equal(t, "resolved-cluster-name", cfg.Cluster.Name)
 			},
 		},
 		{
 			name: "multiple secrets",
 			config: &Config{
 				Cluster: ClusterConfig{
-					Name:   "test",
-					Domain: "example.com",
+					Name:   "${secret:cluster:name}",
+					Domain: "${secret:cluster:domain}",
 				},
 				Components: ComponentMap{
 					"k3s": ComponentConfig{},
-				},
-				Storage: &StorageConfig{
-					TrueNAS: &TrueNASConfig{
-						APIURL: "${secret:truenas:api_url}",
-						APIKey: "${secret:truenas:api_key}",
-					},
 				},
 			},
 			ctx: secrets.NewResolutionContext("foundry-core"),
 			resolver: &mockSecretResolver{
 				values: map[string]string{
-					"foundry-core/truenas:api_url": "https://resolved.example.com",
-					"foundry-core/truenas:api_key": "resolved-key-456",
+					"foundry-core/cluster:name":   "resolved-name",
+					"foundry-core/cluster:domain": "resolved.example.com",
 				},
 			},
 			wantErr: false,
 			check: func(t *testing.T, cfg *Config) {
-				require.NotNil(t, cfg.Storage)
-				require.NotNil(t, cfg.Storage.TrueNAS)
-				assert.Equal(t, "https://resolved.example.com", cfg.Storage.TrueNAS.APIURL)
-				assert.Equal(t, "resolved-key-456", cfg.Storage.TrueNAS.APIKey)
+				assert.Equal(t, "resolved-name", cfg.Cluster.Name)
+				assert.Equal(t, "resolved.example.com", cfg.Cluster.Domain)
 			},
 		},
 		{
 			name: "resolution failure",
 			config: &Config{
 				Cluster: ClusterConfig{
-					Name:   "test",
+					Name:   "${secret:cluster:name}",
 					Domain: "example.com",
 				},
 				Components: ComponentMap{
 					"k3s": ComponentConfig{},
-				},
-				Storage: &StorageConfig{
-					TrueNAS: &TrueNASConfig{
-						APIURL: "https://truenas.example.com",
-						APIKey: "${secret:truenas:api_key}",
-					},
 				},
 			},
 			ctx: secrets.NewResolutionContext("foundry-core"),

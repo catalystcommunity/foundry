@@ -236,6 +236,11 @@ func (c *Client) Config() *rest.Config {
 	return c.config
 }
 
+// GetSecret retrieves a secret from the specified namespace
+func (c *Client) GetSecret(ctx context.Context, namespace, name string) (*corev1.Secret, error) {
+	return c.clientset.CoreV1().Secrets(namespace).Get(ctx, name, metav1.GetOptions{})
+}
+
 // CordonNode marks a node as unschedulable
 func (c *Client) CordonNode(ctx context.Context, nodeName string) error {
 	// Get the node

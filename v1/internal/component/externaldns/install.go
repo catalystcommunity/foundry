@@ -153,15 +153,11 @@ func buildHelmValues(cfg *Config) map[string]interface{} {
 					"value": cfg.PowerDNS.APIKey,
 				},
 			}
-			// Set server ID if specified
-			serverID := cfg.PowerDNS.ServerID
-			if serverID == "" {
-				serverID = "localhost"
-			}
-			values["extraArgs"] = []string{
+			// Bitnami chart expects extraArgs as an array of strings
+			// Note: --pdns-server-id is no longer a valid flag in recent versions
+			values["extraArgs"] = []interface{}{
 				fmt.Sprintf("--pdns-server=%s", cfg.PowerDNS.APIUrl),
 				fmt.Sprintf("--pdns-api-key=%s", cfg.PowerDNS.APIKey),
-				fmt.Sprintf("--pdns-server-id=%s", serverID),
 			}
 
 		case ProviderCloudflare:
@@ -175,10 +171,9 @@ func buildHelmValues(cfg *Config) map[string]interface{} {
 				},
 			}
 			if cfg.Cloudflare.Proxied {
-				if values["extraArgs"] == nil {
-					values["extraArgs"] = []string{}
+				values["extraArgs"] = []interface{}{
+					"--cloudflare-proxied",
 				}
-				values["extraArgs"] = append(values["extraArgs"].([]string), "--cloudflare-proxied")
 			}
 
 		case ProviderRFC2136:

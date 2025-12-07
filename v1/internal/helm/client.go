@@ -75,6 +75,10 @@ func (c *Client) getActionConfig(namespace string) (*action.Configuration, error
 		namespace = c.namespace
 	}
 
+	// Update settings namespace before getting RESTClientGetter
+	// This ensures the client getter uses the correct namespace
+	c.settings.SetNamespace(namespace)
+
 	actionConfig := new(action.Configuration)
 	if err := actionConfig.Init(c.settings.RESTClientGetter(), namespace, "secret", func(format string, v ...interface{}) {
 		// Log function - currently no-op

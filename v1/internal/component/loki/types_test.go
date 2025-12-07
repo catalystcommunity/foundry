@@ -21,9 +21,9 @@ func TestDefaultConfig(t *testing.T) {
 	assert.Equal(t, 30, config.RetentionDays)
 	assert.Equal(t, "", config.StorageClass)
 	assert.Equal(t, "10Gi", config.StorageSize)
-	assert.Equal(t, "http://minio.minio.svc.cluster.local:9000", config.S3Endpoint)
+	assert.Equal(t, "http://garage.garage.svc.cluster.local:3900", config.S3Endpoint)
 	assert.Equal(t, "loki", config.S3Bucket)
-	assert.Equal(t, "us-east-1", config.S3Region)
+	assert.Equal(t, "garage", config.S3Region)
 	assert.True(t, config.PromtailEnabled)
 	assert.False(t, config.GrafanaAgentEnabled)
 	assert.False(t, config.IngressEnabled)
@@ -125,7 +125,7 @@ func TestValidate_S3_Success(t *testing.T) {
 	config := &Config{
 		RetentionDays:  30,
 		StorageBackend: BackendS3,
-		S3Endpoint:     "http://minio:9000",
+		S3Endpoint:     "http://garage:3900",
 		S3Bucket:       "loki",
 	}
 
@@ -161,7 +161,7 @@ func TestValidate_S3_MissingBucket(t *testing.T) {
 	config := &Config{
 		RetentionDays:  30,
 		StorageBackend: BackendS3,
-		S3Endpoint:     "http://minio:9000",
+		S3Endpoint:     "http://garage:3900",
 		S3Bucket:       "",
 	}
 
@@ -233,7 +233,7 @@ func TestComponent_Dependencies(t *testing.T) {
 
 	require.Len(t, deps, 2)
 	assert.Contains(t, deps, "storage")
-	assert.Contains(t, deps, "minio")
+	assert.Contains(t, deps, "garage")
 }
 
 func TestComponent_Install_NilHelmClient(t *testing.T) {

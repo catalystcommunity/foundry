@@ -58,12 +58,18 @@ observability:
     version: "v10.0.0"
 
 storage:
-  truenas:
-    api_url: "https://truenas.example.local/api/v2.0"
-    api_key: "${secret:storage/truenas:api_key}"
-  minio:
-    enabled: true
-    replicas: 3
+  backend: longhorn  # Options: local-path, longhorn, nfs
+  longhorn:
+    replica_count: 3
+    data_path: /var/lib/longhorn
+
+# S3-compatible object storage (Garage)
+garage:
+  enabled: true
+  replicas: 3
+  buckets:
+    - velero
+    - loki
 ```
 
 ## Configuration Schema

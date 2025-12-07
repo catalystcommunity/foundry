@@ -16,8 +16,15 @@ import (
 	"github.com/catalystcommunity/foundry/v1/internal/component"
 	"github.com/catalystcommunity/foundry/v1/internal/component/certmanager"
 	"github.com/catalystcommunity/foundry/v1/internal/component/contour"
+	"github.com/catalystcommunity/foundry/v1/internal/component/externaldns"
 	"github.com/catalystcommunity/foundry/v1/internal/component/gatewayapi"
+	"github.com/catalystcommunity/foundry/v1/internal/component/grafana"
+	"github.com/catalystcommunity/foundry/v1/internal/component/garage"
+	"github.com/catalystcommunity/foundry/v1/internal/component/loki"
 	"github.com/catalystcommunity/foundry/v1/internal/component/openbao"
+	"github.com/catalystcommunity/foundry/v1/internal/component/prometheus"
+	"github.com/catalystcommunity/foundry/v1/internal/component/storage"
+	"github.com/catalystcommunity/foundry/v1/internal/component/velero"
 	"github.com/catalystcommunity/foundry/v1/internal/config"
 	"github.com/catalystcommunity/foundry/v1/internal/container"
 	"github.com/catalystcommunity/foundry/v1/internal/helm"
@@ -46,11 +53,27 @@ func checkAllComponentsInstalled(ctx context.Context, state *setup.SetupState) b
 	}
 
 	// Check Phase 3 components via actual status
-	contourComp := component.Get("contour")
-	if contourComp != nil {
-		status, err := contourComp.Status(ctx)
-		if err != nil || status == nil || !status.Installed {
-			return false
+	// Order: gateway-api, contour, cert-manager, storage, garage, prometheus, external-dns, loki, grafana, velero
+	phase3Components := []string{
+		"gateway-api",
+		"contour",
+		"cert-manager",
+		"storage",
+		"garage",
+		"prometheus",
+		"external-dns",
+		"loki",
+		"grafana",
+		"velero",
+	}
+
+	for _, name := range phase3Components {
+		comp := component.Get(name)
+		if comp != nil {
+			status, err := comp.Status(ctx)
+			if err != nil || status == nil || !status.Installed {
+				return false
+			}
 		}
 	}
 
@@ -519,6 +542,37 @@ func installComponents(ctx context.Context, cfg *config.Config, configPath strin
 	fmt.Println("\n[3/4] Component Installation")
 	fmt.Println(strings.Repeat("-", 60))
 
+	// Helper function to check component status via registry
+	checkComponentStatus := func(name string) bool {
+		comp := component.Get(name)
+		if comp == nil {
+			return false
+		}
+		status, err := comp.Status(ctx)
+		if err != nil || status == nil {
+			return false
+		}
+		return status.Installed
+	}
+
+	// Helper function to track component in config
+	trackComponent := func(name string) {
+		if cfg.Components == nil {
+			cfg.Components = make(config.ComponentMap)
+		}
+		if _, exists := cfg.Components[name]; !exists {
+			cfg.Components[name] = config.ComponentConfig{Config: map[string]any{"installed": true}}
+		} else {
+			// Update existing entry
+			existing := cfg.Components[name]
+			if existing.Config == nil {
+				existing.Config = make(map[string]any)
+			}
+			existing.Config["installed"] = true
+			cfg.Components[name] = existing
+		}
+	}
+
 	// Define installation order (matches Phase 2 + Phase 3 architecture)
 	components := []struct {
 		name      string
@@ -533,6 +587,7 @@ func installComponents(ctx context.Context, cfg *config.Config, configPath strin
 			setFunc: func(s *setup.SetupState) {
 				s.OpenBAOInstalled = true
 				s.OpenBAOInitialized = true
+				trackComponent("openbao")
 			},
 		},
 		{
@@ -543,6 +598,7 @@ func installComponents(ctx context.Context, cfg *config.Config, configPath strin
 			setFunc: func(s *setup.SetupState) {
 				s.DNSInstalled = true
 				s.DNSZonesCreated = true
+				trackComponent("dns")
 			},
 		},
 		{
@@ -552,6 +608,7 @@ func installComponents(ctx context.Context, cfg *config.Config, configPath strin
 			},
 			setFunc: func(s *setup.SetupState) {
 				s.ZotInstalled = true
+				trackComponent("zot")
 			},
 		},
 		{
@@ -561,42 +618,97 @@ func installComponents(ctx context.Context, cfg *config.Config, configPath strin
 			},
 			setFunc: func(s *setup.SetupState) {
 				s.K8sInstalled = true
+				trackComponent("k3s")
 			},
 		},
 		{
 			name: "gateway-api",
 			checkFunc: func(s *setup.SetupState) bool {
-				// Check actual component status
-				comp := component.Get("gateway-api")
-				if comp == nil {
-					return false
-				}
-				status, err := comp.Status(ctx)
-				if err != nil || status == nil {
-					return false
-				}
-				return status.Installed
+				return checkComponentStatus("gateway-api")
 			},
 			setFunc: func(s *setup.SetupState) {
-				// No state flag for Gateway API - component tracks its own status
+				trackComponent("gateway-api")
 			},
 		},
 		{
 			name: "contour",
 			checkFunc: func(s *setup.SetupState) bool {
-				// Check actual component status instead of state flag
-				comp := component.Get("contour")
-				if comp == nil {
-					return false
-				}
-				status, err := comp.Status(ctx)
-				if err != nil || status == nil {
-					return false
-				}
-				return status.Installed
+				return checkComponentStatus("contour")
 			},
 			setFunc: func(s *setup.SetupState) {
-				// No state flag for Contour yet - component tracks its own status
+				trackComponent("contour")
+			},
+		},
+		{
+			name: "cert-manager",
+			checkFunc: func(s *setup.SetupState) bool {
+				return checkComponentStatus("cert-manager")
+			},
+			setFunc: func(s *setup.SetupState) {
+				trackComponent("cert-manager")
+			},
+		},
+		{
+			name: "storage",
+			checkFunc: func(s *setup.SetupState) bool {
+				return checkComponentStatus("storage")
+			},
+			setFunc: func(s *setup.SetupState) {
+				trackComponent("storage")
+			},
+		},
+		{
+			name: "garage",
+			checkFunc: func(s *setup.SetupState) bool {
+				return checkComponentStatus("garage")
+			},
+			setFunc: func(s *setup.SetupState) {
+				trackComponent("garage")
+			},
+		},
+		{
+			name: "prometheus",
+			checkFunc: func(s *setup.SetupState) bool {
+				return checkComponentStatus("prometheus")
+			},
+			setFunc: func(s *setup.SetupState) {
+				trackComponent("prometheus")
+			},
+		},
+		{
+			name: "external-dns",
+			checkFunc: func(s *setup.SetupState) bool {
+				return checkComponentStatus("external-dns")
+			},
+			setFunc: func(s *setup.SetupState) {
+				trackComponent("external-dns")
+			},
+		},
+		{
+			name: "loki",
+			checkFunc: func(s *setup.SetupState) bool {
+				return checkComponentStatus("loki")
+			},
+			setFunc: func(s *setup.SetupState) {
+				trackComponent("loki")
+			},
+		},
+		{
+			name: "grafana",
+			checkFunc: func(s *setup.SetupState) bool {
+				return checkComponentStatus("grafana")
+			},
+			setFunc: func(s *setup.SetupState) {
+				trackComponent("grafana")
+			},
+		},
+		{
+			name: "velero",
+			checkFunc: func(s *setup.SetupState) bool {
+				return checkComponentStatus("velero")
+			},
+			setFunc: func(s *setup.SetupState) {
+				trackComponent("velero")
 			},
 		},
 	}
@@ -672,7 +784,21 @@ func installK8sComponent(ctx context.Context, cfg *config.Config, componentName 
 	case "contour":
 		componentWithClients = contour.NewComponent(helmClient, k8sClient)
 	case "cert-manager":
-		componentWithClients = certmanager.NewComponent(nil)
+		componentWithClients = certmanager.NewComponent(nil) // Config is passed via ComponentConfig
+	case "external-dns":
+		componentWithClients = externaldns.NewComponent(helmClient, k8sClient)
+	case "storage":
+		componentWithClients = storage.NewComponent(helmClient, k8sClient)
+	case "garage":
+		componentWithClients = garage.NewComponent(helmClient, k8sClient)
+	case "prometheus":
+		componentWithClients = prometheus.NewComponent(helmClient, k8sClient)
+	case "loki":
+		componentWithClients = loki.NewComponent(helmClient, k8sClient)
+	case "grafana":
+		componentWithClients = grafana.NewComponent(helmClient, k8sClient)
+	case "velero":
+		componentWithClients = velero.NewComponent(helmClient, k8sClient)
 	default:
 		return fmt.Errorf("unknown kubernetes component: %s", componentName)
 	}
@@ -680,9 +806,50 @@ func installK8sComponent(ctx context.Context, cfg *config.Config, componentName 
 	// Create component config with cluster-specific values
 	componentConfig := component.ComponentConfig{}
 
+	// Pass helm and k8s clients to components that need them via ComponentConfig
+	if componentName == "cert-manager" {
+		componentConfig["helm_client"] = helmClient
+		componentConfig["k8s_client"] = k8sClient
+	}
+
 	// Pass cluster VIP to Contour for LoadBalancer annotation sharing
 	if componentName == "contour" && cfg.Cluster.VIP != "" {
 		componentConfig["cluster_vip"] = cfg.Cluster.VIP
+	}
+
+	// Pass DNS provider config to external-dns
+	if componentName == "external-dns" {
+		componentConfig = buildExternalDNSConfig(ctx, cfg, configDir)
+	}
+
+	// Pass storage backend config
+	if componentName == "storage" {
+		componentConfig = buildStorageConfig(ctx, cfg)
+	}
+
+	// Pass Garage config
+	if componentName == "garage" {
+		componentConfig = buildGarageConfig(cfg)
+	}
+
+	// Pass Prometheus config
+	if componentName == "prometheus" {
+		componentConfig = buildPrometheusConfig(cfg)
+	}
+
+	// Pass Loki config (needs Garage connection info)
+	if componentName == "loki" {
+		componentConfig = buildLokiConfig(cfg)
+	}
+
+	// Pass Grafana config (needs Prometheus and Loki endpoints)
+	if componentName == "grafana" {
+		componentConfig = buildGrafanaConfig(cfg)
+	}
+
+	// Pass Velero config (needs Garage connection info)
+	if componentName == "velero" {
+		componentConfig = buildVeleroConfig(cfg)
 	}
 
 	// Install the component
@@ -692,6 +859,232 @@ func installK8sComponent(ctx context.Context, cfg *config.Config, componentName 
 
 	fmt.Printf("  ✓ %s installed successfully\n", componentName)
 	return nil
+}
+
+// buildExternalDNSConfig creates config for external-dns component
+func buildExternalDNSConfig(ctx context.Context, cfg *config.Config, configDir string) component.ComponentConfig {
+	componentConfig := component.ComponentConfig{
+		"provider":       "pdns",
+		"domain_filters": []string{cfg.Cluster.Domain},
+	}
+
+	// Build PowerDNS config
+	pdnsConfig := map[string]interface{}{}
+
+	// Get PowerDNS API endpoint
+	if dnsHosts := cfg.GetHostAddresses(host.RoleDNS); len(dnsHosts) > 0 {
+		pdnsConfig["api_url"] = fmt.Sprintf("http://%s:8081", dnsHosts[0])
+	}
+
+	// Get DNS API key from OpenBAO
+	if cfg.SetupState != nil && cfg.SetupState.OpenBAOInitialized {
+		apiKey, err := getDNSAPIKeyFromOpenBAO(ctx, cfg, configDir)
+		if err == nil && apiKey != "" {
+			pdnsConfig["api_key"] = apiKey
+		}
+	}
+
+	componentConfig["powerdns"] = pdnsConfig
+
+	return componentConfig
+}
+
+// getDNSAPIKeyFromOpenBAO retrieves the DNS API key from OpenBAO
+func getDNSAPIKeyFromOpenBAO(ctx context.Context, cfg *config.Config, configDir string) (string, error) {
+	// Get OpenBAO address from config
+	addr, err := cfg.GetPrimaryOpenBAOAddress()
+	if err != nil {
+		return "", err
+	}
+	openBAOAddr := fmt.Sprintf("http://%s:8200", addr)
+
+	// Get OpenBAO token from keys file
+	keysPath := filepath.Join(configDir, "openbao-keys", cfg.Cluster.Name, "keys.json")
+	keysData, err := os.ReadFile(keysPath)
+	if err != nil {
+		return "", err
+	}
+
+	var keys struct {
+		RootToken string `json:"root_token"`
+	}
+	if err := json.Unmarshal(keysData, &keys); err != nil {
+		return "", err
+	}
+
+	// Create OpenBAO client
+	openBAOClient := openbao.NewClient(openBAOAddr, keys.RootToken)
+
+	// Read DNS API key
+	secretData, err := openBAOClient.ReadSecretV2(ctx, "foundry-core", "dns")
+	if err != nil {
+		return "", err
+	}
+
+	if apiKey, ok := secretData["api_key"].(string); ok {
+		return apiKey, nil
+	}
+
+	return "", fmt.Errorf("api_key not found in secret")
+}
+
+// buildStorageConfig creates config for storage component
+func buildStorageConfig(ctx context.Context, cfg *config.Config) component.ComponentConfig {
+	componentConfig := component.ComponentConfig{
+		"backend":            "local-path",
+		"storage_class_name": "local-path",
+		"set_default":        true,
+	}
+
+	// Check for Longhorn configuration
+	if cfg.Storage != nil && cfg.Storage.Backend == "longhorn" {
+		componentConfig["backend"] = "longhorn"
+		componentConfig["storage_class_name"] = "longhorn"
+	}
+
+	return componentConfig
+}
+
+// Garage constants
+const (
+	garageEndpoint = "http://garage.garage.svc.cluster.local:3900"
+	garageRegion   = "garage"
+)
+
+// getOrCreateGarageCredentials retrieves Garage credentials from config or generates new ones
+func getOrCreateGarageCredentials(cfg *config.Config) (adminKey, adminSecret string) {
+	// Check if credentials already exist in config
+	if cfg.Components != nil {
+		if garageCfg, exists := cfg.Components["garage"]; exists {
+			if garageCfg.Config != nil {
+				if key, ok := garageCfg.Config["admin_key"].(string); ok && key != "" {
+					if secret, ok := garageCfg.Config["admin_secret"].(string); ok && secret != "" {
+						return key, secret
+					}
+				}
+			}
+		}
+	}
+
+	// Generate new random credentials
+	keyBytes := make([]byte, 32)
+	secretBytes := make([]byte, 32)
+	if _, err := rand.Read(keyBytes); err != nil {
+		adminKey = fmt.Sprintf("foundry-key-%d", time.Now().UnixNano())
+	} else {
+		adminKey = hex.EncodeToString(keyBytes)
+	}
+	if _, err := rand.Read(secretBytes); err != nil {
+		adminSecret = fmt.Sprintf("foundry-secret-%d", time.Now().UnixNano())
+	} else {
+		adminSecret = hex.EncodeToString(secretBytes)
+	}
+	return adminKey, adminSecret
+}
+
+// buildGarageConfig creates config for Garage component
+func buildGarageConfig(cfg *config.Config) component.ComponentConfig {
+	adminKey, adminSecret := getOrCreateGarageCredentials(cfg)
+
+	// Store credentials in config for other components to use
+	if cfg.Components == nil {
+		cfg.Components = make(config.ComponentMap)
+	}
+	if _, exists := cfg.Components["garage"]; !exists {
+		cfg.Components["garage"] = config.ComponentConfig{Config: make(map[string]any)}
+	}
+	garageCfg := cfg.Components["garage"]
+	if garageCfg.Config == nil {
+		garageCfg.Config = make(map[string]any)
+	}
+	garageCfg.Config["admin_key"] = adminKey
+	garageCfg.Config["admin_secret"] = adminSecret
+	cfg.Components["garage"] = garageCfg
+
+	return component.ComponentConfig{
+		"namespace":     "garage",
+		"storage_size":  "50Gi",
+		"storage_class": "local-path",
+		"admin_key":     adminKey,
+		"admin_secret":  adminSecret,
+		"buckets":       []string{"loki", "velero"},
+	}
+}
+
+// getGarageCredentials retrieves Garage credentials from config
+func getGarageCredentials(cfg *config.Config) (adminKey, adminSecret string) {
+	adminKey = ""
+	adminSecret = ""
+
+	if cfg.Components != nil {
+		if garageCfg, exists := cfg.Components["garage"]; exists {
+			if garageCfg.Config != nil {
+				if key, ok := garageCfg.Config["admin_key"].(string); ok {
+					adminKey = key
+				}
+				if secret, ok := garageCfg.Config["admin_secret"].(string); ok {
+					adminSecret = secret
+				}
+			}
+		}
+	}
+
+	return adminKey, adminSecret
+}
+
+// buildPrometheusConfig creates config for Prometheus component
+func buildPrometheusConfig(cfg *config.Config) component.ComponentConfig {
+	return component.ComponentConfig{
+		"namespace":      "monitoring",
+		"retention_days": 15,
+		"storage_size":   "10Gi",
+		"storage_class":  "local-path",
+	}
+}
+
+// buildLokiConfig creates config for Loki component
+func buildLokiConfig(cfg *config.Config) component.ComponentConfig {
+	adminKey, adminSecret := getGarageCredentials(cfg)
+
+	return component.ComponentConfig{
+		"namespace":        "monitoring",
+		"deployment_mode":  "SingleBinary",
+		"storage_backend":  "s3",
+		"s3_endpoint":      garageEndpoint,
+		"s3_bucket":        "loki",
+		"s3_access_key":    adminKey,
+		"s3_secret_key":    adminSecret,
+		"s3_region":        garageRegion,
+		"promtail_enabled": true,
+	}
+}
+
+// buildGrafanaConfig creates config for Grafana component
+func buildGrafanaConfig(cfg *config.Config) component.ComponentConfig {
+	return component.ComponentConfig{
+		"namespace":      "monitoring",
+		"storage_size":   "5Gi",
+		"storage_class":  "local-path",
+		"prometheus_url": "http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090",
+		"loki_url":       "http://loki-gateway.monitoring.svc.cluster.local:80",
+	}
+}
+
+// buildVeleroConfig creates config for Velero component
+func buildVeleroConfig(cfg *config.Config) component.ComponentConfig {
+	adminKey, adminSecret := getGarageCredentials(cfg)
+
+	return component.ComponentConfig{
+		"namespace":     "velero",
+		"provider":      "s3",
+		"s3_endpoint":   garageEndpoint,
+		"s3_bucket":     "velero",
+		"s3_access_key": adminKey,
+		"s3_secret_key": adminSecret,
+		"s3_region":     garageRegion,
+		"schedule_cron": "0 2 * * *", // Daily at 2am
+		"schedule_name": "daily-backup",
+	}
 }
 
 // installSingleComponent installs a single component with proper configuration
@@ -708,7 +1101,19 @@ func installSingleComponent(ctx context.Context, cfg *config.Config, componentNa
 	}
 
 	// Kubernetes components are installed via kubeconfig, not SSH to a host
-	if componentName == "gateway-api" || componentName == "contour" || componentName == "cert-manager" {
+	k8sComponents := map[string]bool{
+		"gateway-api":  true,
+		"contour":      true,
+		"cert-manager": true,
+		"external-dns": true,
+		"storage":      true,
+		"garage":       true,
+		"prometheus":   true,
+		"loki":         true,
+		"grafana":      true,
+		"velero":       true,
+	}
+	if k8sComponents[componentName] {
 		return installK8sComponent(ctx, cfg, componentName, comp)
 	}
 

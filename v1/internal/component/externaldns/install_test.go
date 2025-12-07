@@ -175,9 +175,8 @@ func TestBuildHelmValues_PowerDNS(t *testing.T) {
 	cfg := &Config{
 		Provider: ProviderPowerDNS,
 		PowerDNS: &PowerDNSConfig{
-			APIUrl:   "http://powerdns:8081",
-			APIKey:   "secret-key",
-			ServerID: "my-server",
+			APIUrl: "http://powerdns:8081",
+			APIKey: "secret-key",
 		},
 		Sources:    []string{"ingress"},
 		Policy:     "sync",
@@ -197,33 +196,11 @@ func TestBuildHelmValues_PowerDNS(t *testing.T) {
 	require.True(t, ok)
 	require.Len(t, env, 2)
 
-	// Check extraArgs
-	extraArgs, ok := values["extraArgs"].([]string)
+	// Check extraArgs - now []interface{} for Bitnami chart compatibility
+	extraArgs, ok := values["extraArgs"].([]interface{})
 	require.True(t, ok)
 	assert.Contains(t, extraArgs, "--pdns-server=http://powerdns:8081")
 	assert.Contains(t, extraArgs, "--pdns-api-key=secret-key")
-	assert.Contains(t, extraArgs, "--pdns-server-id=my-server")
-}
-
-func TestBuildHelmValues_PowerDNS_DefaultServerID(t *testing.T) {
-	cfg := &Config{
-		Provider: ProviderPowerDNS,
-		PowerDNS: &PowerDNSConfig{
-			APIUrl:   "http://powerdns:8081",
-			APIKey:   "secret-key",
-			ServerID: "", // Empty, should default to localhost
-		},
-		Sources:    []string{"ingress"},
-		Policy:     "sync",
-		TxtOwnerId: "test",
-		Values:     map[string]interface{}{},
-	}
-
-	values := buildHelmValues(cfg)
-
-	extraArgs, ok := values["extraArgs"].([]string)
-	require.True(t, ok)
-	assert.Contains(t, extraArgs, "--pdns-server-id=localhost")
 }
 
 func TestBuildHelmValues_Cloudflare(t *testing.T) {
@@ -253,8 +230,8 @@ func TestBuildHelmValues_Cloudflare(t *testing.T) {
 	assert.Equal(t, "CF_API_TOKEN", env[0]["name"])
 	assert.Equal(t, "cf-token-123", env[0]["value"])
 
-	// Check proxied flag
-	extraArgs, ok := values["extraArgs"].([]string)
+	// Check proxied flag - now []interface{} for Bitnami chart compatibility
+	extraArgs, ok := values["extraArgs"].([]interface{})
 	require.True(t, ok)
 	assert.Contains(t, extraArgs, "--cloudflare-proxied")
 }
@@ -275,12 +252,8 @@ func TestBuildHelmValues_Cloudflare_NotProxied(t *testing.T) {
 	values := buildHelmValues(cfg)
 
 	// Should not have proxied flag
-	extraArgs, ok := values["extraArgs"].([]string)
-	if ok {
-		for _, arg := range extraArgs {
-			assert.NotContains(t, arg, "cloudflare-proxied")
-		}
-	}
+	_, hasExtraArgs := values["extraArgs"]
+	assert.False(t, hasExtraArgs, "Should not have extraArgs when not proxied")
 }
 
 func TestBuildHelmValues_RFC2136(t *testing.T) {

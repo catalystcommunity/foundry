@@ -287,8 +287,6 @@ type InfrastructureRecordConfig struct {
 	DNSIP string
 	// ZotIP is the IP address for Zot registry service
 	ZotIP string
-	// TrueNASIP is the IP address for TrueNAS (optional)
-	TrueNASIP string
 	// K8sVIP is the virtual IP for Kubernetes API
 	K8sVIP string
 	// IsPublic indicates if split-horizon is configured
@@ -324,7 +322,7 @@ func (i *InfrastructureRecordConfig) Validate() error {
 }
 
 // InitializeInfrastructureDNS creates all infrastructure DNS records
-// This includes A records for: openbao, dns, zot, truenas (if configured), and k8s
+// This includes A records for: openbao, dns, zot, and k8s
 // For public zones with split-horizon, CNAME records are also added for external access
 func InitializeInfrastructureDNS(client *Client, config InfrastructureRecordConfig) error {
 	if err := config.Validate(); err != nil {
@@ -344,13 +342,6 @@ func InitializeInfrastructureDNS(client *Client, config InfrastructureRecordConf
 	// Add A record for Zot: zot.<zone> -> Zot IP
 	if err := AddARecord(client, config.Zone, "zot", config.ZotIP); err != nil {
 		return fmt.Errorf("failed to add zot A record: %w", err)
-	}
-
-	// Add A record for TrueNAS if configured: truenas.<zone> -> TrueNAS IP
-	if config.TrueNASIP != "" {
-		if err := AddARecord(client, config.Zone, "truenas", config.TrueNASIP); err != nil {
-			return fmt.Errorf("failed to add truenas A record: %w", err)
-		}
 	}
 
 	// Add A record for K8s: k8s.<zone> -> K8s VIP
