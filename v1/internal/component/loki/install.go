@@ -40,20 +40,14 @@ func Install(ctx context.Context, helmClient HelmClient, k8sClient K8sClient, cf
 	values := buildHelmValues(cfg)
 
 	// Check if release already exists
+	var releaseExists bool
 	releases, err := helmClient.List(ctx, cfg.Namespace)
 	if err == nil {
 		for _, rel := range releases {
 			if rel.Name == releaseName {
 				if rel.Status == "deployed" {
-					fmt.Println("  Loki already installed")
-					if err := verifyInstallation(ctx, k8sClient, cfg.Namespace); err != nil {
-						return err
-					}
-					// Install Promtail if enabled
-					if cfg.PromtailEnabled {
-						return installPromtail(ctx, helmClient, k8sClient, cfg)
-					}
-					return nil
+					releaseExists = true
+					break
 				}
 				// Uninstall failed release
 				fmt.Printf("  Removing failed release (status: %s)...\n", rel.Status)
@@ -68,18 +62,34 @@ func Install(ctx context.Context, helmClient HelmClient, k8sClient K8sClient, cf
 		}
 	}
 
-	// Install Loki via Helm
-	if err := helmClient.Install(ctx, helm.InstallOptions{
-		ReleaseName:     releaseName,
-		Namespace:       cfg.Namespace,
-		Chart:           lokiChart,
-		Version:         cfg.Version,
-		Values:          values,
-		CreateNamespace: true,
-		Wait:            false, // Don't wait - Loki takes time to start
-		Timeout:         2 * time.Minute,
-	}); err != nil {
-		return fmt.Errorf("failed to install loki: %w", err)
+	if releaseExists {
+		// Upgrade existing release
+		fmt.Println("  Upgrading Loki...")
+		if err := helmClient.Upgrade(ctx, helm.UpgradeOptions{
+			ReleaseName: releaseName,
+			Namespace:   cfg.Namespace,
+			Chart:       lokiChart,
+			Version:     cfg.Version,
+			Values:      values,
+			Wait:        false,
+			Timeout:     2 * time.Minute,
+		}); err != nil {
+			return fmt.Errorf("failed to upgrade loki: %w", err)
+		}
+	} else {
+		// Install Loki via Helm
+		if err := helmClient.Install(ctx, helm.InstallOptions{
+			ReleaseName:     releaseName,
+			Namespace:       cfg.Namespace,
+			Chart:           lokiChart,
+			Version:         cfg.Version,
+			Values:          values,
+			CreateNamespace: true,
+			Wait:            false, // Don't wait - Loki takes time to start
+			Timeout:         2 * time.Minute,
+		}); err != nil {
+			return fmt.Errorf("failed to install loki: %w", err)
+		}
 	}
 
 	// Skip verification - Loki takes time to initialize with S3
@@ -252,6 +262,9 @@ func buildHelmValues(cfg *Config) map[string]interface{} {
 		values["gateway"].(map[string]interface{})["ingress"] = map[string]interface{}{
 			"enabled":          true,
 			"ingressClassName": "contour",
+			"annotations": map[string]interface{}{
+				"cert-manager.io/cluster-issuer": "foundry-ca-issuer",
+			},
 			"hosts": []map[string]interface{}{
 				{
 					"host": cfg.IngressHost,

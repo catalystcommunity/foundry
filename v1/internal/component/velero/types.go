@@ -184,7 +184,7 @@ func (c *Component) Uninstall(ctx context.Context) error {
 
 // Dependencies returns the list of components that Velero depends on
 func (c *Component) Dependencies() []string {
-	return []string{"garage"} // Velero needs Garage for S3-compatible backup storage
+	return []string{"seaweedfs"} // Velero needs SeaweedFS for S3-compatible backup storage
 }
 
 // DefaultConfig returns a Config with sensible defaults
@@ -193,11 +193,11 @@ func DefaultConfig() *Config {
 		Version:                        "8.0.0", // Velero Helm chart version
 		Namespace:                      "velero",
 		Provider:                       ProviderS3,
-		S3Endpoint:                     "http://garage.garage.svc.cluster.local:3900",
+		S3Endpoint:                     "http://seaweedfs-s3.seaweedfs.svc.cluster.local:8333",
 		S3Bucket:                       "velero",
-		S3Region:                       "garage",
-		S3InsecureSkipTLSVerify:        true, // Garage typically runs without TLS internally
-		S3ForcePathStyle:               true, // Required for Garage
+		S3Region:                       "us-east-1",
+		S3InsecureSkipTLSVerify:        true, // SeaweedFS typically runs without TLS internally
+		S3ForcePathStyle:               true, // Required for SeaweedFS
 		DefaultBackupStorageLocation:   true,
 		DefaultVolumeSnapshotLocations: false,
 		BackupRetentionDays:            30,

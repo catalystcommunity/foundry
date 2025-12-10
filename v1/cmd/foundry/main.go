@@ -11,6 +11,7 @@ import (
 	configcmd "github.com/catalystcommunity/foundry/v1/cmd/foundry/commands/config"
 	dashboardcmd "github.com/catalystcommunity/foundry/v1/cmd/foundry/commands/dashboard"
 	dnscmd "github.com/catalystcommunity/foundry/v1/cmd/foundry/commands/dns"
+	grafanacmd "github.com/catalystcommunity/foundry/v1/cmd/foundry/commands/grafana"
 	hostcmd "github.com/catalystcommunity/foundry/v1/cmd/foundry/commands/host"
 	logscmd "github.com/catalystcommunity/foundry/v1/cmd/foundry/commands/logs"
 	metricscmd "github.com/catalystcommunity/foundry/v1/cmd/foundry/commands/metrics"
@@ -61,6 +62,7 @@ func main() {
 			configcmd.Command,
 			dashboardcmd.Command,
 			dnscmd.Command,
+			grafanacmd.Command,
 			hostcmd.Command,
 			logscmd.Command,
 			metricscmd.Command,

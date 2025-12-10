@@ -187,9 +187,10 @@ components:
 
 # Optional: Storage configuration (Phase 3)
 # storage:
-#   truenas:
-#     api_url: https://truenas.example.com
-#     api_key: ${secret:foundry-core/truenas:api_key}
+#   backend: longhorn  # Options: local-path, nfs, longhorn
+#   longhorn:
+#     replica_count: 3
+#     data_path: /var/lib/longhorn
 
 setup_state:
   network_planned: false

@@ -31,7 +31,7 @@ func TestInitComponents(t *testing.T) {
 		"contour",
 		"cert-manager",
 		"storage",
-		"garage",
+		"seaweedfs",
 		"prometheus",
 		"loki",
 		"grafana",
@@ -70,7 +70,7 @@ func TestInitComponents_ComponentNames(t *testing.T) {
 		{name: "contour"},
 		{name: "cert-manager"},
 		{name: "storage"},
-		{name: "garage"},
+		{name: "seaweedfs"},
 		{name: "prometheus"},
 		{name: "loki"},
 		{name: "grafana"},
@@ -136,7 +136,7 @@ func TestInitComponents_Dependencies(t *testing.T) {
 			dependencies: []string{"k3s"},
 		},
 		{
-			name:         "garage",
+			name:         "seaweedfs",
 			dependencies: []string{"storage"},
 		},
 		{
@@ -145,7 +145,7 @@ func TestInitComponents_Dependencies(t *testing.T) {
 		},
 		{
 			name:         "loki",
-			dependencies: []string{"storage", "garage"},
+			dependencies: []string{"storage", "seaweedfs"},
 		},
 		{
 			name:         "grafana",
@@ -157,7 +157,7 @@ func TestInitComponents_Dependencies(t *testing.T) {
 		},
 		{
 			name:         "velero",
-			dependencies: []string{"garage"},
+			dependencies: []string{"seaweedfs"},
 		},
 	}
 

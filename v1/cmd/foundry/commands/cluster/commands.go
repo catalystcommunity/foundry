@@ -26,6 +26,7 @@ func nodeCommands() *cli.Command {
 			NewNodeAddCommand(),
 			NewNodeRemoveCommand(),
 			NewNodeListCommand(),
+			NewNodeLabelCommand(),
 		},
 	}
 }

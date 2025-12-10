@@ -21,9 +21,9 @@ func TestDefaultConfig(t *testing.T) {
 	assert.Equal(t, 30, config.RetentionDays)
 	assert.Equal(t, "", config.StorageClass)
 	assert.Equal(t, "10Gi", config.StorageSize)
-	assert.Equal(t, "http://garage.garage.svc.cluster.local:3900", config.S3Endpoint)
+	assert.Equal(t, "http://seaweedfs-s3.seaweedfs.svc.cluster.local:8333", config.S3Endpoint)
 	assert.Equal(t, "loki", config.S3Bucket)
-	assert.Equal(t, "garage", config.S3Region)
+	assert.Equal(t, "us-east-1", config.S3Region)
 	assert.True(t, config.PromtailEnabled)
 	assert.False(t, config.GrafanaAgentEnabled)
 	assert.False(t, config.IngressEnabled)
@@ -233,7 +233,7 @@ func TestComponent_Dependencies(t *testing.T) {
 
 	require.Len(t, deps, 2)
 	assert.Contains(t, deps, "storage")
-	assert.Contains(t, deps, "garage")
+	assert.Contains(t, deps, "seaweedfs")
 }
 
 func TestComponent_Install_NilHelmClient(t *testing.T) {

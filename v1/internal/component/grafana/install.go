@@ -39,13 +39,14 @@ func Install(ctx context.Context, helmClient HelmClient, k8sClient K8sClient, cf
 	values := buildHelmValues(cfg)
 
 	// Check if release already exists
+	var releaseExists bool
 	releases, err := helmClient.List(ctx, cfg.Namespace)
 	if err == nil {
 		for _, rel := range releases {
 			if rel.Name == releaseName {
 				if rel.Status == "deployed" {
-					fmt.Println("  Grafana already installed")
-					return verifyInstallation(ctx, k8sClient, cfg.Namespace)
+					releaseExists = true
+					break
 				}
 				// Uninstall failed release
 				fmt.Printf("  Removing failed release (status: %s)...\n", rel.Status)
@@ -60,18 +61,34 @@ func Install(ctx context.Context, helmClient HelmClient, k8sClient K8sClient, cf
 		}
 	}
 
-	// Install Grafana via Helm
-	if err := helmClient.Install(ctx, helm.InstallOptions{
-		ReleaseName:     releaseName,
-		Namespace:       cfg.Namespace,
-		Chart:           grafanaChart,
-		Version:         cfg.Version,
-		Values:          values,
-		CreateNamespace: true,
-		Wait:            true,
-		Timeout:         10 * time.Minute,
-	}); err != nil {
-		return fmt.Errorf("failed to install grafana: %w", err)
+	if releaseExists {
+		// Upgrade existing release
+		fmt.Println("  Upgrading Grafana...")
+		if err := helmClient.Upgrade(ctx, helm.UpgradeOptions{
+			ReleaseName: releaseName,
+			Namespace:   cfg.Namespace,
+			Chart:       grafanaChart,
+			Version:     cfg.Version,
+			Values:      values,
+			Wait:        true,
+			Timeout:     10 * time.Minute,
+		}); err != nil {
+			return fmt.Errorf("failed to upgrade grafana: %w", err)
+		}
+	} else {
+		// Install Grafana via Helm
+		if err := helmClient.Install(ctx, helm.InstallOptions{
+			ReleaseName:     releaseName,
+			Namespace:       cfg.Namespace,
+			Chart:           grafanaChart,
+			Version:         cfg.Version,
+			Values:          values,
+			CreateNamespace: true,
+			Wait:            true,
+			Timeout:         10 * time.Minute,
+		}); err != nil {
+			return fmt.Errorf("failed to install grafana: %w", err)
+		}
 	}
 
 	// Verify installation
@@ -134,6 +151,9 @@ func buildHelmValues(cfg *Config) map[string]interface{} {
 			"enabled":          true,
 			"ingressClassName": "contour",
 			"hosts":            []string{cfg.IngressHost},
+			"annotations": map[string]interface{}{
+				"cert-manager.io/cluster-issuer": "foundry-ca-issuer",
+			},
 			"tls": []map[string]interface{}{
 				{
 					"hosts":      []string{cfg.IngressHost},

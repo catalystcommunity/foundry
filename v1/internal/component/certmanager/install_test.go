@@ -29,6 +29,11 @@ func (m *MockHelmClient) Install(ctx context.Context, opts helm.InstallOptions) 
 	return args.Error(0)
 }
 
+func (m *MockHelmClient) Upgrade(ctx context.Context, opts helm.UpgradeOptions) error {
+	args := m.Called(ctx, opts)
+	return args.Error(0)
+}
+
 func (m *MockHelmClient) List(ctx context.Context, namespace string) ([]helm.Release, error) {
 	args := m.Called(ctx, namespace)
 	if args.Get(0) == nil {
@@ -93,6 +98,9 @@ func TestInstall_Success(t *testing.T) {
 		URL:  DefaultRepoURL,
 	}).Return(nil)
 
+	// Expect list to check for existing release (none found)
+	mockHelm.On("List", ctx, "cert-manager").Return([]helm.Release{}, nil)
+
 	// Expect install
 	mockHelm.On("Install", ctx, mock.MatchedBy(func(opts helm.InstallOptions) bool {
 		return opts.ReleaseName == DefaultReleaseName &&
@@ -137,6 +145,7 @@ func TestInstall_NamespaceCreated(t *testing.T) {
 	mockK8s.On("CreateNamespace", ctx, "custom-ns").Return(nil)
 
 	mockHelm.On("AddRepo", ctx, mock.Anything).Return(nil)
+	mockHelm.On("List", ctx, "custom-ns").Return([]helm.Release{}, nil)
 	mockHelm.On("Install", ctx, mock.Anything).Return(nil)
 	mockK8s.On("GetPods", ctx, "custom-ns").Return([]*k8s.Pod{
 		{Name: "cert-manager-1", Ready: true},
@@ -168,6 +177,7 @@ func TestInstall_WithDefaultIssuer_SelfSigned(t *testing.T) {
 
 	mockK8s.On("GetNamespace", ctx, "cert-manager").Return(&k8s.Namespace{}, nil)
 	mockHelm.On("AddRepo", ctx, mock.Anything).Return(nil)
+	mockHelm.On("List", ctx, "cert-manager").Return([]helm.Release{}, nil)
 	mockHelm.On("Install", ctx, mock.Anything).Return(nil)
 	mockK8s.On("GetPods", ctx, "cert-manager").Return([]*k8s.Pod{
 		{Name: "cert-manager-1", Ready: true},
@@ -208,6 +218,7 @@ func TestInstall_WithDefaultIssuer_ACME(t *testing.T) {
 
 	mockK8s.On("GetNamespace", ctx, "cert-manager").Return(&k8s.Namespace{}, nil)
 	mockHelm.On("AddRepo", ctx, mock.Anything).Return(nil)
+	mockHelm.On("List", ctx, "cert-manager").Return([]helm.Release{}, nil)
 	mockHelm.On("Install", ctx, mock.Anything).Return(nil)
 	mockK8s.On("GetPods", ctx, "cert-manager").Return([]*k8s.Pod{
 		{Name: "cert-manager-1", Ready: true},
@@ -246,6 +257,7 @@ func TestInstall_WithDefaultIssuer_ACME_NoEmail(t *testing.T) {
 
 	mockK8s.On("GetNamespace", ctx, "cert-manager").Return(&k8s.Namespace{}, nil)
 	mockHelm.On("AddRepo", ctx, mock.Anything).Return(nil)
+	mockHelm.On("List", ctx, "cert-manager").Return([]helm.Release{}, nil)
 	mockHelm.On("Install", ctx, mock.Anything).Return(nil)
 	mockK8s.On("GetPods", ctx, "cert-manager").Return([]*k8s.Pod{
 		{Name: "cert-manager-1", Ready: true},
@@ -313,6 +325,7 @@ func TestInstall_HelmInstallFails(t *testing.T) {
 
 	mockK8s.On("GetNamespace", ctx, "cert-manager").Return(&k8s.Namespace{}, nil)
 	mockHelm.On("AddRepo", ctx, mock.Anything).Return(nil)
+	mockHelm.On("List", ctx, "cert-manager").Return([]helm.Release{}, nil)
 	mockHelm.On("Install", ctx, mock.Anything).Return(fmt.Errorf("install failed"))
 
 	componentCfg := component.ComponentConfig{

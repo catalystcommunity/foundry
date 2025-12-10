@@ -39,13 +39,14 @@ func Install(ctx context.Context, helmClient HelmClient, k8sClient K8sClient, cf
 	values := buildHelmValues(cfg)
 
 	// Check if release already exists
+	var releaseExists bool
 	releases, err := helmClient.List(ctx, cfg.Namespace)
 	if err == nil {
 		for _, rel := range releases {
 			if rel.Name == releaseName {
 				if rel.Status == "deployed" {
-					fmt.Println("  Prometheus stack already installed")
-					return verifyInstallation(ctx, k8sClient, cfg.Namespace)
+					releaseExists = true
+					break
 				}
 				// Uninstall failed release
 				fmt.Printf("  Removing failed release (status: %s)...\n", rel.Status)
@@ -60,18 +61,34 @@ func Install(ctx context.Context, helmClient HelmClient, k8sClient K8sClient, cf
 		}
 	}
 
-	// Install kube-prometheus-stack via Helm
-	if err := helmClient.Install(ctx, helm.InstallOptions{
-		ReleaseName:     releaseName,
-		Namespace:       cfg.Namespace,
-		Chart:           prometheusChart,
-		Version:         cfg.Version,
-		Values:          values,
-		CreateNamespace: true,
-		Wait:            true,
-		Timeout:         15 * time.Minute, // Prometheus stack can take a while
-	}); err != nil {
-		return fmt.Errorf("failed to install prometheus stack: %w", err)
+	if releaseExists {
+		// Upgrade existing release
+		fmt.Println("  Upgrading Prometheus stack...")
+		if err := helmClient.Upgrade(ctx, helm.UpgradeOptions{
+			ReleaseName: releaseName,
+			Namespace:   cfg.Namespace,
+			Chart:       prometheusChart,
+			Version:     cfg.Version,
+			Values:      values,
+			Wait:        true,
+			Timeout:     15 * time.Minute,
+		}); err != nil {
+			return fmt.Errorf("failed to upgrade prometheus stack: %w", err)
+		}
+	} else {
+		// Install kube-prometheus-stack via Helm
+		if err := helmClient.Install(ctx, helm.InstallOptions{
+			ReleaseName:     releaseName,
+			Namespace:       cfg.Namespace,
+			Chart:           prometheusChart,
+			Version:         cfg.Version,
+			Values:          values,
+			CreateNamespace: true,
+			Wait:            true,
+			Timeout:         15 * time.Minute, // Prometheus stack can take a while
+		}); err != nil {
+			return fmt.Errorf("failed to install prometheus stack: %w", err)
+		}
 	}
 
 	// Verify installation
@@ -155,6 +172,9 @@ func buildHelmValues(cfg *Config) map[string]interface{} {
 			"enabled":          true,
 			"ingressClassName": "contour",
 			"hosts":            []string{cfg.IngressHost},
+			"annotations": map[string]interface{}{
+				"cert-manager.io/cluster-issuer": "foundry-ca-issuer",
+			},
 			"tls": []map[string]interface{}{
 				{
 					"hosts":      []string{cfg.IngressHost},

@@ -9,8 +9,8 @@ import (
 	"github.com/catalystcommunity/foundry/v1/internal/component/gatewayapi"
 	"github.com/catalystcommunity/foundry/v1/internal/component/grafana"
 	"github.com/catalystcommunity/foundry/v1/internal/component/k3s"
-	"github.com/catalystcommunity/foundry/v1/internal/component/garage"
 	"github.com/catalystcommunity/foundry/v1/internal/component/loki"
+	"github.com/catalystcommunity/foundry/v1/internal/component/seaweedfs"
 	"github.com/catalystcommunity/foundry/v1/internal/component/openbao"
 	"github.com/catalystcommunity/foundry/v1/internal/component/prometheus"
 	"github.com/catalystcommunity/foundry/v1/internal/component/storage"
@@ -65,16 +65,16 @@ func InitComponents() error {
 	}
 
 	// Register storage - depends on K3s
-	// Storage provides PVC provisioning via local-path, NFS, or TrueNAS CSI
+	// Storage provides PVC provisioning via local-path, NFS, or Longhorn
 	storageComp := storage.NewComponent(nil, nil)
 	if err := component.Register(storageComp); err != nil {
 		return err
 	}
 
-	// Register Garage - depends on storage for PVCs
-	// Garage provides S3-compatible object storage for Loki, Velero, etc.
-	garageComp := garage.NewComponent(nil, nil)
-	if err := component.Register(garageComp); err != nil {
+	// Register SeaweedFS - depends on storage for PVCs
+	// SeaweedFS provides S3-compatible object storage for Loki, Velero, etc.
+	seaweedfsComp := seaweedfs.NewComponent(nil, nil)
+	if err := component.Register(seaweedfsComp); err != nil {
 		return err
 	}
 
@@ -85,7 +85,7 @@ func InitComponents() error {
 		return err
 	}
 
-	// Register Loki - depends on storage and garage for log storage
+	// Register Loki - depends on storage and seaweedfs for log storage
 	// Loki provides centralized log aggregation
 	lokiComp := loki.NewComponent(nil, nil)
 	if err := component.Register(lokiComp); err != nil {
@@ -106,7 +106,7 @@ func InitComponents() error {
 		return err
 	}
 
-	// Register Velero - depends on garage for backups
+	// Register Velero - depends on seaweedfs for backups
 	// Velero provides cluster backup and restore capabilities
 	veleroComp := velero.NewComponent(nil, nil)
 	if err := component.Register(veleroComp); err != nil {

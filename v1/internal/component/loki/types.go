@@ -161,7 +161,7 @@ func (c *Component) Uninstall(ctx context.Context) error {
 
 // Dependencies returns the list of components that Loki depends on
 func (c *Component) Dependencies() []string {
-	return []string{"storage", "garage"} // Loki needs storage and Garage for S3
+	return []string{"storage", "seaweedfs"} // Loki needs storage and SeaweedFS for S3
 }
 
 // DefaultConfig returns a Config with sensible defaults
@@ -170,13 +170,13 @@ func DefaultConfig() *Config {
 		Version:             "6.23.0", // loki Helm chart version
 		Namespace:           "loki",
 		DeploymentMode:      "SingleBinary", // Simple for homelab
-		StorageBackend:      BackendS3,      // Use Garage by default
+		StorageBackend:      BackendS3,      // Use SeaweedFS by default
 		RetentionDays:       30,
 		StorageClass:        "", // Use cluster default
 		StorageSize:         "10Gi",
-		S3Endpoint:          "http://garage.garage.svc.cluster.local:3900",
+		S3Endpoint:          "http://seaweedfs-s3.seaweedfs.svc.cluster.local:8333",
 		S3Bucket:            "loki",
-		S3Region:            "garage",
+		S3Region:            "us-east-1",
 		PromtailEnabled:     true,
 		GrafanaAgentEnabled: false,
 		IngressEnabled:      false,

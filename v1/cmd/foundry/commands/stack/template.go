@@ -158,14 +158,14 @@ dns:
   #     public: true
   #     public_cname: my-ingress-loadbalancer.example.com
 
-# Storage Configuration (optional - for TrueNAS backend)
-# Uncomment and fill in to use TrueNAS instead of local-path storage.
-# The API key will be stored in OpenBAO during install.
+# Storage Configuration (optional - for Longhorn backend)
+# Uncomment and fill in to use Longhorn distributed storage instead of local-path.
 #
 # storage:
-#   truenas:
-#     api_url: http://<TRUENAS_IP>        # Example: "http://10.16.0.50"
-#     api_key: <TRUENAS_API_KEY>          # TrueNAS API key (will be moved to OpenBAO)
+#   backend: longhorn  # Options: local-path, nfs, longhorn
+#   longhorn:
+#     replica_count: 3
+#     data_path: /var/lib/longhorn
 
 # Component Configuration (minimal - auto-installed during stack install)
 components:

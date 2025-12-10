@@ -25,6 +25,7 @@ const (
 type HelmClient interface {
 	AddRepo(ctx context.Context, opts helm.RepoAddOptions) error
 	Install(ctx context.Context, opts helm.InstallOptions) error
+	Upgrade(ctx context.Context, opts helm.UpgradeOptions) error
 	List(ctx context.Context, namespace string) ([]helm.Release, error)
 	Uninstall(ctx context.Context, opts helm.UninstallOptions) error
 }
@@ -73,17 +74,56 @@ func Install(ctx context.Context, cfg *Config, componentCfg component.ComponentC
 		},
 	}
 
-	// Install cert-manager via Helm
-	if err := helmClient.Install(ctx, helm.InstallOptions{
-		ReleaseName: DefaultReleaseName,
-		Chart:       DefaultChartName,
-		Namespace:   cfg.Namespace,
-		Version:     cfg.Version,
-		Values:      values,
-		Wait:        true,
-		Timeout:     5 * time.Minute,
-	}); err != nil {
-		return fmt.Errorf("failed to install cert-manager: %w", err)
+	// Check if release already exists
+	var releaseExists bool
+	releases, err := helmClient.List(ctx, cfg.Namespace)
+	if err == nil {
+		for _, rel := range releases {
+			if rel.Name == DefaultReleaseName {
+				if rel.Status == "deployed" {
+					releaseExists = true
+					break
+				}
+				// Uninstall failed release
+				fmt.Printf("  Removing failed release (status: %s)...\n", rel.Status)
+				if err := helmClient.Uninstall(ctx, helm.UninstallOptions{
+					ReleaseName: DefaultReleaseName,
+					Namespace:   cfg.Namespace,
+				}); err != nil {
+					return fmt.Errorf("failed to uninstall existing release: %w", err)
+				}
+				break
+			}
+		}
+	}
+
+	if releaseExists {
+		// Upgrade existing release
+		fmt.Println("  Upgrading cert-manager...")
+		if err := helmClient.Upgrade(ctx, helm.UpgradeOptions{
+			ReleaseName: DefaultReleaseName,
+			Chart:       DefaultChartName,
+			Namespace:   cfg.Namespace,
+			Version:     cfg.Version,
+			Values:      values,
+			Wait:        true,
+			Timeout:     5 * time.Minute,
+		}); err != nil {
+			return fmt.Errorf("failed to upgrade cert-manager: %w", err)
+		}
+	} else {
+		// Install cert-manager via Helm
+		if err := helmClient.Install(ctx, helm.InstallOptions{
+			ReleaseName: DefaultReleaseName,
+			Chart:       DefaultChartName,
+			Namespace:   cfg.Namespace,
+			Version:     cfg.Version,
+			Values:      values,
+			Wait:        true,
+			Timeout:     5 * time.Minute,
+		}); err != nil {
+			return fmt.Errorf("failed to install cert-manager: %w", err)
+		}
 	}
 
 	// Wait for cert-manager pods to be ready
@@ -194,7 +234,9 @@ func createDefaultIssuer(ctx context.Context, k8sClient K8sClient, cfg *Config) 
 	return k8sClient.ApplyManifest(ctx, manifest)
 }
 
-// generateSelfSignedIssuer generates a self-signed ClusterIssuer manifest
+// generateSelfSignedIssuer generates a self-signed ClusterIssuer and CA issuer manifest
+// This creates a chain: selfsigned-issuer -> foundry-ca Certificate -> foundry-ca-issuer
+// The foundry-ca-issuer can then sign certificates for all services
 func generateSelfSignedIssuer() string {
 	return `apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
@@ -202,6 +244,33 @@ metadata:
   name: selfsigned-issuer
 spec:
   selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: foundry-ca
+  namespace: cert-manager
+spec:
+  isCA: true
+  commonName: foundry-ca
+  secretName: foundry-ca-secret
+  duration: 87600h # 10 years
+  renewBefore: 720h # 30 days
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: selfsigned-issuer
+    kind: ClusterIssuer
+    group: cert-manager.io
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: foundry-ca-issuer
+spec:
+  ca:
+    secretName: foundry-ca-secret
 `
 }
 

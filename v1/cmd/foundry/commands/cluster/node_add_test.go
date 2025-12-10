@@ -357,22 +357,31 @@ func TestPrintNodeAddPlan(t *testing.T) {
 	tests := []struct {
 		name     string
 		role     *k3s.DeterminedRole
+		labels   map[string]string
 		expected []string
 	}{
 		{
 			name:     "control-plane role",
 			role:     &k3s.DeterminedRole{Role: k3s.RoleControlPlane, IsControlPlane: true, IsWorker: false},
+			labels:   nil,
 			expected: []string{"control-plane", "Join as control plane"},
 		},
 		{
 			name:     "worker role",
 			role:     &k3s.DeterminedRole{Role: k3s.RoleWorker, IsControlPlane: false, IsWorker: true},
+			labels:   nil,
 			expected: []string{"worker", "Join as worker"},
 		},
 		{
 			name:     "both role",
 			role:     &k3s.DeterminedRole{Role: k3s.RoleBoth, IsControlPlane: true, IsWorker: true},
+			labels:   nil,
 			expected: []string{"both (control-plane + worker)", "Join as control plane"},
+		},
+		{
+			name:   "with labels",
+			role:   &k3s.DeterminedRole{Role: k3s.RoleWorker, IsControlPlane: false, IsWorker: true},
+			labels: map[string]string{"environment": "production"},
 		},
 	}
 
@@ -388,7 +397,76 @@ func TestPrintNodeAddPlan(t *testing.T) {
 
 			// Just verify the function doesn't panic
 			// Output verification would require capturing stdout
-			printNodeAddPlan("test.example.com", tt.role, cfg)
+			printNodeAddPlan("test.example.com", tt.role, cfg, tt.labels)
+		})
+	}
+}
+
+func TestParseNodeAddLabels(t *testing.T) {
+	tests := []struct {
+		name       string
+		args       []string
+		wantLabels map[string]string
+		wantErr    bool
+		errMsg     string
+	}{
+		{
+			name:       "single label",
+			args:       []string{"environment=production"},
+			wantLabels: map[string]string{"environment": "production"},
+			wantErr:    false,
+		},
+		{
+			name:       "multiple labels",
+			args:       []string{"environment=production", "zone=us-east-1a"},
+			wantLabels: map[string]string{"environment": "production", "zone": "us-east-1a"},
+			wantErr:    false,
+		},
+		{
+			name:       "empty args",
+			args:       []string{},
+			wantLabels: map[string]string{},
+			wantErr:    false,
+		},
+		{
+			name:       "label with prefix",
+			args:       []string{"app.example.com/tier=frontend"},
+			wantLabels: map[string]string{"app.example.com/tier": "frontend"},
+			wantErr:    false,
+		},
+		{
+			name:    "invalid format - no equals",
+			args:    []string{"invalid"},
+			wantErr: true,
+			errMsg:  "invalid label format",
+		},
+		{
+			name:    "invalid key",
+			args:    []string{"-invalid=value"},
+			wantErr: true,
+			errMsg:  "invalid label key",
+		},
+		{
+			name:    "system label",
+			args:    []string{"kubernetes.io/hostname=node1"},
+			wantErr: true,
+			errMsg:  "cannot set system label",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			labels, err := parseNodeAddLabels(tt.args)
+
+			if tt.wantErr {
+				require.Error(t, err)
+				if tt.errMsg != "" {
+					assert.Contains(t, err.Error(), tt.errMsg)
+				}
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, tt.wantLabels, labels)
+			}
 		})
 	}
 }

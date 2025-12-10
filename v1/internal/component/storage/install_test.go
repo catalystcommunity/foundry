@@ -11,7 +11,9 @@ import (
 )
 
 func TestInstall_LocalPath_Success(t *testing.T) {
-	helmClient := &mockHelmClient{}
+	helmClient := &mockHelmClient{
+		listErr: assert.AnError, // Force List to fail so code proceeds to install
+	}
 	k8sClient := &mockK8sClient{}
 
 	cfg := DefaultConfig()
@@ -161,14 +163,15 @@ func TestInstall_NilConfig(t *testing.T) {
 	err := Install(context.Background(), helmClient, k8sClient, nil)
 	require.NoError(t, err)
 
-	// Verify installation happened with defaults
-	require.Len(t, helmClient.chartsInstalled, 1)
-	assert.Equal(t, "local-path-provisioner", helmClient.chartsInstalled[0].ReleaseName)
+	// With local-path backend and no existing helm releases found, the code
+	// assumes K3s built-in provisioner is available and skips installation
+	assert.Empty(t, helmClient.chartsInstalled)
 }
 
 func TestInstall_AddRepoError(t *testing.T) {
 	helmClient := &mockHelmClient{
 		addRepoErr: assert.AnError,
+		listErr:    assert.AnError, // Force List to fail so code falls through to AddRepo
 	}
 	k8sClient := &mockK8sClient{}
 
@@ -180,6 +183,7 @@ func TestInstall_AddRepoError(t *testing.T) {
 func TestInstall_InstallChartError(t *testing.T) {
 	helmClient := &mockHelmClient{
 		installErr: assert.AnError,
+		listErr:    assert.AnError, // Force List to fail so code falls through to Install
 	}
 	k8sClient := &mockK8sClient{}
 

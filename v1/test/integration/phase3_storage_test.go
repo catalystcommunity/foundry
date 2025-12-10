@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/catalystcommunity/foundry/v1/internal/component/garage"
+	"github.com/catalystcommunity/foundry/v1/internal/component/seaweedfs"
 	"github.com/catalystcommunity/foundry/v1/internal/component/storage"
 	"github.com/catalystcommunity/foundry/v1/internal/helm"
 	"github.com/catalystcommunity/foundry/v1/internal/k8s"
@@ -94,24 +94,24 @@ func TestPhase3_StorageProvisioning(t *testing.T) {
 	t.Log("  ✓ Data persistence verified")
 }
 
-// TestPhase3_GarageDeployment tests Garage deployment with S3 API access
+// TestPhase3_SeaweedFSDeployment tests SeaweedFS deployment with S3 API access
 // This test validates:
 // 1. Storage component is working
-// 2. Garage can be deployed via Helm
-// 3. Garage pods are running
+// 2. SeaweedFS can be deployed via Helm
+// 3. SeaweedFS pods are running
 // 4. S3 endpoint is accessible
-func TestPhase3_GarageDeployment(t *testing.T) {
+func TestPhase3_SeaweedFSDeployment(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
 
 	ctx := context.Background()
 
-	t.Log("=== Starting Phase 3 Storage Integration Test: Garage Deployment ===")
+	t.Log("=== Starting Phase 3 Storage Integration Test: SeaweedFS Deployment ===")
 
 	// Step 1: Create Kind cluster
 	t.Log("\n[1/7] Creating Kind cluster...")
-	clusterName := fmt.Sprintf("foundry-garage-test-%d", time.Now().Unix())
+	clusterName := fmt.Sprintf("foundry-seaweedfs-test-%d", time.Now().Unix())
 	kubeconfigData, cleanupKind := createKindCluster(ctx, t, clusterName)
 	t.Logf("✓ Kind cluster '%s' created", clusterName)
 
@@ -130,39 +130,39 @@ func TestPhase3_GarageDeployment(t *testing.T) {
 	require.NoError(t, err, "Should create K8s client")
 	t.Log("✓ Helm and K8s clients created")
 
-	// Step 3: Deploy local-path-provisioner first (Garage needs storage)
+	// Step 3: Deploy local-path-provisioner first (SeaweedFS needs storage)
 	t.Log("\n[3/7] Deploying local-path-provisioner...")
 	deployLocalPathProvisioner(t, ctx, helmClient, k8sClient)
 	t.Log("✓ local-path-provisioner deployed")
 
-	// Step 4: Deploy Garage
-	t.Log("\n[4/7] Deploying Garage...")
-	deployGarage(t, ctx, helmClient, k8sClient)
-	t.Log("✓ Garage deployed")
+	// Step 4: Deploy SeaweedFS
+	t.Log("\n[4/7] Deploying SeaweedFS...")
+	deploySeaweedFS(t, ctx, helmClient, k8sClient)
+	t.Log("✓ SeaweedFS deployed")
 
-	// Step 5: Verify Garage pods are running
-	t.Log("\n[5/7] Verifying Garage deployment...")
-	verifyGarageDeployment(t, ctx, k8sClient)
-	t.Log("✓ Garage pods are running")
+	// Step 5: Verify SeaweedFS pods are running
+	t.Log("\n[5/7] Verifying SeaweedFS deployment...")
+	verifySeaweedFSDeployment(t, ctx, k8sClient)
+	t.Log("✓ SeaweedFS pods are running")
 
-	// Step 6: Test Garage health endpoint
-	t.Log("\n[6/7] Testing Garage health...")
-	testGarageHealth(t, ctx, k8sClient)
-	t.Log("✓ Garage health check passed")
+	// Step 6: Test SeaweedFS health endpoint
+	t.Log("\n[6/7] Testing SeaweedFS health...")
+	testSeaweedFSHealth(t, ctx, k8sClient)
+	t.Log("✓ SeaweedFS health check passed")
 
-	// Step 7: Verify Garage PVC is bound
-	t.Log("\n[7/7] Verifying Garage PVC...")
-	verifyGaragePVC(t, ctx, k8sClient)
-	t.Log("✓ Garage PVC is bound")
+	// Step 7: Verify SeaweedFS PVC is bound
+	t.Log("\n[7/7] Verifying SeaweedFS PVC...")
+	verifySeaweedFSPVC(t, ctx, k8sClient)
+	t.Log("✓ SeaweedFS PVC is bound")
 
-	t.Log("\n=== Phase 3 Garage Integration Test: PASSED ===")
+	t.Log("\n=== Phase 3 SeaweedFS Integration Test: PASSED ===")
 	t.Log("Summary:")
 	t.Log("  ✓ Kind cluster operational")
 	t.Log("  ✓ Storage provisioner working")
-	t.Log("  ✓ Garage deployed via Helm")
-	t.Log("  ✓ Garage pods running")
-	t.Log("  ✓ Garage health check passed")
-	t.Log("  ✓ Garage PVC provisioned and bound")
+	t.Log("  ✓ SeaweedFS deployed via Helm")
+	t.Log("  ✓ SeaweedFS pods running")
+	t.Log("  ✓ SeaweedFS health check passed")
+	t.Log("  ✓ SeaweedFS PVC provisioned and bound")
 }
 
 // deployLocalPathProvisioner deploys the local-path-provisioner storage component
@@ -273,29 +273,31 @@ func cleanupTestResources(t *testing.T, ctx context.Context, k8sClient *k8s.Clie
 	time.Sleep(2 * time.Second)
 }
 
-// deployGarage deploys Garage via Helm
-func deployGarage(t *testing.T, ctx context.Context, helmClient *helm.Client, k8sClient *k8s.Client) {
-	cfg := &garage.Config{
-		Version:           "1.0.1",
-		Namespace:         "garage",
-		ReplicationFactor: 1,
-		Replicas:          1,
-		StorageClass:      "local-path",
-		StorageSize:       "1Gi",
-		S3Region:          "garage",
-		AdminKey:          "testadminkey",
-		AdminSecret:       "testadminsecret",
-		Buckets:           []string{"test-bucket"},
-		Values:            map[string]interface{}{},
+// deploySeaweedFS deploys SeaweedFS via Helm
+func deploySeaweedFS(t *testing.T, ctx context.Context, helmClient *helm.Client, k8sClient *k8s.Client) {
+	cfg := &seaweedfs.Config{
+		Version:        "4.0.401",
+		Namespace:      "seaweedfs",
+		MasterReplicas: 1,
+		VolumeReplicas: 1,
+		FilerReplicas:  1,
+		StorageClass:   "local-path",
+		StorageSize:    "1Gi",
+		S3Enabled:      true,
+		S3Port:         8333,
+		AccessKey:      "testadminkey",
+		SecretKey:      "testadminsecret",
+		Buckets:        []string{"test-bucket"},
+		Values:         map[string]interface{}{},
 	}
 
-	err := garage.Install(ctx, helmClient, k8sClient, cfg)
-	require.NoError(t, err, "Should install Garage")
+	err := seaweedfs.Install(ctx, helmClient, k8sClient, cfg)
+	require.NoError(t, err, "Should install SeaweedFS")
 }
 
-// verifyGarageDeployment verifies that Garage pods are running
-func verifyGarageDeployment(t *testing.T, ctx context.Context, k8sClient *k8s.Client) {
-	// Wait for Garage pods to be running
+// verifySeaweedFSDeployment verifies that SeaweedFS pods are running
+func verifySeaweedFSDeployment(t *testing.T, ctx context.Context, k8sClient *k8s.Client) {
+	// Wait for SeaweedFS pods to be running
 	timeout := time.After(5 * time.Minute)
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
@@ -303,64 +305,64 @@ func verifyGarageDeployment(t *testing.T, ctx context.Context, k8sClient *k8s.Cl
 	for {
 		select {
 		case <-ctx.Done():
-			t.Fatal("Context cancelled while waiting for Garage")
+			t.Fatal("Context cancelled while waiting for SeaweedFS")
 		case <-timeout:
-			t.Fatal("Timeout waiting for Garage pods to be running")
+			t.Fatal("Timeout waiting for SeaweedFS pods to be running")
 		case <-ticker.C:
-			pods, err := k8sClient.GetPods(ctx, "garage")
+			pods, err := k8sClient.GetPods(ctx, "seaweedfs")
 			if err != nil {
-				t.Logf("  Waiting for Garage pods... (error: %v)", err)
+				t.Logf("  Waiting for SeaweedFS pods... (error: %v)", err)
 				continue
 			}
 
 			if len(pods) == 0 {
-				t.Log("  Waiting for Garage pods to appear...")
+				t.Log("  Waiting for SeaweedFS pods to appear...")
 				continue
 			}
 
 			runningCount := 0
 			for _, pod := range pods {
-				if containsSubstringP3(pod.Name, "garage") && pod.Status == "Running" {
+				if containsSubstringP3(pod.Name, "seaweedfs") && pod.Status == "Running" {
 					runningCount++
 				}
 			}
 
 			if runningCount > 0 {
-				t.Logf("  Garage: %d pod(s) running", runningCount)
+				t.Logf("  SeaweedFS: %d pod(s) running", runningCount)
 				return
 			}
 
-			t.Logf("  Garage: waiting for pods to be running (found %d pods)", len(pods))
+			t.Logf("  SeaweedFS: waiting for pods to be running (found %d pods)", len(pods))
 		}
 	}
 }
 
-// testGarageHealth tests Garage health by checking pod status
-func testGarageHealth(t *testing.T, ctx context.Context, k8sClient *k8s.Client) {
+// testSeaweedFSHealth tests SeaweedFS health by checking pod status
+func testSeaweedFSHealth(t *testing.T, ctx context.Context, k8sClient *k8s.Client) {
 	// For this integration test, we verify pods are running and healthy
 	// A more comprehensive test would port-forward and hit the health endpoint
-	pods, err := k8sClient.GetPods(ctx, "garage")
-	require.NoError(t, err, "Should get Garage pods")
+	pods, err := k8sClient.GetPods(ctx, "seaweedfs")
+	require.NoError(t, err, "Should get SeaweedFS pods")
 
 	healthy := false
 	for _, pod := range pods {
-		if containsSubstringP3(pod.Name, "garage") && pod.Status == "Running" {
+		if containsSubstringP3(pod.Name, "seaweedfs") && pod.Status == "Running" {
 			healthy = true
 			break
 		}
 	}
-	assert.True(t, healthy, "Garage should have at least one healthy pod")
+	assert.True(t, healthy, "SeaweedFS should have at least one healthy pod")
 }
 
-// verifyGaragePVC verifies that Garage PVC is bound
-func verifyGaragePVC(t *testing.T, ctx context.Context, k8sClient *k8s.Client) {
-	// Garage creates a PVC for storage
+// verifySeaweedFSPVC verifies that SeaweedFS PVC is bound
+func verifySeaweedFSPVC(t *testing.T, ctx context.Context, k8sClient *k8s.Client) {
+	// SeaweedFS creates a PVC for storage
 	// We verify the pods are running which implies the PVC is working
 	// A more comprehensive test would query the PVC status directly
-	pods, err := k8sClient.GetPods(ctx, "garage")
-	require.NoError(t, err, "Should get Garage pods")
+	pods, err := k8sClient.GetPods(ctx, "seaweedfs")
+	require.NoError(t, err, "Should get SeaweedFS pods")
 
-	assert.Greater(t, len(pods), 0, "Should have Garage pods (indicates PVC is working)")
+	assert.Greater(t, len(pods), 0, "Should have SeaweedFS pods (indicates PVC is working)")
 }
 
 // waitForPodsByLabel waits for pods matching a label to be running
