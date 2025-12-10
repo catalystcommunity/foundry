@@ -1,6 +1,6 @@
 # Storage Configuration
 
-Foundry uses a Kubernetes-native storage architecture with Longhorn for block storage and Garage for S3-compatible object storage.
+Foundry uses a Kubernetes-native storage architecture with Longhorn for block storage and SeaweedFS for S3-compatible object storage.
 
 ## Architecture Overview
 
@@ -22,10 +22,10 @@ Foundry uses a Kubernetes-native storage architecture with Longhorn for block st
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│  Garage (S3-compatible object storage)                              │
+│  SeaweedFS (S3-compatible object storage)                           │
 │  - Runs on Longhorn PVCs                                            │
 │  - Provides S3 API for Velero, Loki, etc.                           │
-│  - Designed for robustness over raw performance                     │
+│  - High performance and scalable                                    │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -74,27 +74,27 @@ storage:
     path: /exports/k8s
 ```
 
-## Object Storage (Garage)
+## Object Storage (SeaweedFS)
 
-Garage provides S3-compatible object storage for services that need it:
+SeaweedFS provides S3-compatible object storage for services that need it:
 - **Velero**: Cluster backups
 - **Loki**: Log storage
 - **Zot**: Container image storage (optional)
 
-### Why Garage?
+### Why SeaweedFS?
 
-- Lightweight and robust
+- High performance and scalable
 - S3-compatible API
 - Runs on Longhorn PVCs (no external dependencies)
 - Designed for self-hosted environments
+- Active development and community
 
 ### Configuration
 
 ```yaml
-garage:
+seaweedfs:
   enabled: true
   replicas: 3
-  replication_factor: 3
   storage_size: 100Gi
   buckets:
     - velero
@@ -103,9 +103,9 @@ garage:
 
 ### S3 Endpoint
 
-Once deployed, Garage is accessible at:
+Once deployed, SeaweedFS is accessible at:
 ```
-http://garage.garage.svc.cluster.local:3900
+http://seaweedfs-s3.seaweedfs.svc.cluster.local:8333
 ```
 
 Services like Loki and Velero are automatically configured to use this endpoint.
@@ -144,9 +144,9 @@ foundry storage pvc create --name my-data --size 10Gi
 Install order is handled automatically:
 
 1. **Longhorn** (provides StorageClass)
-2. **Garage** (uses Longhorn PVCs, provides S3)
-3. **Loki** (uses Garage for log storage)
-4. **Velero** (uses Garage for backup storage)
+2. **SeaweedFS** (uses Longhorn PVCs, provides S3)
+3. **Loki** (uses SeaweedFS for log storage)
+4. **Velero** (uses SeaweedFS for backup storage)
 
 ## Troubleshooting
 
@@ -157,19 +157,19 @@ kubectl -n longhorn-system get pods
 kubectl -n longhorn-system get storageclass
 ```
 
-### Check Garage Status
+### Check SeaweedFS Status
 
 ```bash
-kubectl -n garage get pods
-kubectl -n garage get svc
+kubectl -n seaweedfs get pods
+kubectl -n seaweedfs get svc
 ```
 
 ### Verify S3 Connectivity
 
 ```bash
-# Port-forward Garage
-kubectl -n garage port-forward svc/garage 3900:3900
+# Port-forward SeaweedFS S3 gateway
+kubectl -n seaweedfs port-forward svc/seaweedfs-s3 8333:8333
 
 # Test with aws-cli
-aws --endpoint-url http://localhost:3900 s3 ls
+aws --endpoint-url http://localhost:8333 s3 ls
 ```

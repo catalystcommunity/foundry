@@ -172,7 +172,7 @@ See the [Secrets Guide](./secrets.md) for more details.
 - Read the [Secrets Guide](./secrets.md) to understand secret management
 - Review [Component Documentation](./components.md) to understand the stack components
 - Learn about [DNS Configuration](./dns.md) for PowerDNS setup
-- Explore [Storage Configuration](./storage.md) for Longhorn and Garage setup
+- Explore [Storage Configuration](./storage.md) for Longhorn and SeaweedFS setup
 
 ### Validation Testing
 

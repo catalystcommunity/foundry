@@ -10,7 +10,6 @@ Phase 2 must be complete:
 - ✓ K3s cluster running with VIP
 - ✓ Helm client working
 - ✓ Contour and cert-manager deployed
-- ✓ TrueNAS API client implemented
 - ✓ OpenBAO and Zot installed
 
 ## High-Level Task Areas
@@ -18,52 +17,33 @@ Phase 2 must be complete:
 ### 1. Storage Integration
 
 **Architecture Decision - S3 Storage**:
-MinIO is always deployed as the S3 endpoint for all components (Loki, Velero, etc.). Its backing storage comes from whatever StorageClass is configured:
-- `local-path`: MinIO data on local node disk (dev/test)
-- `nfs`: MinIO data on generic NFS server
-- `truenas-nfs` / `truenas-iscsi`: MinIO data on TrueNAS (production)
+SeaweedFS is deployed as the S3 endpoint for all components (Loki, Velero, etc.). Its backing storage comes from Longhorn PVCs, providing distributed and replicated storage.
 
-This provides a consistent S3 API regardless of backend, simplifying component configuration.
+This provides a consistent S3 API with high performance, simplifying component configuration.
 
 **Working States**:
-- [x] Storage component with multiple backends (local-path, nfs, truenas-nfs, truenas-iscsi)
-- [x] Local-path provisioner (default, simple option for dev/test)
-- [x] NFS subdir provisioner (generic NFS option)
-- [x] Democratic-CSI for TrueNAS (optional, NFS and iSCSI)
+- [x] Longhorn deployed for distributed block storage
 - [x] StorageClass configured and set as default
-- [x] MinIO component for S3-compatible storage
-- [x] TrueNAS API client with full disk, pool, service, and iSCSI support
-- [x] TrueNAS setup module (auto-creates pool, dataset, enables services, configures iSCSI)
-- [x] TrueNAS setup integrated with install flow (prompt for missing config)
-- [x] TrueNAS API key stored in OpenBAO
-- [x] S3-compatible storage architecture defined (MinIO always deployed, backed by configured StorageClass)
+- [x] SeaweedFS component for S3-compatible storage
+- [x] S3-compatible storage architecture defined (SeaweedFS on Longhorn PVCs)
 - [ ] Integration tests for PVC provisioning
 
 **Key Tasks**:
-- ~~Deploy TrueNAS CSI driver (democratic-csi or similar)~~ ✓ Implemented
-- ~~Configure StorageClass for NFS or iSCSI~~ ✓ Implemented
-- ~~TrueNAS API client extended~~ ✓ Added disk, pool, service, and iSCSI APIs
-- ~~TrueNAS setup/validation module~~ ✓ Automated pool creation, service management, iSCSI setup
+- ~~Deploy Longhorn for distributed block storage~~ ✓ Implemented
+- ~~Configure StorageClass~~ ✓ Implemented
 - [ ] Test PVC provisioning and mounting (integration test)
-- ~~Deploy MinIO via Helm if needed~~ ✓ Implemented
-- ~~Configure MinIO with storage-backed PVC~~ ✓ MinIO uses configured StorageClass
+- ~~Deploy SeaweedFS via Helm~~ ✓ Implemented
+- ~~Configure SeaweedFS with Longhorn-backed PVCs~~ ✓ SeaweedFS uses Longhorn StorageClass
 - ~~Create S3 buckets for various components~~ ✓ Helm chart handles bucket creation
-- ~~Integrate TrueNAS setup with install flow (prompt for IP if missing)~~ ✓ Implemented
-- ~~Store TrueNAS API key in OpenBAO~~ ✓ Implemented
 - ~~Document storage architecture decisions~~ ✓ Documented above
 
 **Files**:
-- `v1/internal/component/storage/types.go` ✓
-- `v1/internal/component/storage/install.go` ✓
-- `v1/internal/component/storage/*_test.go` ✓
-- `v1/internal/component/minio/types.go` ✓
-- `v1/internal/component/minio/install.go` ✓
-- `v1/internal/component/minio/*_test.go` ✓
-- `v1/internal/storage/truenas/client.go` ✓ (extended with disk, service, pool, iSCSI APIs)
-- `v1/internal/storage/truenas/types.go` ✓ (extended with all required types)
-- `v1/internal/storage/truenas/setup.go` ✓ (TrueNAS setup/validation module)
-- `v1/internal/storage/truenas/integration.go` ✓ (Install flow integration, OpenBAO API key storage)
-- `v1/internal/storage/truenas/*_test.go` ✓ (208+ tests)
+- `v1/internal/component/longhorn/types.go` ✓
+- `v1/internal/component/longhorn/install.go` ✓
+- `v1/internal/component/longhorn/*_test.go` ✓
+- `v1/internal/component/seaweedfs/types.go` ✓
+- `v1/internal/component/seaweedfs/install.go` ✓
+- `v1/internal/component/seaweedfs/*_test.go` ✓
 - `cmd/foundry/commands/storage/provision.go` (future)
 
 ---
@@ -99,12 +79,12 @@ This provides a consistent S3 API regardless of backend, simplifying component c
 **Working States**:
 - [x] Loki deployed via loki-stack Helm chart
 - [x] Collecting logs from all pods (via Promtail)
-- [x] S3-compatible storage for log retention
+- [x] S3-compatible storage for log retention (via SeaweedFS)
 - [x] Retention configured per stack.yaml
 
 **Key Tasks**:
 - ~~Deploy loki-stack Helm chart~~ ✓ Implemented (using grafana/loki chart)
-- ~~Configure S3 backend (MinIO or TrueNAS S3)~~ ✓ Implemented with full S3 config
+- ~~Configure S3 backend (SeaweedFS)~~ ✓ Implemented with full S3 config
 - ~~Set up retention policies~~ ✓ Implemented (configurable retention_days)
 - ~~Configure promtail for log collection~~ ✓ Implemented (optional, enabled by default)
 - [ ] Test log ingestion and querying
@@ -179,20 +159,20 @@ This provides a consistent S3 API regardless of backend, simplifying component c
 
 **Working States**:
 - [x] Velero deployed via Helm
-- [x] S3 backend configured (MinIO or TrueNAS S3)
+- [x] S3 backend configured (SeaweedFS)
 - [x] Can create cluster backups (CLI: `foundry backup create`)
 - [x] Can restore from backups (CLI: `foundry backup restore`)
 - [x] Scheduled backup configured (CLI: `foundry backup schedule`)
 
 **Key Tasks**:
 - ~~Deploy Velero Helm chart~~ ✓ Implemented (vmware-tanzu/velero chart v8.0.0)
-- ~~Configure S3-compatible storage backend~~ ✓ Supports MinIO and AWS S3
+- ~~Configure S3-compatible storage backend~~ ✓ Supports SeaweedFS and AWS S3
 - ~~Set up backup schedules~~ ✓ Configurable cron schedules with TTL
 - [ ] Test backup and restore (requires integration tests)
 - ~~Create backup CLI commands~~ ✓ `foundry backup create/list/restore/schedule/delete`
 
 **Supported Features**:
-- MinIO and AWS S3 providers
+- SeaweedFS and AWS S3 providers
 - Configurable backup retention (TTL)
 - Scheduled backups with cron expressions
 - Namespace inclusion/exclusion filters
@@ -265,7 +245,7 @@ foundry metrics targets                         ✓  # List scrape targets
 - [ ] DNS records are created automatically
 
 **Files**:
-- `test/integration/phase3_storage_test.go` ✓ (PVC provisioning, MinIO deployment)
+- `test/integration/phase3_storage_test.go` ✓ (PVC provisioning, SeaweedFS deployment)
 - `test/integration/phase3_observability_test.go` ✓ (Prometheus, Loki, Grafana, full stack)
 - `test/integration/phase3_backup_test.go` ✓ (Velero deployment, backup/restore)
 - `test/integration/phase3_helpers_test.go` ✓ (Shared test utilities)
@@ -297,13 +277,11 @@ foundry metrics targets                         ✓  # List scrape targets
 ## Manual Verification
 
 ```bash
-# Install storage (choose one backend)
-foundry component install storage --backend local-path   # Simple local storage
-foundry component install storage --backend nfs --nfs-server 192.168.1.100 --nfs-path /mnt/k8s
-foundry component install storage --backend truenas-nfs  # Requires TrueNAS config
+# Install Longhorn for distributed block storage
+foundry component install longhorn
 
-# Install MinIO for S3-compatible storage
-foundry component install minio
+# Install SeaweedFS for S3-compatible storage
+foundry component install seaweedfs
 
 # Install observability stack (depends on storage)
 foundry component install prometheus
