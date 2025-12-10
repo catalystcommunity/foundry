@@ -19,8 +19,8 @@ import (
 	"github.com/catalystcommunity/foundry/v1/internal/component/externaldns"
 	"github.com/catalystcommunity/foundry/v1/internal/component/gatewayapi"
 	"github.com/catalystcommunity/foundry/v1/internal/component/grafana"
-	"github.com/catalystcommunity/foundry/v1/internal/component/garage"
 	"github.com/catalystcommunity/foundry/v1/internal/component/loki"
+	"github.com/catalystcommunity/foundry/v1/internal/component/seaweedfs"
 	"github.com/catalystcommunity/foundry/v1/internal/component/openbao"
 	"github.com/catalystcommunity/foundry/v1/internal/component/prometheus"
 	"github.com/catalystcommunity/foundry/v1/internal/component/storage"
@@ -53,13 +53,13 @@ func checkAllComponentsInstalled(ctx context.Context, state *setup.SetupState) b
 	}
 
 	// Check Phase 3 components via actual status
-	// Order: gateway-api, contour, cert-manager, storage, garage, prometheus, external-dns, loki, grafana, velero
+	// Order: gateway-api, contour, cert-manager, storage, seaweedfs, prometheus, external-dns, loki, grafana, velero
 	phase3Components := []string{
 		"gateway-api",
 		"contour",
 		"cert-manager",
 		"storage",
-		"garage",
+		"seaweedfs",
 		"prometheus",
 		"external-dns",
 		"loki",
@@ -145,6 +145,10 @@ Examples:
 			Name:  "non-interactive",
 			Usage: "Use defaults and flags without prompting",
 		},
+		&cli.BoolFlag{
+			Name:  "upgrade",
+			Usage: "Upgrade already-installed K8s components with current configuration",
+		},
 	},
 	Action: runStackInstall,
 }
@@ -195,9 +199,10 @@ func runStackInstall(ctx context.Context, cmd *cli.Command) error {
 
 	// Check if all components are actually installed (don't rely solely on StackComplete flag)
 	allComponentsInstalled := checkAllComponentsInstalled(ctx, cfg.SetupState)
-	if allComponentsInstalled {
+	upgradeMode := cmd.Bool("upgrade")
+	if allComponentsInstalled && !upgradeMode {
 		fmt.Println("\n✓ Stack is already complete!")
-		fmt.Println("\nTo reinstall, reset your configuration or use specific component commands.")
+		fmt.Println("\nTo upgrade components with new configuration, use: foundry stack install --upgrade")
 		return nil
 	}
 
@@ -226,7 +231,7 @@ func runStackInstall(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	// Phase 3: Component Installation
-	if err := installComponents(ctx, cfg, configPath, cmd.Bool("yes")); err != nil {
+	if err := installComponents(ctx, cfg, configPath, cmd.Bool("yes"), upgradeMode); err != nil {
 		return fmt.Errorf("component installation failed: %w", err)
 	}
 
@@ -538,7 +543,8 @@ func ensureNetworkPlanned(ctx context.Context, cfg *config.Config, nonInteractiv
 }
 
 // installComponents installs all components in order with state tracking
-func installComponents(ctx context.Context, cfg *config.Config, configPath string, skipConfirm bool) error {
+// If upgrade is true, K8s components will be upgraded even if already installed
+func installComponents(ctx context.Context, cfg *config.Config, configPath string, skipConfirm bool, upgrade bool) error {
 	fmt.Println("\n[3/4] Component Installation")
 	fmt.Println(strings.Repeat("-", 60))
 
@@ -658,12 +664,12 @@ func installComponents(ctx context.Context, cfg *config.Config, configPath strin
 			},
 		},
 		{
-			name: "garage",
+			name: "seaweedfs",
 			checkFunc: func(s *setup.SetupState) bool {
-				return checkComponentStatus("garage")
+				return checkComponentStatus("seaweedfs")
 			},
 			setFunc: func(s *setup.SetupState) {
-				trackComponent("garage")
+				trackComponent("seaweedfs")
 			},
 		},
 		{
@@ -713,16 +719,30 @@ func installComponents(ctx context.Context, cfg *config.Config, configPath strin
 		},
 	}
 
+	// K8s components that can be upgraded with --upgrade flag
+	k8sComponents := map[string]bool{
+		"gateway-api": true, "contour": true, "cert-manager": true, "storage": true,
+		"seaweedfs": true, "prometheus": true, "external-dns": true,
+		"loki": true, "grafana": true, "velero": true,
+	}
+
 	for i, comp := range components {
 		// Check if already installed
-		if comp.checkFunc(cfg.SetupState) {
-			fmt.Printf("\n[%d/%d] %s: ✓ Already installed (skipping)\n", i+1, len(components), comp.name)
-			continue
+		isInstalled := comp.checkFunc(cfg.SetupState)
+		isK8sComponent := k8sComponents[comp.name]
+
+		if isInstalled {
+			if upgrade && isK8sComponent {
+				fmt.Printf("\n[%d/%d] Upgrading %s...\n", i+1, len(components), comp.name)
+			} else {
+				fmt.Printf("\n[%d/%d] %s: ✓ Already installed (skipping)\n", i+1, len(components), comp.name)
+				continue
+			}
+		} else {
+			fmt.Printf("\n[%d/%d] Installing %s...\n", i+1, len(components), comp.name)
 		}
 
-		fmt.Printf("\n[%d/%d] Installing %s...\n", i+1, len(components), comp.name)
-
-		// Install the component
+		// Install/upgrade the component
 		if err := installSingleComponent(ctx, cfg, comp.name); err != nil {
 			return fmt.Errorf("%s installation failed: %w", comp.name, err)
 		}
@@ -784,13 +804,17 @@ func installK8sComponent(ctx context.Context, cfg *config.Config, componentName 
 	case "contour":
 		componentWithClients = contour.NewComponent(helmClient, k8sClient)
 	case "cert-manager":
-		componentWithClients = certmanager.NewComponent(nil) // Config is passed via ComponentConfig
+		// Create cert-manager with CA issuer enabled for signing TLS certificates
+		componentWithClients = certmanager.NewComponent(&certmanager.Config{
+			CreateDefaultIssuer: true,
+			DefaultIssuerType:   "self-signed",
+		})
 	case "external-dns":
 		componentWithClients = externaldns.NewComponent(helmClient, k8sClient)
 	case "storage":
 		componentWithClients = storage.NewComponent(helmClient, k8sClient)
-	case "garage":
-		componentWithClients = garage.NewComponent(helmClient, k8sClient)
+	case "seaweedfs":
+		componentWithClients = seaweedfs.NewComponent(helmClient, k8sClient)
 	case "prometheus":
 		componentWithClients = prometheus.NewComponent(helmClient, k8sClient)
 	case "loki":
@@ -827,9 +851,9 @@ func installK8sComponent(ctx context.Context, cfg *config.Config, componentName 
 		componentConfig = buildStorageConfig(ctx, cfg)
 	}
 
-	// Pass Garage config
-	if componentName == "garage" {
-		componentConfig = buildGarageConfig(cfg)
+	// Pass SeaweedFS config
+	if componentName == "seaweedfs" {
+		componentConfig = buildSeaweedFSConfig(cfg)
 	}
 
 	// Pass Prometheus config
@@ -837,7 +861,7 @@ func installK8sComponent(ctx context.Context, cfg *config.Config, componentName 
 		componentConfig = buildPrometheusConfig(cfg)
 	}
 
-	// Pass Loki config (needs Garage connection info)
+	// Pass Loki config (needs SeaweedFS connection info)
 	if componentName == "loki" {
 		componentConfig = buildLokiConfig(cfg)
 	}
@@ -847,7 +871,7 @@ func installK8sComponent(ctx context.Context, cfg *config.Config, componentName 
 		componentConfig = buildGrafanaConfig(cfg)
 	}
 
-	// Pass Velero config (needs Garage connection info)
+	// Pass Velero config (needs SeaweedFS connection info)
 	if componentName == "velero" {
 		componentConfig = buildVeleroConfig(cfg)
 	}
@@ -930,35 +954,60 @@ func getDNSAPIKeyFromOpenBAO(ctx context.Context, cfg *config.Config, configDir 
 
 // buildStorageConfig creates config for storage component
 func buildStorageConfig(ctx context.Context, cfg *config.Config) component.ComponentConfig {
+	// Calculate optimal replica count based on configured cluster nodes
+	replicaCount := calculateOptimalReplicaCount(cfg)
+
+	// Default to Longhorn for distributed block storage with replication
 	componentConfig := component.ComponentConfig{
-		"backend":            "local-path",
-		"storage_class_name": "local-path",
+		"backend":            "longhorn",
+		"storage_class_name": "longhorn",
 		"set_default":        true,
+		"longhorn": map[string]interface{}{
+			"replica_count":   replicaCount,
+			"ingress_enabled": true,
+			"ingress_host":    fmt.Sprintf("longhorn.%s", cfg.Cluster.Domain),
+		},
 	}
 
-	// Check for Longhorn configuration
-	if cfg.Storage != nil && cfg.Storage.Backend == "longhorn" {
-		componentConfig["backend"] = "longhorn"
-		componentConfig["storage_class_name"] = "longhorn"
+	// Allow override to local-path if explicitly configured
+	if cfg.Storage != nil && cfg.Storage.Backend == "local-path" {
+		componentConfig["backend"] = "local-path"
+		componentConfig["storage_class_name"] = "local-path"
+		delete(componentConfig, "longhorn")
 	}
 
 	return componentConfig
 }
 
-// Garage constants
+// calculateOptimalReplicaCount determines the best Longhorn replica count
+// based on the number of configured cluster nodes. Returns min(nodeCount, 3).
+func calculateOptimalReplicaCount(cfg *config.Config) int {
+	clusterHosts := cfg.GetClusterHosts()
+	nodeCount := len(clusterHosts)
+
+	if nodeCount <= 0 {
+		return 1 // Minimum of 1 replica
+	}
+	if nodeCount >= 3 {
+		return 3 // Cap at 3 replicas (standard HA)
+	}
+	return nodeCount
+}
+
+// SeaweedFS constants
 const (
-	garageEndpoint = "http://garage.garage.svc.cluster.local:3900"
-	garageRegion   = "garage"
+	seaweedfsEndpoint = "http://seaweedfs-s3.seaweedfs.svc.cluster.local:8333"
+	seaweedfsRegion   = "us-east-1"
 )
 
-// getOrCreateGarageCredentials retrieves Garage credentials from config or generates new ones
-func getOrCreateGarageCredentials(cfg *config.Config) (adminKey, adminSecret string) {
+// getOrCreateSeaweedFSCredentials retrieves SeaweedFS credentials from config or generates new ones
+func getOrCreateSeaweedFSCredentials(cfg *config.Config) (accessKey, secretKey string) {
 	// Check if credentials already exist in config
 	if cfg.Components != nil {
-		if garageCfg, exists := cfg.Components["garage"]; exists {
-			if garageCfg.Config != nil {
-				if key, ok := garageCfg.Config["admin_key"].(string); ok && key != "" {
-					if secret, ok := garageCfg.Config["admin_secret"].(string); ok && secret != "" {
+		if seaweedfsCfg, exists := cfg.Components["seaweedfs"]; exists {
+			if seaweedfsCfg.Config != nil {
+				if key, ok := seaweedfsCfg.Config["access_key"].(string); ok && key != "" {
+					if secret, ok := seaweedfsCfg.Config["secret_key"].(string); ok && secret != "" {
 						return key, secret
 					}
 				}
@@ -970,118 +1019,127 @@ func getOrCreateGarageCredentials(cfg *config.Config) (adminKey, adminSecret str
 	keyBytes := make([]byte, 32)
 	secretBytes := make([]byte, 32)
 	if _, err := rand.Read(keyBytes); err != nil {
-		adminKey = fmt.Sprintf("foundry-key-%d", time.Now().UnixNano())
+		accessKey = fmt.Sprintf("foundry-key-%d", time.Now().UnixNano())
 	} else {
-		adminKey = hex.EncodeToString(keyBytes)
+		accessKey = hex.EncodeToString(keyBytes)
 	}
 	if _, err := rand.Read(secretBytes); err != nil {
-		adminSecret = fmt.Sprintf("foundry-secret-%d", time.Now().UnixNano())
+		secretKey = fmt.Sprintf("foundry-secret-%d", time.Now().UnixNano())
 	} else {
-		adminSecret = hex.EncodeToString(secretBytes)
+		secretKey = hex.EncodeToString(secretBytes)
 	}
-	return adminKey, adminSecret
+	return accessKey, secretKey
 }
 
-// buildGarageConfig creates config for Garage component
-func buildGarageConfig(cfg *config.Config) component.ComponentConfig {
-	adminKey, adminSecret := getOrCreateGarageCredentials(cfg)
+// buildSeaweedFSConfig creates config for SeaweedFS component
+func buildSeaweedFSConfig(cfg *config.Config) component.ComponentConfig {
+	accessKey, secretKey := getOrCreateSeaweedFSCredentials(cfg)
 
 	// Store credentials in config for other components to use
 	if cfg.Components == nil {
 		cfg.Components = make(config.ComponentMap)
 	}
-	if _, exists := cfg.Components["garage"]; !exists {
-		cfg.Components["garage"] = config.ComponentConfig{Config: make(map[string]any)}
+	if _, exists := cfg.Components["seaweedfs"]; !exists {
+		cfg.Components["seaweedfs"] = config.ComponentConfig{Config: make(map[string]any)}
 	}
-	garageCfg := cfg.Components["garage"]
-	if garageCfg.Config == nil {
-		garageCfg.Config = make(map[string]any)
+	seaweedfsCfg := cfg.Components["seaweedfs"]
+	if seaweedfsCfg.Config == nil {
+		seaweedfsCfg.Config = make(map[string]any)
 	}
-	garageCfg.Config["admin_key"] = adminKey
-	garageCfg.Config["admin_secret"] = adminSecret
-	cfg.Components["garage"] = garageCfg
+	seaweedfsCfg.Config["access_key"] = accessKey
+	seaweedfsCfg.Config["secret_key"] = secretKey
+	cfg.Components["seaweedfs"] = seaweedfsCfg
 
 	return component.ComponentConfig{
-		"namespace":     "garage",
-		"storage_size":  "50Gi",
-		"storage_class": "local-path",
-		"admin_key":     adminKey,
-		"admin_secret":  adminSecret,
-		"buckets":       []string{"loki", "velero"},
+		"namespace":          "seaweedfs",
+		"storage_size":       "50Gi",
+		"storage_class":      "longhorn",
+		"access_key":         accessKey,
+		"secret_key":         secretKey,
+		"buckets":            []string{"loki", "velero"},
+		"ingress_enabled":    true,
+		"ingress_host_filer": fmt.Sprintf("seaweedfs.%s", cfg.Cluster.Domain),
+		"ingress_host_s3":    fmt.Sprintf("s3.%s", cfg.Cluster.Domain),
 	}
 }
 
-// getGarageCredentials retrieves Garage credentials from config
-func getGarageCredentials(cfg *config.Config) (adminKey, adminSecret string) {
-	adminKey = ""
-	adminSecret = ""
+// getSeaweedFSCredentials retrieves SeaweedFS credentials from config
+func getSeaweedFSCredentials(cfg *config.Config) (accessKey, secretKey string) {
+	accessKey = ""
+	secretKey = ""
 
 	if cfg.Components != nil {
-		if garageCfg, exists := cfg.Components["garage"]; exists {
-			if garageCfg.Config != nil {
-				if key, ok := garageCfg.Config["admin_key"].(string); ok {
-					adminKey = key
+		if seaweedfsCfg, exists := cfg.Components["seaweedfs"]; exists {
+			if seaweedfsCfg.Config != nil {
+				if key, ok := seaweedfsCfg.Config["access_key"].(string); ok {
+					accessKey = key
 				}
-				if secret, ok := garageCfg.Config["admin_secret"].(string); ok {
-					adminSecret = secret
+				if secret, ok := seaweedfsCfg.Config["secret_key"].(string); ok {
+					secretKey = secret
 				}
 			}
 		}
 	}
 
-	return adminKey, adminSecret
+	return accessKey, secretKey
 }
 
 // buildPrometheusConfig creates config for Prometheus component
 func buildPrometheusConfig(cfg *config.Config) component.ComponentConfig {
 	return component.ComponentConfig{
-		"namespace":      "monitoring",
-		"retention_days": 15,
-		"storage_size":   "10Gi",
-		"storage_class":  "local-path",
+		"namespace":       "monitoring",
+		"retention_days":  15,
+		"storage_size":    "10Gi",
+		"storage_class":   "longhorn",
+		"ingress_enabled": true,
+		"ingress_host":    fmt.Sprintf("prometheus.%s", cfg.Cluster.Domain),
 	}
 }
 
 // buildLokiConfig creates config for Loki component
 func buildLokiConfig(cfg *config.Config) component.ComponentConfig {
-	adminKey, adminSecret := getGarageCredentials(cfg)
+	accessKey, secretKey := getSeaweedFSCredentials(cfg)
 
 	return component.ComponentConfig{
 		"namespace":        "monitoring",
 		"deployment_mode":  "SingleBinary",
 		"storage_backend":  "s3",
-		"s3_endpoint":      garageEndpoint,
+		"s3_endpoint":      seaweedfsEndpoint,
 		"s3_bucket":        "loki",
-		"s3_access_key":    adminKey,
-		"s3_secret_key":    adminSecret,
-		"s3_region":        garageRegion,
+		"s3_access_key":    accessKey,
+		"s3_secret_key":    secretKey,
+		"s3_region":        seaweedfsRegion,
 		"promtail_enabled": true,
+		"ingress_enabled":  true,
+		"ingress_host":     fmt.Sprintf("loki.%s", cfg.Cluster.Domain),
 	}
 }
 
 // buildGrafanaConfig creates config for Grafana component
 func buildGrafanaConfig(cfg *config.Config) component.ComponentConfig {
 	return component.ComponentConfig{
-		"namespace":      "monitoring",
-		"storage_size":   "5Gi",
-		"storage_class":  "local-path",
-		"prometheus_url": "http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090",
-		"loki_url":       "http://loki-gateway.monitoring.svc.cluster.local:80",
+		"namespace":       "monitoring",
+		"storage_size":    "5Gi",
+		"storage_class":   "longhorn",
+		"prometheus_url":  "http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090",
+		"loki_url":        "http://loki-gateway.monitoring.svc.cluster.local:80",
+		"ingress_enabled": true,
+		"ingress_host":    fmt.Sprintf("grafana.%s", cfg.Cluster.Domain),
 	}
 }
 
 // buildVeleroConfig creates config for Velero component
 func buildVeleroConfig(cfg *config.Config) component.ComponentConfig {
-	adminKey, adminSecret := getGarageCredentials(cfg)
+	accessKey, secretKey := getSeaweedFSCredentials(cfg)
 
 	return component.ComponentConfig{
 		"namespace":     "velero",
 		"provider":      "s3",
-		"s3_endpoint":   garageEndpoint,
+		"s3_endpoint":   seaweedfsEndpoint,
 		"s3_bucket":     "velero",
-		"s3_access_key": adminKey,
-		"s3_secret_key": adminSecret,
-		"s3_region":     garageRegion,
+		"s3_access_key": accessKey,
+		"s3_secret_key": secretKey,
+		"s3_region":     seaweedfsRegion,
 		"schedule_cron": "0 2 * * *", // Daily at 2am
 		"schedule_name": "daily-backup",
 	}
@@ -1107,7 +1165,7 @@ func installSingleComponent(ctx context.Context, cfg *config.Config, componentNa
 		"cert-manager": true,
 		"external-dns": true,
 		"storage":      true,
-		"garage":       true,
+		"seaweedfs":    true,
 		"prometheus":   true,
 		"loki":         true,
 		"grafana":      true,
@@ -1236,6 +1294,96 @@ func installK3sCluster(ctx context.Context, cfg *config.Config) error {
 	// This handles: tokens, control plane, nodes, VIP, kubeconfig
 	if err := clustercommands.InitializeCluster(ctx, cfg); err != nil {
 		return fmt.Errorf("cluster initialization failed: %w", err)
+	}
+
+	// Reconcile node labels from config after cluster is up
+	if err := reconcileNodeLabels(ctx, cfg); err != nil {
+		// Don't fail the whole installation, just warn
+		fmt.Printf("  Warning: failed to reconcile node labels: %v\n", err)
+		fmt.Println("  Labels can be applied manually with: foundry cluster node label")
+	}
+
+	return nil
+}
+
+// reconcileNodeLabels ensures all nodes have the labels defined in config
+// This is additive - labels on nodes that are not in config are left untouched
+func reconcileNodeLabels(ctx context.Context, cfg *config.Config) error {
+	// Check if any hosts have labels configured
+	hasLabels := false
+	for _, h := range cfg.Hosts {
+		if len(h.Labels) > 0 {
+			hasLabels = true
+			break
+		}
+	}
+
+	if !hasLabels {
+		return nil // No labels configured, nothing to do
+	}
+
+	fmt.Println("  Reconciling node labels...")
+
+	// Get kubeconfig
+	configDir, err := config.GetConfigDir()
+	if err != nil {
+		return fmt.Errorf("failed to get config directory: %w", err)
+	}
+	kubeconfigPath := filepath.Join(configDir, "kubeconfig")
+	kubeconfigBytes, err := os.ReadFile(kubeconfigPath)
+	if err != nil {
+		return fmt.Errorf("failed to read kubeconfig: %w", err)
+	}
+
+	// Create K8s client
+	k8sClient, err := k8s.NewClientFromKubeconfig(kubeconfigBytes)
+	if err != nil {
+		return fmt.Errorf("failed to create k8s client: %w", err)
+	}
+
+	// Get current nodes
+	nodes, err := k8sClient.GetNodes(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get nodes: %w", err)
+	}
+
+	// Build hostname -> host mapping
+	hostMap := make(map[string]*host.Host)
+	for _, h := range cfg.Hosts {
+		hostMap[h.Hostname] = h
+	}
+
+	// Reconcile labels for each node
+	labelsApplied := 0
+	for _, node := range nodes {
+		h, ok := hostMap[node.Name]
+		if !ok || len(h.Labels) == 0 {
+			continue
+		}
+
+		// Find labels that need to be applied (additive reconciliation)
+		missingLabels := make(map[string]string)
+		for k, v := range h.Labels {
+			currentV, exists := node.Labels[k]
+			if !exists || currentV != v {
+				missingLabels[k] = v
+			}
+		}
+
+		if len(missingLabels) > 0 {
+			if err := k8sClient.SetNodeLabels(ctx, node.Name, missingLabels); err != nil {
+				fmt.Printf("    Warning: failed to apply labels to %s: %v\n", node.Name, err)
+				continue
+			}
+			fmt.Printf("    Applied labels to %s: %v\n", node.Name, missingLabels)
+			labelsApplied++
+		}
+	}
+
+	if labelsApplied > 0 {
+		fmt.Printf("  Labels reconciled on %d node(s)\n", labelsApplied)
+	} else {
+		fmt.Println("  All node labels are already in sync")
 	}
 
 	return nil
@@ -1783,19 +1931,24 @@ func configureHost(conn *ssh.Connection, h *config.Host, nonInteractive bool) er
 	}
 
 	// Step 3: Install common tools (with --fix-missing for robustness)
+	// Includes open-iscsi for Longhorn storage support
 	fmt.Println("    Installing common tools...")
-	result, err = conn.Exec("sudo apt-get install -y --fix-missing curl git vim htop")
+	result, err = conn.Exec("sudo apt-get install -y --fix-missing curl git vim htop open-iscsi")
 	if err != nil || result.ExitCode != 0 {
-		// If full install fails, try just curl (required for container runtime)
-		fmt.Printf("    ⚠ Some tools failed to install, retrying with curl only...\n")
-		result, err = conn.Exec("sudo apt-get install -y --fix-missing curl")
+		// If full install fails, try just curl and open-iscsi (required for storage)
+		fmt.Printf("    ⚠ Some tools failed to install, retrying with essentials only...\n")
+		result, err = conn.Exec("sudo apt-get install -y --fix-missing curl open-iscsi")
 		if err != nil || result.ExitCode != 0 {
-			return fmt.Errorf("failed to install curl (required): %s", result.Stderr)
+			return fmt.Errorf("failed to install curl/open-iscsi (required): %s", result.Stderr)
 		}
-		fmt.Println("    ✓ curl installed (other tools skipped)")
+		fmt.Println("    ✓ Essential tools installed (other tools skipped)")
 	} else {
 		fmt.Println("    ✓ Common tools installed")
 	}
+
+	// Ensure iscsid service is enabled and running (required for Longhorn)
+	conn.Exec("sudo systemctl enable iscsid 2>/dev/null || true")
+	conn.Exec("sudo systemctl start iscsid 2>/dev/null || true")
 
 	// Step 4: Configure time sync
 	fmt.Println("    Configuring time synchronization...")

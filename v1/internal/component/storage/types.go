@@ -90,6 +90,12 @@ type LonghornConfig struct {
 
 	// DefaultDataLocality controls data locality (disabled, best-effort, strict-local)
 	DefaultDataLocality string `json:"default_data_locality" yaml:"default_data_locality"`
+
+	// IngressEnabled enables Ingress for the Longhorn UI
+	IngressEnabled bool `json:"ingress_enabled" yaml:"ingress_enabled"`
+
+	// IngressHost is the hostname for Longhorn UI Ingress
+	IngressHost string `json:"ingress_host" yaml:"ingress_host"`
 }
 
 // HelmClient defines the Helm operations needed for storage component
@@ -298,6 +304,12 @@ func ParseConfig(cfg component.ComponentConfig) (*Config, error) {
 		}
 		if dataLocality, ok := longhornCfg["default_data_locality"].(string); ok {
 			config.Longhorn.DefaultDataLocality = dataLocality
+		}
+		if ingressEnabled, ok := longhornCfg["ingress_enabled"].(bool); ok {
+			config.Longhorn.IngressEnabled = ingressEnabled
+		}
+		if ingressHost, ok := longhornCfg["ingress_host"].(string); ok {
+			config.Longhorn.IngressHost = ingressHost
 		}
 	}
 

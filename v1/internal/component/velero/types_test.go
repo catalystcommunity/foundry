@@ -17,9 +17,9 @@ func TestDefaultConfig(t *testing.T) {
 	assert.Equal(t, "8.0.0", config.Version)
 	assert.Equal(t, "velero", config.Namespace)
 	assert.Equal(t, ProviderS3, config.Provider)
-	assert.Equal(t, "http://garage.garage.svc.cluster.local:3900", config.S3Endpoint)
+	assert.Equal(t, "http://seaweedfs-s3.seaweedfs.svc.cluster.local:8333", config.S3Endpoint)
 	assert.Equal(t, "velero", config.S3Bucket)
-	assert.Equal(t, "garage", config.S3Region)
+	assert.Equal(t, "us-east-1", config.S3Region)
 	assert.True(t, config.S3InsecureSkipTLSVerify)
 	assert.True(t, config.S3ForcePathStyle)
 	assert.True(t, config.DefaultBackupStorageLocation)
@@ -245,7 +245,7 @@ func TestComponent_Dependencies(t *testing.T) {
 	deps := comp.Dependencies()
 
 	require.Len(t, deps, 1)
-	assert.Contains(t, deps, "garage")
+	assert.Contains(t, deps, "seaweedfs")
 }
 
 func TestComponent_Install_NilHelmClient(t *testing.T) {

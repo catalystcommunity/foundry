@@ -9,10 +9,10 @@ import (
 )
 
 const (
-	// Local path provisioner
-	localPathRepoName = "local-path-provisioner"
-	localPathRepoURL  = "https://charts.k8s.home/local-path-provisioner"
-	localPathChart    = "local-path-provisioner/local-path-provisioner"
+	// Local path provisioner (cowboysysop helm chart)
+	localPathRepoName = "cowboysysop"
+	localPathRepoURL  = "https://cowboysysop.github.io/charts"
+	localPathChart    = "cowboysysop/local-path-provisioner"
 
 	// NFS subdir external provisioner
 	nfsRepoName = "nfs-subdir-external-provisioner"
@@ -50,6 +50,35 @@ func Install(ctx context.Context, helmClient HelmClient, k8sClient K8sClient, cf
 func installLocalPath(ctx context.Context, helmClient HelmClient, k8sClient K8sClient, cfg *Config) error {
 	fmt.Println("  Installing local-path-provisioner...")
 
+	// Check if local-path provisioner is already installed via K3s (built-in)
+	// K3s includes local-path-provisioner by default, so check for existing release
+	releases, err := helmClient.List(ctx, "kube-system")
+	if err == nil {
+		// If no helm release exists, K3s's built-in is likely being used
+		foundHelmRelease := false
+		for _, rel := range releases {
+			if rel.Name == "local-path-provisioner" {
+				foundHelmRelease = true
+				break
+			}
+		}
+		if !foundHelmRelease {
+			// Also check the target namespace
+			releases, _ = helmClient.List(ctx, cfg.Namespace)
+			for _, rel := range releases {
+				if rel.Name == "local-path-provisioner" {
+					foundHelmRelease = true
+					break
+				}
+			}
+		}
+		if !foundHelmRelease {
+			// K3s likely has built-in local-path-provisioner
+			fmt.Println("  local-path-provisioner already available (K3s built-in)")
+			return nil
+		}
+	}
+
 	// Add Helm repository
 	if err := helmClient.AddRepo(ctx, helm.RepoAddOptions{
 		Name:        localPathRepoName,
@@ -62,14 +91,15 @@ func installLocalPath(ctx context.Context, helmClient HelmClient, k8sClient K8sC
 	// Build values
 	values := buildLocalPathValues(cfg)
 
-	// Check if release already exists
-	releases, err := helmClient.List(ctx, cfg.Namespace)
+	// Check if helm release already exists (for upgrades when we installed via helm)
+	var releaseExists bool
+	releases, err = helmClient.List(ctx, cfg.Namespace)
 	if err == nil {
 		for _, rel := range releases {
 			if rel.Name == "local-path-provisioner" {
 				if rel.Status == "deployed" {
-					fmt.Println("  local-path-provisioner already installed")
-					return nil
+					releaseExists = true
+					break
 				}
 				// Uninstall failed release
 				fmt.Printf("  Removing failed release (status: %s)...\n", rel.Status)
@@ -84,18 +114,34 @@ func installLocalPath(ctx context.Context, helmClient HelmClient, k8sClient K8sC
 		}
 	}
 
-	// Install via Helm
-	if err := helmClient.Install(ctx, helm.InstallOptions{
-		ReleaseName:     "local-path-provisioner",
-		Namespace:       cfg.Namespace,
-		Chart:           localPathChart,
-		Version:         cfg.Version,
-		Values:          values,
-		CreateNamespace: true,
-		Wait:            true,
-		Timeout:         5 * time.Minute,
-	}); err != nil {
-		return fmt.Errorf("failed to install local-path-provisioner: %w", err)
+	if releaseExists {
+		// Upgrade existing release
+		fmt.Println("  Upgrading local-path-provisioner...")
+		if err := helmClient.Upgrade(ctx, helm.UpgradeOptions{
+			ReleaseName: "local-path-provisioner",
+			Namespace:   cfg.Namespace,
+			Chart:       localPathChart,
+			Version:     cfg.Version,
+			Values:      values,
+			Wait:        true,
+			Timeout:     5 * time.Minute,
+		}); err != nil {
+			return fmt.Errorf("failed to upgrade local-path-provisioner: %w", err)
+		}
+	} else {
+		// Install via Helm
+		if err := helmClient.Install(ctx, helm.InstallOptions{
+			ReleaseName:     "local-path-provisioner",
+			Namespace:       cfg.Namespace,
+			Chart:           localPathChart,
+			Version:         cfg.Version,
+			Values:          values,
+			CreateNamespace: true,
+			Wait:            true,
+			Timeout:         5 * time.Minute,
+		}); err != nil {
+			return fmt.Errorf("failed to install local-path-provisioner: %w", err)
+		}
 	}
 
 	fmt.Println("  local-path-provisioner installed successfully")
@@ -264,13 +310,14 @@ func installLonghorn(ctx context.Context, helmClient HelmClient, k8sClient K8sCl
 	}
 
 	// Check if release already exists
+	var releaseExists bool
 	releases, err := helmClient.List(ctx, namespace)
 	if err == nil {
 		for _, rel := range releases {
 			if rel.Name == "longhorn" {
 				if rel.Status == "deployed" {
-					fmt.Println("  Longhorn already installed")
-					return nil
+					releaseExists = true
+					break
 				}
 				// Uninstall failed release
 				fmt.Printf("  Removing failed release (status: %s)...\n", rel.Status)
@@ -285,18 +332,34 @@ func installLonghorn(ctx context.Context, helmClient HelmClient, k8sClient K8sCl
 		}
 	}
 
-	// Install via Helm
-	if err := helmClient.Install(ctx, helm.InstallOptions{
-		ReleaseName:     "longhorn",
-		Namespace:       namespace,
-		Chart:           longhornChart,
-		Version:         version,
-		Values:          values,
-		CreateNamespace: true,
-		Wait:            true,
-		Timeout:         10 * time.Minute,
-	}); err != nil {
-		return fmt.Errorf("failed to install longhorn: %w", err)
+	if releaseExists {
+		// Upgrade existing release
+		fmt.Println("  Upgrading Longhorn...")
+		if err := helmClient.Upgrade(ctx, helm.UpgradeOptions{
+			ReleaseName: "longhorn",
+			Namespace:   namespace,
+			Chart:       longhornChart,
+			Version:     version,
+			Values:      values,
+			Wait:        true,
+			Timeout:     10 * time.Minute,
+		}); err != nil {
+			return fmt.Errorf("failed to upgrade longhorn: %w", err)
+		}
+	} else {
+		// Install via Helm
+		if err := helmClient.Install(ctx, helm.InstallOptions{
+			ReleaseName:     "longhorn",
+			Namespace:       namespace,
+			Chart:           longhornChart,
+			Version:         version,
+			Values:          values,
+			CreateNamespace: true,
+			Wait:            true,
+			Timeout:         10 * time.Minute,
+		}); err != nil {
+			return fmt.Errorf("failed to install longhorn: %w", err)
+		}
 	}
 
 	fmt.Println("  Longhorn installed successfully")
@@ -339,9 +402,22 @@ func buildLonghornValues(cfg *Config) map[string]interface{} {
 	}
 	values["persistence"] = persistence
 
-	// Ingress disabled by default
-	values["ingress"] = map[string]interface{}{
-		"enabled": false,
+	// Ingress configuration
+	if cfg.Longhorn != nil && cfg.Longhorn.IngressEnabled && cfg.Longhorn.IngressHost != "" {
+		values["ingress"] = map[string]interface{}{
+			"enabled":          true,
+			"ingressClassName": "contour",
+			"host":             cfg.Longhorn.IngressHost,
+			"tls":              true,
+			"tlsSecret":        "longhorn-tls",
+			"annotations": map[string]interface{}{
+				"cert-manager.io/cluster-issuer": "foundry-ca-issuer",
+			},
+		}
+	} else {
+		values["ingress"] = map[string]interface{}{
+			"enabled": false,
+		}
 	}
 
 	return values

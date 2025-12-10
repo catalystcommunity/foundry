@@ -736,12 +736,13 @@ func TestPluralizeKind(t *testing.T) {
 		kind string
 		want string
 	}{
-		{"Pod", "Pods"},
-		{"Service", "Services"},
-		{"Deployment", "Deployments"},
+		{"Pod", "pods"},
+		{"Service", "services"},
+		{"Deployment", "deployments"},
 		{"Endpoints", "endpoints"},
 		{"Ingress", "ingresses"},
-		{"ConfigMap", "ConfigMaps"},
+		{"ConfigMap", "configmaps"},
+		{"Job", "jobs"},
 	}
 
 	for _, tt := range tests {
@@ -750,4 +751,291 @@ func TestPluralizeKind(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 		})
 	}
+}
+
+func TestGetNodeLabels(t *testing.T) {
+	tests := []struct {
+		name       string
+		nodeName   string
+		nodeLabels map[string]string
+		wantLabels map[string]string
+		wantErr    bool
+	}{
+		{
+			name:     "node with labels",
+			nodeName: "test-node",
+			nodeLabels: map[string]string{
+				"environment": "production",
+				"zone":        "us-east-1a",
+			},
+			wantLabels: map[string]string{
+				"environment": "production",
+				"zone":        "us-east-1a",
+			},
+			wantErr: false,
+		},
+		{
+			name:       "node with no labels",
+			nodeName:   "test-node",
+			nodeLabels: nil,
+			wantLabels: map[string]string{},
+			wantErr:    false,
+		},
+		{
+			name:     "node not found",
+			nodeName: "nonexistent",
+			wantErr:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var nodes []runtime.Object
+			if tt.nodeName != "nonexistent" {
+				nodes = []runtime.Object{
+					&corev1.Node{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:   tt.nodeName,
+							Labels: tt.nodeLabels,
+						},
+					},
+				}
+			}
+
+			fakeClient := fake.NewSimpleClientset(nodes...)
+			client := &Client{clientset: fakeClient}
+
+			labels, err := client.GetNodeLabels(context.Background(), tt.nodeName)
+
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.wantLabels, labels)
+			}
+		})
+	}
+}
+
+func TestSetNodeLabels(t *testing.T) {
+	tests := []struct {
+		name          string
+		nodeName      string
+		initialLabels map[string]string
+		setLabels     map[string]string
+		wantLabels    map[string]string
+		wantErr       bool
+	}{
+		{
+			name:          "set new labels",
+			nodeName:      "test-node",
+			initialLabels: map[string]string{},
+			setLabels: map[string]string{
+				"environment": "production",
+				"zone":        "us-east-1a",
+			},
+			wantLabels: map[string]string{
+				"environment": "production",
+				"zone":        "us-east-1a",
+			},
+			wantErr: false,
+		},
+		{
+			name:     "update existing labels",
+			nodeName: "test-node",
+			initialLabels: map[string]string{
+				"environment": "staging",
+				"zone":        "us-east-1a",
+			},
+			setLabels: map[string]string{
+				"environment": "production",
+			},
+			wantLabels: map[string]string{
+				"environment": "production",
+				"zone":        "us-east-1a",
+			},
+			wantErr: false,
+		},
+		{
+			name:     "remove label with empty value",
+			nodeName: "test-node",
+			initialLabels: map[string]string{
+				"environment": "production",
+				"zone":        "us-east-1a",
+			},
+			setLabels: map[string]string{
+				"zone": "",
+			},
+			wantLabels: map[string]string{
+				"environment": "production",
+			},
+			wantErr: false,
+		},
+		{
+			name:          "empty labels - no-op",
+			nodeName:      "test-node",
+			initialLabels: map[string]string{"foo": "bar"},
+			setLabels:     map[string]string{},
+			wantLabels:    map[string]string{"foo": "bar"},
+			wantErr:       false,
+		},
+		{
+			name:      "node not found",
+			nodeName:  "nonexistent",
+			setLabels: map[string]string{"foo": "bar"},
+			wantErr:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var nodes []runtime.Object
+			if tt.nodeName != "nonexistent" {
+				nodes = []runtime.Object{
+					&corev1.Node{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:   tt.nodeName,
+							Labels: tt.initialLabels,
+						},
+					},
+				}
+			}
+
+			fakeClient := fake.NewSimpleClientset(nodes...)
+			client := &Client{clientset: fakeClient}
+
+			err := client.SetNodeLabels(context.Background(), tt.nodeName, tt.setLabels)
+
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+
+				// Verify labels were set correctly
+				node, err := fakeClient.CoreV1().Nodes().Get(context.Background(), tt.nodeName, metav1.GetOptions{})
+				require.NoError(t, err)
+				assert.Equal(t, tt.wantLabels, node.Labels)
+			}
+		})
+	}
+}
+
+func TestRemoveNodeLabel(t *testing.T) {
+	tests := []struct {
+		name          string
+		nodeName      string
+		initialLabels map[string]string
+		removeKey     string
+		wantLabels    map[string]string
+		wantErr       bool
+	}{
+		{
+			name:     "remove existing label",
+			nodeName: "test-node",
+			initialLabels: map[string]string{
+				"environment": "production",
+				"zone":        "us-east-1a",
+			},
+			removeKey: "zone",
+			wantLabels: map[string]string{
+				"environment": "production",
+			},
+			wantErr: false,
+		},
+		{
+			name:     "remove non-existent label - no-op",
+			nodeName: "test-node",
+			initialLabels: map[string]string{
+				"environment": "production",
+			},
+			removeKey: "zone",
+			wantLabels: map[string]string{
+				"environment": "production",
+			},
+			wantErr: false,
+		},
+		{
+			name:          "remove from node with nil labels - no-op",
+			nodeName:      "test-node",
+			initialLabels: nil,
+			removeKey:     "zone",
+			wantLabels:    nil,
+			wantErr:       false,
+		},
+		{
+			name:          "empty key",
+			nodeName:      "test-node",
+			initialLabels: map[string]string{"foo": "bar"},
+			removeKey:     "",
+			wantErr:       true,
+		},
+		{
+			name:      "node not found",
+			nodeName:  "nonexistent",
+			removeKey: "foo",
+			wantErr:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var nodes []runtime.Object
+			if tt.nodeName != "nonexistent" {
+				nodes = []runtime.Object{
+					&corev1.Node{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:   tt.nodeName,
+							Labels: tt.initialLabels,
+						},
+					},
+				}
+			}
+
+			fakeClient := fake.NewSimpleClientset(nodes...)
+			client := &Client{clientset: fakeClient}
+
+			err := client.RemoveNodeLabel(context.Background(), tt.nodeName, tt.removeKey)
+
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+
+				// Verify labels after removal
+				node, err := fakeClient.CoreV1().Nodes().Get(context.Background(), tt.nodeName, metav1.GetOptions{})
+				require.NoError(t, err)
+				assert.Equal(t, tt.wantLabels, node.Labels)
+			}
+		})
+	}
+}
+
+func TestNodeFromCoreV1_Labels(t *testing.T) {
+	t.Run("labels are copied", func(t *testing.T) {
+		originalLabels := map[string]string{
+			"environment": "production",
+			"zone":        "us-east-1a",
+		}
+
+		coreNode := &corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:   "test-node",
+				Labels: originalLabels,
+			},
+			Status: corev1.NodeStatus{
+				Conditions: []corev1.NodeCondition{
+					{Type: corev1.NodeReady, Status: corev1.ConditionTrue},
+				},
+			},
+		}
+
+		node := NodeFromCoreV1(coreNode)
+
+		// Verify labels are present
+		assert.Equal(t, originalLabels, node.Labels)
+
+		// Verify it's a copy (mutation doesn't affect original)
+		node.Labels["new"] = "value"
+		assert.NotContains(t, coreNode.Labels, "new")
+	})
 }

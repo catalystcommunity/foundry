@@ -3,6 +3,7 @@ package cluster
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/catalystcommunity/foundry/v1/internal/k8s"
@@ -15,14 +16,24 @@ func NewNodeListCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "list",
 		Usage: "List all cluster nodes",
+		Flags: []cli.Flag{
+			&cli.BoolFlag{
+				Name:  "show-labels",
+				Usage: "Show node labels in output",
+			},
+			&cli.BoolFlag{
+				Name:  "user-labels-only",
+				Usage: "When showing labels, exclude system labels (kubernetes.io/*, etc.)",
+			},
+		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
-			return runNodeList(ctx)
+			return runNodeList(ctx, cmd.Bool("show-labels"), cmd.Bool("user-labels-only"))
 		},
 	}
 }
 
 // runNodeList lists all nodes in the cluster
-func runNodeList(ctx context.Context) error {
+func runNodeList(ctx context.Context, showLabels, userLabelsOnly bool) error {
 	// Create OpenBAO resolver to get kubeconfig
 	resolver, err := secrets.NewOpenBAOResolver("", "")
 	if err != nil {
@@ -47,19 +58,66 @@ func runNodeList(ctx context.Context) error {
 	}
 
 	// Print table header
-	fmt.Printf("%-30s %-20s %-15s %-15s\n", "NAME", "ROLES", "STATUS", "VERSION")
-	fmt.Println(strings.Repeat("-", 80))
+	if showLabels {
+		fmt.Printf("%-30s %-20s %-10s %-12s %s\n", "NAME", "ROLES", "STATUS", "VERSION", "LABELS")
+		fmt.Println(strings.Repeat("-", 100))
+	} else {
+		fmt.Printf("%-30s %-20s %-15s %-15s\n", "NAME", "ROLES", "STATUS", "VERSION")
+		fmt.Println(strings.Repeat("-", 80))
+	}
 
 	// Print node information
 	for _, node := range nodes {
 		roles := strings.Join(node.Roles, ",")
-		fmt.Printf("%-30s %-20s %-15s %-15s\n",
-			node.Name,
-			roles,
-			node.Status,
-			node.Version,
-		)
+
+		if showLabels {
+			labels := node.Labels
+			if userLabelsOnly {
+				labels = k8s.FilterUserLabels(labels)
+			}
+			labelStr := formatLabels(labels)
+			fmt.Printf("%-30s %-20s %-10s %-12s %s\n",
+				node.Name,
+				roles,
+				node.Status,
+				node.Version,
+				labelStr,
+			)
+		} else {
+			fmt.Printf("%-30s %-20s %-15s %-15s\n",
+				node.Name,
+				roles,
+				node.Status,
+				node.Version,
+			)
+		}
 	}
 
 	return nil
+}
+
+// formatLabels formats a label map as a comma-separated string
+func formatLabels(labels map[string]string) string {
+	if len(labels) == 0 {
+		return "<none>"
+	}
+
+	// Sort keys for consistent output
+	keys := make([]string, 0, len(labels))
+	for k := range labels {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	parts := make([]string, 0, len(labels))
+	for _, k := range keys {
+		v := labels[k]
+		if v == "" {
+			parts = append(parts, k)
+		} else {
+			parts = append(parts, fmt.Sprintf("%s=%s", k, v))
+		}
+	}
+
+	return strings.Join(parts, ",")
 }

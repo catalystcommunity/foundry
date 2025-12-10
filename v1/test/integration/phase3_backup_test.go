@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/catalystcommunity/foundry/v1/internal/component/garage"
+	"github.com/catalystcommunity/foundry/v1/internal/component/seaweedfs"
 	"github.com/catalystcommunity/foundry/v1/internal/component/storage"
 	"github.com/catalystcommunity/foundry/v1/internal/component/velero"
 	"github.com/catalystcommunity/foundry/v1/internal/helm"
@@ -59,15 +59,15 @@ func TestPhase3_VeleroDeployment(t *testing.T) {
 	deployLocalPathProvisionerForBackup(t, ctx, helmClient, k8sClient)
 	t.Log("✓ local-path-provisioner deployed")
 
-	// Step 4: Deploy Garage for backup storage
-	t.Log("\n[4/8] Deploying Garage for S3-compatible backup storage...")
-	deployGarageForBackup(t, ctx, helmClient, k8sClient)
-	t.Log("✓ Garage deployed")
+	// Step 4: Deploy SeaweedFS for backup storage
+	t.Log("\n[4/8] Deploying SeaweedFS for S3-compatible backup storage...")
+	deploySeaweedFSForBackup(t, ctx, helmClient, k8sClient)
+	t.Log("✓ SeaweedFS deployed")
 
-	// Step 5: Wait for Garage to be ready
-	t.Log("\n[5/8] Waiting for Garage to be ready...")
-	waitForGarageReady(t, ctx, k8sClient)
-	t.Log("✓ Garage is ready")
+	// Step 5: Wait for SeaweedFS to be ready
+	t.Log("\n[5/8] Waiting for SeaweedFS to be ready...")
+	waitForSeaweedFSReady(t, ctx, k8sClient)
+	t.Log("✓ SeaweedFS is ready")
 
 	// Step 6: Deploy Velero
 	t.Log("\n[6/8] Deploying Velero...")
@@ -88,7 +88,7 @@ func TestPhase3_VeleroDeployment(t *testing.T) {
 	t.Log("Summary:")
 	t.Log("  ✓ Kind cluster operational")
 	t.Log("  ✓ Storage provisioner working")
-	t.Log("  ✓ Garage deployed for S3-compatible backup storage")
+	t.Log("  ✓ SeaweedFS deployed for S3-compatible backup storage")
 	t.Log("  ✓ Velero deployed via Helm")
 	t.Log("  ✓ Velero pods running")
 	t.Log("  ✓ Backup storage location configured")
@@ -96,7 +96,7 @@ func TestPhase3_VeleroDeployment(t *testing.T) {
 
 // TestPhase3_FullBackupRestore tests the complete backup and restore workflow
 // This is a comprehensive test that:
-// 1. Deploys the backup infrastructure (Garage + Velero)
+// 1. Deploys the backup infrastructure (SeaweedFS + Velero)
 // 2. Creates test resources
 // 3. Creates a backup
 // 4. Deletes test resources
@@ -137,15 +137,15 @@ func TestPhase3_FullBackupRestore(t *testing.T) {
 	deployLocalPathProvisionerForBackup(t, ctx, helmClient, k8sClient)
 	t.Log("✓ local-path-provisioner deployed")
 
-	// Step 4: Deploy Garage
-	t.Log("\n[4/12] Deploying Garage for S3-compatible backup storage...")
-	deployGarageForBackup(t, ctx, helmClient, k8sClient)
-	t.Log("✓ Garage deployed")
+	// Step 4: Deploy SeaweedFS
+	t.Log("\n[4/12] Deploying SeaweedFS for S3-compatible backup storage...")
+	deploySeaweedFSForBackup(t, ctx, helmClient, k8sClient)
+	t.Log("✓ SeaweedFS deployed")
 
-	// Step 5: Wait for Garage to be ready
-	t.Log("\n[5/12] Waiting for Garage to be ready...")
-	waitForGarageReady(t, ctx, k8sClient)
-	t.Log("✓ Garage is ready")
+	// Step 5: Wait for SeaweedFS to be ready
+	t.Log("\n[5/12] Waiting for SeaweedFS to be ready...")
+	waitForSeaweedFSReady(t, ctx, k8sClient)
+	t.Log("✓ SeaweedFS is ready")
 
 	// Step 6: Deploy Velero
 	t.Log("\n[6/12] Deploying Velero...")
@@ -186,7 +186,7 @@ func TestPhase3_FullBackupRestore(t *testing.T) {
 	t.Log("Summary:")
 	t.Log("  ✓ Kind cluster operational")
 	t.Log("  ✓ Storage provisioner working")
-	t.Log("  ✓ Garage deployed and running")
+	t.Log("  ✓ SeaweedFS deployed and running")
 	t.Log("  ✓ Velero deployed and running")
 	t.Log("  ✓ Test resources created")
 	t.Log("  ✓ Backup functionality verified")
@@ -215,46 +215,48 @@ func deployLocalPathProvisionerForBackup(t *testing.T, ctx context.Context, helm
 	waitForPodsInNamespaceForBackup(t, ctx, k8sClient, "kube-system", "local-path", 2*time.Minute)
 }
 
-// deployGarageForBackup deploys Garage for Velero S3-compatible backup storage
-func deployGarageForBackup(t *testing.T, ctx context.Context, helmClient *helm.Client, k8sClient *k8s.Client) {
-	cfg := &garage.Config{
-		Version:           "1.0.1",
-		Namespace:         "garage",
-		ReplicationFactor: 1, // Single node for testing
-		Replicas:          1,
-		StorageClass:      "local-path",
-		StorageSize:       "2Gi",
-		S3Region:          "garage",
-		AdminKey:          "testadminkey",    // Test key only
-		AdminSecret:       "testadminsecret", // Test secret only
-		Buckets:           []string{"velero"},
+// deploySeaweedFSForBackup deploys SeaweedFS for Velero S3-compatible backup storage
+func deploySeaweedFSForBackup(t *testing.T, ctx context.Context, helmClient *helm.Client, k8sClient *k8s.Client) {
+	cfg := &seaweedfs.Config{
+		Version:        "4.0.401",
+		Namespace:      "seaweedfs",
+		MasterReplicas: 1, // Single node for testing
+		VolumeReplicas: 1,
+		FilerReplicas:  1,
+		StorageClass:   "local-path",
+		StorageSize:    "2Gi",
+		S3Enabled:      true,
+		S3Port:         8333,
+		AccessKey:      "testadminkey",    // Test key only
+		SecretKey:      "testadminsecret", // Test secret only
+		Buckets:        []string{"velero"},
 	}
 
-	err := garage.Install(ctx, helmClient, k8sClient, cfg)
-	require.NoError(t, err, "Should install Garage")
+	err := seaweedfs.Install(ctx, helmClient, k8sClient, cfg)
+	require.NoError(t, err, "Should install SeaweedFS")
 }
 
-// waitForGarageReady waits for Garage to be ready
-func waitForGarageReady(t *testing.T, ctx context.Context, k8sClient *k8s.Client) {
-	waitForPodsInNamespaceForBackup(t, ctx, k8sClient, "garage", "garage", 5*time.Minute)
+// waitForSeaweedFSReady waits for SeaweedFS to be ready
+func waitForSeaweedFSReady(t *testing.T, ctx context.Context, k8sClient *k8s.Client) {
+	waitForPodsInNamespaceForBackup(t, ctx, k8sClient, "seaweedfs", "seaweedfs", 5*time.Minute)
 
-	// Additional wait for Garage to initialize
+	// Additional wait for SeaweedFS to initialize
 	time.Sleep(10 * time.Second)
 }
 
-// deployVelero deploys Velero with Garage S3-compatible backend
+// deployVelero deploys Velero with SeaweedFS S3-compatible backend
 func deployVelero(t *testing.T, ctx context.Context, helmClient *helm.Client, k8sClient *k8s.Client) {
 	cfg := &velero.Config{
 		Version:                      "8.0.0",
 		Namespace:                    "velero",
 		Provider:                     velero.ProviderS3,
-		S3Endpoint:                   "http://garage.garage.svc.cluster.local:3900",
+		S3Endpoint:                   "http://seaweedfs-s3.seaweedfs.svc.cluster.local:8333",
 		S3Bucket:                     "velero",
-		S3Region:                     "garage",
+		S3Region:                     "us-east-1",
 		S3AccessKey:                  "testadminkey",
 		S3SecretKey:                  "testadminsecret",
 		S3InsecureSkipTLSVerify:      true,
-		S3ForcePathStyle:             true, // Required for Garage
+		S3ForcePathStyle:             true, // Required for SeaweedFS
 		DefaultBackupStorageLocation: true,
 		BackupRetentionDays:          7,
 		ScheduleName:                 "test-schedule",
@@ -386,34 +388,34 @@ func verifyRestoreCapability(t *testing.T, ctx context.Context, k8sClient *k8s.C
 	}
 	assert.True(t, veleroReady, "Velero should be ready for restore operations")
 
-	// Verify Garage is accessible (S3-compatible backup storage)
-	garagePods, err := k8sClient.GetPods(ctx, "garage")
-	require.NoError(t, err, "Should get garage pods")
+	// Verify SeaweedFS is accessible (S3-compatible backup storage)
+	seaweedfsPods, err := k8sClient.GetPods(ctx, "seaweedfs")
+	require.NoError(t, err, "Should get seaweedfs pods")
 
-	garageReady := false
-	for _, pod := range garagePods {
-		if containsSubstringP3(pod.Name, "garage") && pod.Status == "Running" {
-			garageReady = true
+	seaweedfsReady := false
+	for _, pod := range seaweedfsPods {
+		if containsSubstringP3(pod.Name, "seaweedfs") && pod.Status == "Running" {
+			seaweedfsReady = true
 			break
 		}
 	}
-	assert.True(t, garageReady, "Garage should be ready for restore operations")
+	assert.True(t, seaweedfsReady, "SeaweedFS should be ready for restore operations")
 }
 
 // verifyBackupInfrastructureHealth verifies the full backup infrastructure
 func verifyBackupInfrastructureHealth(t *testing.T, ctx context.Context, k8sClient *k8s.Client) {
-	// Check Garage namespace
-	garagePods, err := k8sClient.GetPods(ctx, "garage")
-	require.NoError(t, err, "Should get garage pods")
+	// Check SeaweedFS namespace
+	seaweedfsPods, err := k8sClient.GetPods(ctx, "seaweedfs")
+	require.NoError(t, err, "Should get seaweedfs pods")
 
-	garageRunning := 0
-	for _, pod := range garagePods {
+	seaweedfsRunning := 0
+	for _, pod := range seaweedfsPods {
 		if pod.Status == "Running" {
-			garageRunning++
+			seaweedfsRunning++
 		}
 	}
-	t.Logf("  Garage: %d/%d pods running", garageRunning, len(garagePods))
-	assert.Greater(t, garageRunning, 0, "Should have running Garage pods")
+	t.Logf("  SeaweedFS: %d/%d pods running", seaweedfsRunning, len(seaweedfsPods))
+	assert.Greater(t, seaweedfsRunning, 0, "Should have running SeaweedFS pods")
 
 	// Check Velero namespace
 	veleroPods, err := k8sClient.GetPods(ctx, "velero")

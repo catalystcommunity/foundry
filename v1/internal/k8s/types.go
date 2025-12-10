@@ -12,6 +12,7 @@ type Node struct {
 	Status             string
 	Ready              bool
 	Roles              []string
+	Labels             map[string]string
 	Version            string
 	InternalIP         string
 	ExternalIP         string
@@ -60,8 +61,15 @@ type Container struct {
 
 // NodeFromCoreV1 converts a core/v1 Node to our Node type
 func NodeFromCoreV1(node *corev1.Node) *Node {
+	// Copy labels to prevent mutation of the original
+	labels := make(map[string]string, len(node.Labels))
+	for k, v := range node.Labels {
+		labels[k] = v
+	}
+
 	n := &Node{
 		Name:              node.Name,
+		Labels:            labels,
 		Version:           node.Status.NodeInfo.KubeletVersion,
 		CreationTimestamp: node.CreationTimestamp.Time,
 		Roles:             extractNodeRoles(node),

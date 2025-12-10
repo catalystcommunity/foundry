@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"fmt"
 	"testing"
 )
 
@@ -177,16 +178,31 @@ func TestFormatLabels(t *testing.T) {
 
 			result := formatLabels(labelsCopy)
 
-			// For tests with multiple labels, we can't guarantee order
-			// so just check length and key contents for those cases
-			if len(tt.labels) <= 2 {
+			// For tests with multiple non-name labels, we can't guarantee order
+			// Only do exact match when there's at most 1 non-name label
+			_, hasName := tt.labels["__name__"]
+			nonNameCount := len(tt.labels)
+			if hasName {
+				nonNameCount--
+			}
+
+			if nonNameCount <= 1 {
 				if result != tt.want {
 					t.Errorf("formatLabels() = %q, want %q", result, tt.want)
 				}
 			} else {
-				// Just verify it's formatted correctly (has braces, etc.)
-				if result[0] != '{' && !contains(result, "{") {
-					t.Errorf("formatLabels() = %q, expected formatted labels", result)
+				// Just verify it's formatted correctly (has braces, contains expected keys)
+				if !contains(result, "{") {
+					t.Errorf("formatLabels() = %q, expected formatted labels with braces", result)
+				}
+				for k, v := range tt.labels {
+					if k == "__name__" {
+						continue
+					}
+					expected := fmt.Sprintf(`%s="%s"`, k, v)
+					if !contains(result, expected) {
+						t.Errorf("formatLabels() = %q, missing label %s", result, expected)
+					}
 				}
 			}
 		})

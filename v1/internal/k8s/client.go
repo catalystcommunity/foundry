@@ -3,6 +3,7 @@ package k8s
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -162,12 +163,31 @@ func (c *Client) CreateNamespace(ctx context.Context, name string) error {
 }
 
 // ApplyManifest applies a YAML manifest to the cluster
-// This supports single resources or multi-document YAML
+// This supports single resources or multi-document YAML (separated by ---)
 func (c *Client) ApplyManifest(ctx context.Context, manifest string) error {
 	if manifest == "" {
 		return fmt.Errorf("manifest is empty")
 	}
 
+	// Split multi-document YAML
+	documents := strings.Split(manifest, "\n---")
+
+	for _, doc := range documents {
+		doc = strings.TrimSpace(doc)
+		if doc == "" {
+			continue
+		}
+
+		if err := c.applySingleManifest(ctx, doc); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// applySingleManifest applies a single YAML document to the cluster
+func (c *Client) applySingleManifest(ctx context.Context, manifest string) error {
 	// Parse the manifest as unstructured object
 	var obj unstructured.Unstructured
 	if err := yaml.Unmarshal([]byte(manifest), &obj); err != nil {
@@ -187,23 +207,60 @@ func (c *Client) ApplyManifest(ctx context.Context, manifest string) error {
 		Resource: pluralizeKind(gvk.Kind),
 	}
 
+	// Determine if resource is cluster-scoped or namespaced
+	isClusterScoped := isClusterScopedResource(gvk.Kind)
+
 	// Determine namespace
 	namespace := obj.GetNamespace()
-	if namespace == "" {
+	if namespace == "" && !isClusterScoped {
 		namespace = metav1.NamespaceDefault
 	}
 
-	// Create or update the resource
-	_, err := c.dynamicClient.Resource(gvr).Namespace(namespace).Create(ctx, &obj, metav1.CreateOptions{})
-	if err != nil {
-		// If already exists, try to update
-		_, err = c.dynamicClient.Resource(gvr).Namespace(namespace).Update(ctx, &obj, metav1.UpdateOptions{})
-		if err != nil {
-			return fmt.Errorf("failed to apply manifest: %w", err)
+	// Try to create the resource first
+	var err error
+	if isClusterScoped {
+		_, err = c.dynamicClient.Resource(gvr).Create(ctx, &obj, metav1.CreateOptions{})
+		if err != nil && strings.Contains(err.Error(), "already exists") {
+			// Resource exists - for idempotency, just return success
+			// (we could fetch and update, but for issuers/certs that's usually not needed)
+			return nil
+		}
+	} else {
+		_, err = c.dynamicClient.Resource(gvr).Namespace(namespace).Create(ctx, &obj, metav1.CreateOptions{})
+		if err != nil && strings.Contains(err.Error(), "already exists") {
+			// Resource exists - for idempotency, just return success
+			return nil
 		}
 	}
 
+	if err != nil {
+		return fmt.Errorf("failed to apply manifest (kind=%s, name=%s): %w", gvk.Kind, obj.GetName(), err)
+	}
+
 	return nil
+}
+
+// isClusterScopedResource returns true if the resource kind is cluster-scoped
+func isClusterScopedResource(kind string) bool {
+	clusterScoped := map[string]bool{
+		"ClusterIssuer":             true,
+		"ClusterRole":               true,
+		"ClusterRoleBinding":        true,
+		"Namespace":                 true,
+		"Node":                      true,
+		"PersistentVolume":          true,
+		"StorageClass":              true,
+		"CustomResourceDefinition":  true,
+		"PriorityClass":             true,
+		"IngressClass":              true,
+		"RuntimeClass":              true,
+		"VolumeSnapshotClass":       true,
+		"CSIDriver":                 true,
+		"CSINode":                   true,
+		"ValidatingWebhookConfiguration": true,
+		"MutatingWebhookConfiguration":   true,
+	}
+	return clusterScoped[kind]
 }
 
 // pluralizeKind converts a Kind to its plural resource form
@@ -216,8 +273,8 @@ func pluralizeKind(kind string) string {
 	case "Ingress":
 		return "ingresses"
 	default:
-		// Most resources just add 's'
-		return kind + "s"
+		// Most resources just add 's' and lowercase
+		return strings.ToLower(kind) + "s"
 	}
 }
 
@@ -337,6 +394,89 @@ func (c *Client) DeleteNode(ctx context.Context, nodeName string) error {
 	return nil
 }
 
+// GetNodeLabels retrieves all labels from a node
+func (c *Client) GetNodeLabels(ctx context.Context, nodeName string) (map[string]string, error) {
+	node, err := c.clientset.CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get node: %w", err)
+	}
+
+	// Return a copy to prevent mutation
+	labels := make(map[string]string, len(node.Labels))
+	for k, v := range node.Labels {
+		labels[k] = v
+	}
+	return labels, nil
+}
+
+// SetNodeLabels sets labels on a node
+// Labels with empty values will be removed from the node
+func (c *Client) SetNodeLabels(ctx context.Context, nodeName string, labels map[string]string) error {
+	if len(labels) == 0 {
+		return nil // Nothing to do
+	}
+
+	// Get the node
+	node, err := c.clientset.CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to get node: %w", err)
+	}
+
+	// Initialize labels map if nil
+	if node.Labels == nil {
+		node.Labels = make(map[string]string)
+	}
+
+	// Apply labels (empty value means remove)
+	for key, value := range labels {
+		if value == "" {
+			delete(node.Labels, key)
+		} else {
+			node.Labels[key] = value
+		}
+	}
+
+	// Update the node
+	_, err = c.clientset.CoreV1().Nodes().Update(ctx, node, metav1.UpdateOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to update node labels: %w", err)
+	}
+
+	return nil
+}
+
+// RemoveNodeLabel removes a specific label from a node
+func (c *Client) RemoveNodeLabel(ctx context.Context, nodeName, key string) error {
+	if key == "" {
+		return fmt.Errorf("label key cannot be empty")
+	}
+
+	// Get the node
+	node, err := c.clientset.CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to get node: %w", err)
+	}
+
+	// Check if label exists
+	if node.Labels == nil {
+		return nil // No labels to remove
+	}
+	if _, exists := node.Labels[key]; !exists {
+		return nil // Label doesn't exist, nothing to do
+	}
+
+	// Remove the label
+	delete(node.Labels, key)
+
+	// Update the node
+	_, err = c.clientset.CoreV1().Nodes().Update(ctx, node, metav1.UpdateOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to remove node label: %w", err)
+	}
+
+	return nil
+}
+
 // isDaemonSetPod checks if a pod is managed by a DaemonSet
 func isDaemonSetPod(pod *corev1.Pod) bool {
 	for _, ownerRef := range pod.OwnerReferences {
@@ -351,4 +491,45 @@ func isDaemonSetPod(pod *corev1.Pod) bool {
 func isStaticPod(pod *corev1.Pod) bool {
 	_, exists := pod.Annotations["kubernetes.io/config.mirror"]
 	return exists
+}
+
+// DeleteJob deletes a Job by name in the specified namespace
+func (c *Client) DeleteJob(ctx context.Context, namespace, name string) error {
+	propagationPolicy := metav1.DeletePropagationBackground
+	return c.clientset.BatchV1().Jobs(namespace).Delete(ctx, name, metav1.DeleteOptions{
+		PropagationPolicy: &propagationPolicy,
+	})
+}
+
+// WaitForJobComplete waits for a Job to complete successfully
+func (c *Client) WaitForJobComplete(ctx context.Context, namespace, name string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			if time.Now().After(deadline) {
+				return fmt.Errorf("timeout waiting for job %s/%s to complete", namespace, name)
+			}
+
+			job, err := c.clientset.BatchV1().Jobs(namespace).Get(ctx, name, metav1.GetOptions{})
+			if err != nil {
+				continue // Retry on error
+			}
+
+			// Check if job succeeded
+			if job.Status.Succeeded > 0 {
+				return nil
+			}
+
+			// Check if job failed
+			if job.Status.Failed > 0 {
+				return fmt.Errorf("job %s/%s failed", namespace, name)
+			}
+		}
+	}
 }

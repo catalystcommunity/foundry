@@ -16,8 +16,8 @@ import (
 	"github.com/catalystcommunity/foundry/v1/internal/component/externaldns"
 	"github.com/catalystcommunity/foundry/v1/internal/component/gatewayapi"
 	"github.com/catalystcommunity/foundry/v1/internal/component/grafana"
-	"github.com/catalystcommunity/foundry/v1/internal/component/garage"
 	"github.com/catalystcommunity/foundry/v1/internal/component/loki"
+	"github.com/catalystcommunity/foundry/v1/internal/component/seaweedfs"
 	"github.com/catalystcommunity/foundry/v1/internal/component/openbao"
 	"github.com/catalystcommunity/foundry/v1/internal/component/prometheus"
 	componentStorage "github.com/catalystcommunity/foundry/v1/internal/component/storage"
@@ -65,7 +65,7 @@ Examples:
 
   # Phase 3 (Kubernetes-based) components:
   foundry component install storage --backend local-path
-  foundry component install garage
+  foundry component install seaweedfs
   foundry component install prometheus
   foundry component install loki
   foundry component install grafana
@@ -84,7 +84,7 @@ Examples:
 		// Storage-specific flags
 		&cli.StringFlag{
 			Name:  "backend",
-			Usage: "Storage backend: local-path, nfs, truenas-nfs, truenas-iscsi (for storage component)",
+			Usage: "Storage backend: local-path, nfs, longhorn (for storage component)",
 			Value: "local-path",
 		},
 		&cli.StringFlag{
@@ -105,7 +105,7 @@ var k8sComponents = map[string]bool{
 	"contour":       true,
 	"cert-manager":  true,
 	"storage":       true,
-	"garage":        true,
+	"seaweedfs":     true,
 	"prometheus":    true,
 	"loki":          true,
 	"grafana":       true,
@@ -236,21 +236,21 @@ func installK8sComponent(ctx context.Context, cmd *cli.Command, name string, sta
 			}
 		}
 		componentWithClients = componentStorage.NewComponent(helmClient, k8sClient)
-	case "garage":
-		componentWithClients = garage.NewComponent(helmClient, k8sClient)
+	case "seaweedfs":
+		componentWithClients = seaweedfs.NewComponent(helmClient, k8sClient)
 	case "prometheus":
 		componentWithClients = prometheus.NewComponent(helmClient, k8sClient)
 	case "loki":
-		// Get Garage credentials from the Garage secret
-		garageKey, garageSecret, err := getGarageCredentials(k8sClient)
+		// Get SeaweedFS credentials from the SeaweedFS secret
+		seaweedfsKey, seaweedfsSecret, err := getSeaweedFSCredentials(k8sClient)
 		if err != nil {
-			return fmt.Errorf("failed to get Garage credentials: %w", err)
+			return fmt.Errorf("failed to get SeaweedFS credentials: %w", err)
 		}
-		cfg["s3_endpoint"] = "http://garage.garage.svc.cluster.local:3900"
-		cfg["s3_access_key"] = garageKey
-		cfg["s3_secret_key"] = garageSecret
+		cfg["s3_endpoint"] = "http://seaweedfs-s3.seaweedfs.svc.cluster.local:8333"
+		cfg["s3_access_key"] = seaweedfsKey
+		cfg["s3_secret_key"] = seaweedfsSecret
 		cfg["s3_bucket"] = "loki"
-		cfg["s3_region"] = "garage"
+		cfg["s3_region"] = "us-east-1"
 		componentWithClients = loki.NewComponent(helmClient, k8sClient)
 	case "grafana":
 		// Get Prometheus and Loki endpoints for data sources
@@ -277,16 +277,16 @@ func installK8sComponent(ctx context.Context, cmd *cli.Command, name string, sta
 		}
 		componentWithClients = externaldns.NewComponent(helmClient, k8sClient)
 	case "velero":
-		// Get Garage credentials from the Garage secret
-		garageKey, garageSecret, err := getGarageCredentials(k8sClient)
+		// Get SeaweedFS credentials from the SeaweedFS secret
+		seaweedfsKey, seaweedfsSecret, err := getSeaweedFSCredentials(k8sClient)
 		if err != nil {
-			return fmt.Errorf("failed to get Garage credentials: %w", err)
+			return fmt.Errorf("failed to get SeaweedFS credentials: %w", err)
 		}
-		cfg["s3_endpoint"] = "http://garage.garage.svc.cluster.local:3900"
-		cfg["s3_access_key"] = garageKey
-		cfg["s3_secret_key"] = garageSecret
+		cfg["s3_endpoint"] = "http://seaweedfs-s3.seaweedfs.svc.cluster.local:8333"
+		cfg["s3_access_key"] = seaweedfsKey
+		cfg["s3_secret_key"] = seaweedfsSecret
 		cfg["s3_bucket"] = "velero"
-		cfg["s3_region"] = "garage"
+		cfg["s3_region"] = "us-east-1"
 		componentWithClients = velero.NewComponent(helmClient, k8sClient)
 	default:
 		return fmt.Errorf("unknown kubernetes component: %s", name)
@@ -309,28 +309,28 @@ func installK8sComponent(ctx context.Context, cmd *cli.Command, name string, sta
 	return nil
 }
 
-// getGarageCredentials retrieves Garage credentials from the garage secret
-func getGarageCredentials(k8sClient *k8s.Client) (string, string, error) {
+// getSeaweedFSCredentials retrieves SeaweedFS credentials from the seaweedfs secret
+func getSeaweedFSCredentials(k8sClient *k8s.Client) (string, string, error) {
 	if k8sClient == nil {
 		return "", "", fmt.Errorf("k8s client is nil")
 	}
 
-	secret, err := k8sClient.GetSecret(context.Background(), "garage", "garage")
+	secret, err := k8sClient.GetSecret(context.Background(), "seaweedfs", "seaweedfs")
 	if err != nil {
-		return "", "", fmt.Errorf("failed to get garage secret: %w", err)
+		return "", "", fmt.Errorf("failed to get seaweedfs secret: %w", err)
 	}
 
-	adminKey, ok := secret.Data["adminKey"]
+	accessKey, ok := secret.Data["accessKey"]
 	if !ok {
-		return "", "", fmt.Errorf("adminKey not found in garage secret")
+		return "", "", fmt.Errorf("accessKey not found in seaweedfs secret")
 	}
 
-	adminSecret, ok := secret.Data["adminSecret"]
+	secretKey, ok := secret.Data["secretKey"]
 	if !ok {
-		return "", "", fmt.Errorf("adminSecret not found in garage secret")
+		return "", "", fmt.Errorf("secretKey not found in seaweedfs secret")
 	}
 
-	return string(adminKey), string(adminSecret), nil
+	return string(accessKey), string(secretKey), nil
 }
 
 // getDNSAPIKey retrieves the DNS API key from OpenBAO
@@ -945,7 +945,7 @@ func isDependencyInstalled(dep string, cfg *config.Config) bool {
 	case "k3s", "kubernetes":
 		return cfg.SetupState.K8sInstalled
 	// K8s-based components - check via Helm release status
-	case "storage", "garage", "prometheus", "loki", "grafana", "external-dns", "velero",
+	case "storage", "seaweedfs", "prometheus", "loki", "grafana", "external-dns", "velero",
 		"gateway-api", "contour", "cert-manager":
 		// First check if K3s is installed
 		if !cfg.SetupState.K8sInstalled {
@@ -984,7 +984,7 @@ func isHelmReleaseInstalled(componentName string) bool {
 		namespace string
 	}{
 		"storage":      {"local-path-provisioner", "kube-system"},
-		"garage":       {"garage", "garage"},
+		"seaweedfs":    {"seaweedfs", "seaweedfs"},
 		"prometheus":   {"kube-prometheus-stack", "monitoring"},
 		"loki":         {"loki", "loki"},
 		"grafana":      {"grafana", "grafana"},

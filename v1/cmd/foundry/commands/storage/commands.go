@@ -13,6 +13,7 @@ in your Kubernetes cluster.
 
 Storage Management:
   foundry storage list        - Show configured storage backends
+  foundry storage add-disk    - Add raw disks to nodes for Longhorn storage
 
 PVC Management:
   foundry storage provision   - Create a new PVC
@@ -22,5 +23,6 @@ PVC Management:
 		ListCommand,
 		ProvisionCommand,
 		PVCCommand,
+		AddDiskCommand,
 	},
 }
