@@ -294,9 +294,9 @@ Foundry uses Longhorn for distributed block storage by default.
 - Automatic replication across nodes
 - Snapshot and backup support
 
-### Garage (S3-Compatible Storage)
+### SeaweedFS (S3-Compatible Storage)
 
-Garage provides S3-compatible object storage for Loki and Velero.
+SeaweedFS provides S3-compatible object storage for Loki and Velero.
 
 **Requirements:**
 - Runs on Longhorn PVCs

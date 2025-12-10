@@ -261,7 +261,7 @@ Secret paths are automatically scoped to their service context. When a service r
 # Format: namespace/path/to/secret:key=value
 myservice-stable/database/prod:password=my_local_dev_password
 myservice-toy/database/prod:password=toy_password
-foundry/garage:admin_key=local_garage_key
+foundry/seaweedfs:admin_key=local_seaweedfs_key
 external/github:api_token=ghp_localdevtoken123
 ```
 
@@ -756,16 +756,16 @@ Foundry automatically handles dependencies:
 
 7. **Storage** (Phase 3)
    - Longhorn (distributed block storage)
-   - Garage (S3-compatible object storage)
+   - SeaweedFS (S3-compatible object storage)
 
 8. **Observability** (Phase 3)
    - External-DNS (updates PowerDNS kubernetes zone)
    - Prometheus
-   - Loki (uses Garage for S3 storage)
+   - Loki (uses SeaweedFS for S3 storage)
    - Grafana
 
 9. **Backup & Recovery** (Phase 3)
-   - Velero (uses Garage for S3 backup storage)
+   - Velero (uses SeaweedFS for S3 backup storage)
 
 10. **CI/CD** (Phase 4, optional)
     - ArgoCD
@@ -1085,9 +1085,9 @@ components:
 - Cluster backup and disaster recovery
 - PVC snapshots
 - Scheduled backups
-- S3-compatible object storage backend (Garage)
+- S3-compatible object storage backend (SeaweedFS)
 
-### Garage
+### SeaweedFS
 
 **Purpose**: S3-compatible object storage
 
@@ -1102,9 +1102,8 @@ components:
 **Configuration**:
 ```yaml
 components:
-  garage:
+  seaweedfs:
     replicas: 3
-    replication_factor: 3
     storage_size: 100Gi
     buckets:
       - velero
@@ -1225,7 +1224,7 @@ Following project best practices:
 
 **Deliverables**:
 - [ ] Longhorn installation (distributed block storage)
-- [ ] Garage installation (S3-compatible object storage)
+- [ ] SeaweedFS installation (S3-compatible object storage)
 - [ ] `foundry component install` for Prometheus, Loki, Grafana
 - [ ] External-DNS installation
 - [ ] Velero installation and backup configuration

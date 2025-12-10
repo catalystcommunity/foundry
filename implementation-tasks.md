@@ -65,13 +65,13 @@ Each phase builds upon the previous one, with the following principles:
 - [x] PowerDNS HTTP API client works for zone and record management (57.4% coverage)
 - [x] Split-horizon DNS logic implemented (68.1% coverage)
 - [x] DNS zones can be created (infrastructure and kubernetes) (68.1% coverage)
-- [x] Infrastructure DNS initialization (openbao, dns, zot, truenas, k8s A records) (69.9% coverage)
+- [x] Infrastructure DNS initialization (openbao, dns, zot, k8s A records) (69.9% coverage)
 - [x] Kubernetes DNS initialization (wildcard record for ingress) (69.9% coverage)
 - [x] DNS management commands (zone list/create/delete, record add/list/delete, dns test) (CLI with tests)
 - [x] OpenBAO SSH key storage implementation (85-100% per-function coverage)
 - [x] Zot registry can be installed as container on infrastructure hosts (90.2% coverage)
 - [x] Zot configured with pull-through cache for Docker Hub (part of config generation)
-- [x] Zot configured with optional TrueNAS storage backend (part of installation logic)
+- [x] Zot configured (part of installation logic)
 - [x] K3s token generation for cluster and agent tokens (91.7% coverage)
 - [x] VIP configuration validation and kube-vip manifest generation (95.0% coverage)
 - [x] K3s control plane installation with VIP, DNS, and registry configuration (92.2% coverage)
@@ -90,7 +90,6 @@ Each phase builds upon the previous one, with the following principles:
 - [x] `foundry stack status` command works with health checks (100% coverage for core logic)
 - [x] `foundry stack validate` command works with comprehensive validation (100% coverage on validation logic, 8 test suites, 30+ test cases)
 - [x] Component dependencies are automatically resolved via dependency resolution system
-- [x] TrueNAS API client complete (96.8% coverage, datasets, NFS shares, pools, ping)
 - [x] OpenBAO integration test complete (Task 42.1 - container lifecycle, secrets, SSH keys, resolver, auth tokens - 6 test scenarios, all passing)
 - [x] PowerDNS integration test complete (Task 42.2 - 9 test scenarios: zone creation, record management, infrastructure/kubernetes DNS initialization, zone/record deletion - all passing)
 - [x] Zot integration test complete (Task 42.3 - 7 test scenarios: health, catalog, manifest upload/retrieval, tags, deletion - all passing)
@@ -102,9 +101,8 @@ Each phase builds upon the previous one, with the following principles:
 - [x] User can deploy a working cluster with DNS, registry, and secrets management (validated via integration tests)
 
 ### Phase 3: Observability & Storage ✗
-- [x] TrueNAS API integration complete (96.8% coverage)
-- [ ] CSI drivers deployed for persistent storage
-- [ ] MinIO deployed when needed
+- [ ] Longhorn deployed for persistent storage
+- [ ] SeaweedFS deployed for S3-compatible storage
 - [ ] Prometheus, Loki, Grafana deployed and configured
 - [ ] External-DNS manages DNS records automatically (using PowerDNS API)
 - [ ] Velero configured for backups
@@ -239,7 +237,7 @@ CGO_ENABLED=0 go build -ldflags="-s -w" -o foundry ./cmd/foundry
   - Kubernetes DNS Initialization (69.9% coverage)
   - DNS Management Commands (CLI with tests)
   - OpenBAO SSH Key Storage Implementation (85-100% per-function coverage)
-  - Zot Container Installation (90.2% coverage, pull-through cache, TrueNAS support)
+  - Zot Container Installation (90.2% coverage, pull-through cache)
   - K3s Token Generation (91.7% coverage, 25 test cases)
   - VIP Configuration (95.0% coverage, 13 test functions, 58 test cases)
   - K3s Control Plane Installation (92.2% coverage, comprehensive tests)
@@ -256,7 +254,6 @@ CGO_ENABLED=0 go build -ldflags="-s -w" -o foundry ./cmd/foundry
   - Stack Install Command (51.9% coverage, dry-run mode complete, 9 tests)
   - Stack Status Command (100% coverage for core logic, comprehensive health checks)
   - Stack Validate Command (100% coverage on validation logic, 85.7% on dependency validation, 8 test suites, 30+ test cases)
-  - TrueNAS API Client (96.8% coverage, datasets, NFS shares, pools, ping endpoint)
   - Storage Configure Command (all tests passing, interactive prompts, connection testing)
   - Storage List Command (all tests passing, pool formatting, secret resolution)
   - Storage Test Command (all tests passing, full test mode with dataset creation/deletion)

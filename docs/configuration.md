@@ -63,8 +63,8 @@ storage:
     replica_count: 3
     data_path: /var/lib/longhorn
 
-# S3-compatible object storage (Garage)
-garage:
+# S3-compatible object storage (SeaweedFS)
+seaweedfs:
   enabled: true
   replicas: 3
   buckets:

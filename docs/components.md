@@ -97,19 +97,19 @@ Longhorn provides:
 **Deployment**: Helm chart in Kubernetes
 **Namespace**: longhorn-system
 
-### Garage
+### SeaweedFS
 
 **Purpose**: S3-compatible object storage
 
-Garage provides:
+SeaweedFS provides:
 - S3 API for Velero backups
 - S3 API for Loki log storage
-- Lightweight and robust
+- High performance and scalable
 - Runs on Longhorn PVCs
 
 **Deployment**: Helm chart in Kubernetes
-**Namespace**: garage
-**Default Port**: 3900 (S3 API)
+**Namespace**: seaweedfs
+**Default Port**: 8333 (S3 API)
 
 ## Observability Components
 
@@ -134,7 +134,7 @@ Loki provides:
 - Centralized log storage
 - LogQL query language
 - Integration with Grafana
-- S3 backend via Garage
+- S3 backend via SeaweedFS
 
 **Deployment**: Helm chart in Kubernetes
 **Namespace**: loki
@@ -161,7 +161,7 @@ Velero provides:
 - Cluster backup and disaster recovery
 - PVC snapshots
 - Scheduled backups
-- S3 backend via Garage
+- S3 backend via SeaweedFS
 
 **Deployment**: Helm chart in Kubernetes
 **Namespace**: velero

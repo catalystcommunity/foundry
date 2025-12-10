@@ -16,7 +16,6 @@ Phase 2 implements the core infrastructure stack installation:
 - Zot container registry (containerized)
 - K3s Kubernetes cluster with VIP
 - Basic networking (Contour ingress, cert-manager)
-- TrueNAS storage integration
 
 ## Key Architectural Decisions
 
@@ -90,10 +89,7 @@ Phase 2 implements the core infrastructure stack installation:
 - Contour ingress controller
 - cert-manager deployment
 
-**27. Storage** (Task 27)
-- TrueNAS API client
-
-**28-41. CLI Commands** (Tasks 28-41)
+**27-41. CLI Commands** (Tasks 27-41)
 - Component management: install, status, list
 - Cluster management: init, node add/remove/list, status
 - Stack management: install, status, validate
@@ -173,9 +169,6 @@ Phase 2 implements the core infrastructure stack installation:
 - `internal/component/certmanager/types.go` - cert-manager component
 - `internal/component/certmanager/install.go` - cert-manager installation (93.3% coverage)
 
-### Storage
-- `internal/storage/truenas/types.go` - TrueNAS types (96.8% coverage)
-- `internal/storage/truenas/client.go` - TrueNAS API client
 
 ### CLI Commands
 - `cmd/foundry/commands/setup/wizard.go` - Setup wizard (85.7% coverage)
@@ -218,7 +211,6 @@ All components have >75% test coverage:
 - Helm: 75.0%
 - Contour: 90.8%
 - cert-manager: 93.3%
-- TrueNAS: 96.8%
 - CLI Commands: 33.8-100%
 
 Integration tests cover all major components with containerized testing where possible.
@@ -266,12 +258,10 @@ Phase 2 provides:
 - ✓ K3s cluster management (with VIP, using PowerDNS and Zot)
 - ✓ Helm deployment capability
 - ✓ Basic networking (Contour, cert-manager)
-- ✓ Storage configuration (TrueNAS API)
 - ✓ Kubeconfig in OpenBAO
 
 Phase 3 will add:
-- Full storage integration (CSI drivers, PVC provisioning)
-- MinIO deployment (if needed)
+- Storage integration (Longhorn, SeaweedFS)
 - Observability stack (Prometheus, Loki, Grafana)
 - External-DNS (using PowerDNS API)
 - Velero backups
