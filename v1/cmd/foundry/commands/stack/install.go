@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"gopkg.in/yaml.v3"
+
 	clustercommands "github.com/catalystcommunity/foundry/v1/cmd/foundry/commands/cluster"
 	"github.com/catalystcommunity/foundry/v1/internal/component"
 	"github.com/catalystcommunity/foundry/v1/internal/component/certmanager"
@@ -881,34 +883,71 @@ func installK8sComponent(ctx context.Context, cfg *config.Config, componentName 
 		return fmt.Errorf("installation failed: %w", err)
 	}
 
+	// Save component config (including values) back to stack config
+	// This allows users to see and customize the Helm values
+	saveComponentConfig(cfg, componentName, componentConfig)
+
 	fmt.Printf("  ✓ %s installed successfully\n", componentName)
 	return nil
 }
 
 // buildExternalDNSConfig creates config for external-dns component
 func buildExternalDNSConfig(ctx context.Context, cfg *config.Config, configDir string) component.ComponentConfig {
-	componentConfig := component.ComponentConfig{
-		"provider":       "pdns",
-		"domain_filters": []string{cfg.Cluster.Domain},
-	}
-
 	// Build PowerDNS config
 	pdnsConfig := map[string]interface{}{}
+	var pdnsAPIURL string
+	var pdnsAPIKey string
 
 	// Get PowerDNS API endpoint
 	if dnsHosts := cfg.GetHostAddresses(host.RoleDNS); len(dnsHosts) > 0 {
-		pdnsConfig["api_url"] = fmt.Sprintf("http://%s:8081", dnsHosts[0])
+		pdnsAPIURL = fmt.Sprintf("http://%s:8081", dnsHosts[0])
+		pdnsConfig["api_url"] = pdnsAPIURL
 	}
 
 	// Get DNS API key from OpenBAO
 	if cfg.SetupState != nil && cfg.SetupState.OpenBAOInitialized {
 		apiKey, err := getDNSAPIKeyFromOpenBAO(ctx, cfg, configDir)
 		if err == nil && apiKey != "" {
+			pdnsAPIKey = apiKey
 			pdnsConfig["api_key"] = apiKey
 		}
 	}
 
-	componentConfig["powerdns"] = pdnsConfig
+	// Default Helm values for external-dns (YAML format for readability)
+	defaultValuesYAML := fmt.Sprintf(`
+provider:
+  name: pdns
+pdns:
+  apiUrl: %s
+  apiKey: %s
+domainFilters:
+  - %s
+sources:
+  - ingress
+  - service
+policy: upsert-only
+txtOwnerId: foundry
+logLevel: info
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+`, pdnsAPIURL, pdnsAPIKey, cfg.Cluster.Domain)
+
+	defaultValues := parseYAMLValues(defaultValuesYAML)
+
+	componentConfig := component.ComponentConfig{
+		"provider":       "pdns",
+		"domain_filters": []string{cfg.Cluster.Domain},
+		"powerdns":       pdnsConfig,
+	}
+
+	// Merge user-provided values over defaults (user values take precedence)
+	if userValues := getUserValuesFromConfig(cfg, "external-dns"); userValues != nil {
+		componentConfig["values"] = mergeValues(defaultValues, userValues)
+	} else {
+		componentConfig["values"] = defaultValues
+	}
 
 	return componentConfig
 }
@@ -956,17 +995,44 @@ func getDNSAPIKeyFromOpenBAO(ctx context.Context, cfg *config.Config, configDir 
 func buildStorageConfig(ctx context.Context, cfg *config.Config) component.ComponentConfig {
 	// Calculate optimal replica count based on configured cluster nodes
 	replicaCount := calculateOptimalReplicaCount(cfg)
+	ingressHost := fmt.Sprintf("longhorn.%s", cfg.Cluster.Domain)
+
+	longhornConfig := map[string]interface{}{
+		"replica_count":   replicaCount,
+		"data_path":       "/var/lib/longhorn",
+		"ingress_enabled": true,
+		"ingress_host":    ingressHost,
+	}
+
+	// Default Helm values for Longhorn (YAML format for readability)
+	defaultValuesYAML := fmt.Sprintf(`
+defaultSettings:
+  defaultReplicaCount: %d
+  defaultDataPath: /var/lib/longhorn
+  guaranteedInstanceManagerCPU: 12
+  defaultDataLocality: disabled
+persistence:
+  defaultClass: true
+  defaultClassReplicaCount: %d
+  reclaimPolicy: Delete
+ingress:
+  enabled: true
+  ingressClassName: contour
+  host: %s
+  tls: true
+  tlsSecret: longhorn-tls
+  annotations:
+    cert-manager.io/cluster-issuer: foundry-ca-issuer
+`, replicaCount, replicaCount, ingressHost)
+
+	defaultValues := parseYAMLValues(defaultValuesYAML)
 
 	// Default to Longhorn for distributed block storage with replication
 	componentConfig := component.ComponentConfig{
 		"backend":            "longhorn",
 		"storage_class_name": "longhorn",
 		"set_default":        true,
-		"longhorn": map[string]interface{}{
-			"replica_count":   replicaCount,
-			"ingress_enabled": true,
-			"ingress_host":    fmt.Sprintf("longhorn.%s", cfg.Cluster.Domain),
-		},
+		"longhorn":           longhornConfig,
 	}
 
 	// Allow override to local-path if explicitly configured
@@ -974,6 +1040,19 @@ func buildStorageConfig(ctx context.Context, cfg *config.Config) component.Compo
 		componentConfig["backend"] = "local-path"
 		componentConfig["storage_class_name"] = "local-path"
 		delete(componentConfig, "longhorn")
+		defaultValues = parseYAMLValues(`
+storageClass:
+  create: true
+  name: local-path
+  defaultClass: true
+`)
+	}
+
+	// Merge user-provided values over defaults (user values take precedence)
+	if userValues := getUserValuesFromConfig(cfg, "storage"); userValues != nil {
+		componentConfig["values"] = mergeValues(defaultValues, userValues)
+	} else {
+		componentConfig["values"] = defaultValues
 	}
 
 	return componentConfig
@@ -1050,7 +1129,51 @@ func buildSeaweedFSConfig(cfg *config.Config) component.ComponentConfig {
 	seaweedfsCfg.Config["secret_key"] = secretKey
 	cfg.Components["seaweedfs"] = seaweedfsCfg
 
-	return component.ComponentConfig{
+	ingressHostFiler := fmt.Sprintf("seaweedfs.%s", cfg.Cluster.Domain)
+	ingressHostS3 := fmt.Sprintf("s3.%s", cfg.Cluster.Domain)
+
+	// Default Helm values for SeaweedFS (YAML format for readability)
+	defaultValuesYAML := fmt.Sprintf(`
+master:
+  replicas: 1
+  persistence:
+    enabled: true
+    size: 5Gi
+    storageClass: longhorn
+volume:
+  replicas: 1
+  persistence:
+    enabled: true
+    size: 50Gi
+    storageClass: longhorn
+filer:
+  replicas: 1
+  s3:
+    enabled: true
+    port: 8333
+  ingress:
+    enabled: true
+    className: contour
+    host: %s
+    tls: true
+    tlsSecretName: seaweedfs-filer-tls
+    annotations:
+      cert-manager.io/cluster-issuer: foundry-ca-issuer
+s3:
+  enabled: true
+  ingress:
+    enabled: true
+    className: contour
+    host: %s
+    tls: true
+    tlsSecretName: seaweedfs-s3-tls
+    annotations:
+      cert-manager.io/cluster-issuer: foundry-ca-issuer
+`, ingressHostFiler, ingressHostS3)
+
+	defaultValues := parseYAMLValues(defaultValuesYAML)
+
+	componentConfig := component.ComponentConfig{
 		"namespace":          "seaweedfs",
 		"storage_size":       "50Gi",
 		"storage_class":      "longhorn",
@@ -1058,9 +1181,18 @@ func buildSeaweedFSConfig(cfg *config.Config) component.ComponentConfig {
 		"secret_key":         secretKey,
 		"buckets":            []string{"loki", "velero"},
 		"ingress_enabled":    true,
-		"ingress_host_filer": fmt.Sprintf("seaweedfs.%s", cfg.Cluster.Domain),
-		"ingress_host_s3":    fmt.Sprintf("s3.%s", cfg.Cluster.Domain),
+		"ingress_host_filer": ingressHostFiler,
+		"ingress_host_s3":    ingressHostS3,
 	}
+
+	// Merge user-provided values over defaults (user values take precedence)
+	if userValues := getUserValuesFromConfig(cfg, "seaweedfs"); userValues != nil {
+		componentConfig["values"] = mergeValues(defaultValues, userValues)
+	} else {
+		componentConfig["values"] = defaultValues
+	}
+
+	return componentConfig
 }
 
 // getSeaweedFSCredentials retrieves SeaweedFS credentials from config
@@ -1086,21 +1218,154 @@ func getSeaweedFSCredentials(cfg *config.Config) (accessKey, secretKey string) {
 
 // buildPrometheusConfig creates config for Prometheus component
 func buildPrometheusConfig(cfg *config.Config) component.ComponentConfig {
-	return component.ComponentConfig{
+	ingressHost := fmt.Sprintf("prometheus.%s", cfg.Cluster.Domain)
+
+	// Default Helm values for kube-prometheus-stack (YAML format for readability)
+	defaultValuesYAML := fmt.Sprintf(`
+prometheus:
+  prometheusSpec:
+    retention: 15d
+    scrapeInterval: 30s
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: longhorn
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 10Gi
+    # ServiceMonitor discovery - discover all ServiceMonitors
+    serviceMonitorSelectorNilUsesHelmValues: false
+    serviceMonitorSelector: {}
+    serviceMonitorNamespaceSelector: {}
+    # PodMonitor discovery
+    podMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelector: {}
+    podMonitorNamespaceSelector: {}
+    # Probe discovery
+    probeSelectorNilUsesHelmValues: false
+    probeSelector: {}
+    probeNamespaceSelector: {}
+    # Rule discovery
+    ruleSelectorNilUsesHelmValues: false
+    ruleSelector: {}
+    ruleNamespaceSelector: {}
+  ingress:
+    enabled: true
+    ingressClassName: contour
+    hosts:
+      - %s
+    annotations:
+      cert-manager.io/cluster-issuer: foundry-ca-issuer
+    tls:
+      - hosts:
+          - %s
+        secretName: prometheus-tls
+alertmanager:
+  enabled: false
+grafana:
+  enabled: false  # We deploy Grafana separately
+nodeExporter:
+  enabled: true
+prometheus-node-exporter:
+  hostRootFsMount:
+    enabled: true
+kubeStateMetrics:
+  enabled: true
+prometheusOperator:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+`, ingressHost, ingressHost)
+
+	defaultValues := parseYAMLValues(defaultValuesYAML)
+
+	componentConfig := component.ComponentConfig{
 		"namespace":       "monitoring",
 		"retention_days":  15,
 		"storage_size":    "10Gi",
 		"storage_class":   "longhorn",
 		"ingress_enabled": true,
-		"ingress_host":    fmt.Sprintf("prometheus.%s", cfg.Cluster.Domain),
+		"ingress_host":    ingressHost,
 	}
+
+	// Merge user-provided values over defaults (user values take precedence)
+	if userValues := getUserValuesFromConfig(cfg, "prometheus"); userValues != nil {
+		componentConfig["values"] = mergeValues(defaultValues, userValues)
+	} else {
+		componentConfig["values"] = defaultValues
+	}
+
+	return componentConfig
 }
 
 // buildLokiConfig creates config for Loki component
 func buildLokiConfig(cfg *config.Config) component.ComponentConfig {
 	accessKey, secretKey := getSeaweedFSCredentials(cfg)
+	ingressHost := fmt.Sprintf("loki.%s", cfg.Cluster.Domain)
 
-	return component.ComponentConfig{
+	// Default Helm values for Loki (YAML format for readability)
+	defaultValuesYAML := fmt.Sprintf(`
+deploymentMode: SingleBinary
+loki:
+  auth_enabled: false
+  commonConfig:
+    replication_factor: 1
+  storage:
+    type: s3
+    s3:
+      endpoint: %s
+      bucketnames: loki
+      region: %s
+      accessKeyId: %s
+      secretAccessKey: %s
+      s3ForcePathStyle: true
+      insecure: true
+  schemaConfig:
+    configs:
+      - from: "2024-01-01"
+        store: tsdb
+        object_store: s3
+        schema: v13
+        index:
+          prefix: loki_index_
+          period: 24h
+singleBinary:
+  replicas: 1
+  persistence:
+    enabled: true
+    size: 10Gi
+    storageClass: longhorn
+gateway:
+  enabled: true
+  ingress:
+    enabled: true
+    ingressClassName: contour
+    hosts:
+      - host: %s
+        paths:
+          - path: /
+            pathType: Prefix
+    annotations:
+      cert-manager.io/cluster-issuer: foundry-ca-issuer
+    tls:
+      - hosts:
+          - %s
+        secretName: loki-gateway-tls
+# Disable unused components for SingleBinary mode
+read:
+  replicas: 0
+write:
+  replicas: 0
+backend:
+  replicas: 0
+`, seaweedfsEndpoint, seaweedfsRegion, accessKey, secretKey, ingressHost, ingressHost)
+
+	defaultValues := parseYAMLValues(defaultValuesYAML)
+
+	componentConfig := component.ComponentConfig{
 		"namespace":        "monitoring",
 		"deployment_mode":  "SingleBinary",
 		"storage_backend":  "s3",
@@ -1111,28 +1376,153 @@ func buildLokiConfig(cfg *config.Config) component.ComponentConfig {
 		"s3_region":        seaweedfsRegion,
 		"promtail_enabled": true,
 		"ingress_enabled":  true,
-		"ingress_host":     fmt.Sprintf("loki.%s", cfg.Cluster.Domain),
+		"ingress_host":     ingressHost,
 	}
+
+	// Merge user-provided values over defaults (user values take precedence)
+	if userValues := getUserValuesFromConfig(cfg, "loki"); userValues != nil {
+		componentConfig["values"] = mergeValues(defaultValues, userValues)
+	} else {
+		componentConfig["values"] = defaultValues
+	}
+
+	return componentConfig
 }
 
 // buildGrafanaConfig creates config for Grafana component
 func buildGrafanaConfig(cfg *config.Config) component.ComponentConfig {
-	return component.ComponentConfig{
+	ingressHost := fmt.Sprintf("grafana.%s", cfg.Cluster.Domain)
+	prometheusURL := "http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090"
+	lokiURL := "http://loki-gateway.monitoring.svc.cluster.local:80"
+
+	// Default Helm values for Grafana (YAML format for readability)
+	defaultValuesYAML := fmt.Sprintf(`
+adminUser: admin
+adminPassword: ""  # Auto-generated by the component
+# Use Recreate strategy since we use ReadWriteOnce PVC
+deploymentStrategy:
+  type: Recreate
+persistence:
+  enabled: true
+  size: 5Gi
+  storageClass: longhorn
+ingress:
+  enabled: true
+  ingressClassName: contour
+  hosts:
+    - %s
+  annotations:
+    cert-manager.io/cluster-issuer: foundry-ca-issuer
+  tls:
+    - hosts:
+        - %s
+      secretName: grafana-tls
+datasources:
+  datasources.yaml:
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        url: %s
+        access: proxy
+        isDefault: true
+      - name: Loki
+        type: loki
+        url: %s
+        access: proxy
+sidecar:
+  dashboards:
+    enabled: true
+dashboardProviders:
+  dashboardproviders.yaml:
+    apiVersion: 1
+    providers:
+      - name: default
+        orgId: 1
+        folder: ""
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards/default
+`, ingressHost, ingressHost, prometheusURL, lokiURL)
+
+	defaultValues := parseYAMLValues(defaultValuesYAML)
+
+	componentConfig := component.ComponentConfig{
 		"namespace":       "monitoring",
 		"storage_size":    "5Gi",
 		"storage_class":   "longhorn",
-		"prometheus_url":  "http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090",
-		"loki_url":        "http://loki-gateway.monitoring.svc.cluster.local:80",
+		"prometheus_url":  prometheusURL,
+		"loki_url":        lokiURL,
 		"ingress_enabled": true,
-		"ingress_host":    fmt.Sprintf("grafana.%s", cfg.Cluster.Domain),
+		"ingress_host":    ingressHost,
 	}
+
+	// Merge user-provided values over defaults (user values take precedence)
+	if userValues := getUserValuesFromConfig(cfg, "grafana"); userValues != nil {
+		componentConfig["values"] = mergeValues(defaultValues, userValues)
+	} else {
+		componentConfig["values"] = defaultValues
+	}
+
+	return componentConfig
 }
 
 // buildVeleroConfig creates config for Velero component
 func buildVeleroConfig(cfg *config.Config) component.ComponentConfig {
 	accessKey, secretKey := getSeaweedFSCredentials(cfg)
 
-	return component.ComponentConfig{
+	// Default Helm values for Velero (YAML format for readability)
+	// Note: credentials.secretContents.cloud uses INI format, handled separately
+	defaultValuesYAML := fmt.Sprintf(`
+configuration:
+  backupStorageLocation:
+    - name: default
+      provider: aws
+      bucket: velero
+      default: true
+      config:
+        region: %s
+        s3ForcePathStyle: "true"
+        s3Url: %s
+credentials:
+  useSecret: true
+initContainers:
+  - name: velero-plugin-for-aws
+    image: velero/velero-plugin-for-aws:v1.10.0
+    imagePullPolicy: IfNotPresent
+    volumeMounts:
+      - mountPath: /target
+        name: plugins
+deployNodeAgent: false  # Disable node agent (not needed for S3)
+resources:
+  requests:
+    memory: 128Mi
+schedules:
+  daily-backup:
+    disabled: false
+    schedule: "0 2 * * *"
+    template:
+      ttl: 720h  # 30 days
+      excludedNamespaces:
+        - kube-system
+        - velero
+      storageLocation: default
+`, seaweedfsRegion, seaweedfsEndpoint)
+
+	defaultValues := parseYAMLValues(defaultValuesYAML)
+
+	// Add credentials separately (contains newlines that need special handling)
+	if defaultValues["credentials"] == nil {
+		defaultValues["credentials"] = make(map[string]interface{})
+	}
+	credMap := defaultValues["credentials"].(map[string]interface{})
+	credMap["secretContents"] = map[string]interface{}{
+		"cloud": fmt.Sprintf("[default]\naws_access_key_id=%s\naws_secret_access_key=%s\n", accessKey, secretKey),
+	}
+
+	componentConfig := component.ComponentConfig{
 		"namespace":     "velero",
 		"provider":      "s3",
 		"s3_endpoint":   seaweedfsEndpoint,
@@ -1143,6 +1533,15 @@ func buildVeleroConfig(cfg *config.Config) component.ComponentConfig {
 		"schedule_cron": "0 2 * * *", // Daily at 2am
 		"schedule_name": "daily-backup",
 	}
+
+	// Merge user-provided values over defaults (user values take precedence)
+	if userValues := getUserValuesFromConfig(cfg, "velero"); userValues != nil {
+		componentConfig["values"] = mergeValues(defaultValues, userValues)
+	} else {
+		componentConfig["values"] = defaultValues
+	}
+
+	return componentConfig
 }
 
 // installSingleComponent installs a single component with proper configuration
@@ -2043,4 +2442,94 @@ type containerExecFunc func(cmd string) (*container.ExecResult, error)
 
 func (f containerExecFunc) Exec(cmd string) (*container.ExecResult, error) {
 	return f(cmd)
+}
+
+// parseYAMLValues parses a YAML string into a map for Helm values
+// This makes it easier to define default values as readable YAML strings
+func parseYAMLValues(yamlStr string) map[string]interface{} {
+	var result map[string]interface{}
+	if err := yaml.Unmarshal([]byte(yamlStr), &result); err != nil {
+		// This should never happen with valid YAML literals
+		// If it does, return empty map and log warning
+		fmt.Printf("Warning: failed to parse YAML values: %v\n", err)
+		return make(map[string]interface{})
+	}
+	return result
+}
+
+// getUserValuesFromConfig extracts user-provided Helm values from stack config
+func getUserValuesFromConfig(cfg *config.Config, componentName string) map[string]interface{} {
+	if cfg.Components == nil {
+		return nil
+	}
+
+	compCfg, exists := cfg.Components[componentName]
+	if !exists || compCfg.Config == nil {
+		return nil
+	}
+
+	if values, ok := compCfg.Config["values"].(map[string]interface{}); ok {
+		return values
+	}
+
+	return nil
+}
+
+// mergeValues deep merges userValues over defaults
+// User values take precedence (override defaults)
+func mergeValues(defaults, userValues map[string]interface{}) map[string]interface{} {
+	result := make(map[string]interface{})
+
+	// Copy defaults first
+	for k, v := range defaults {
+		result[k] = v
+	}
+
+	// User values override defaults
+	for k, v := range userValues {
+		if existingMap, ok := result[k].(map[string]interface{}); ok {
+			if newMap, ok := v.(map[string]interface{}); ok {
+				// Deep merge for nested maps
+				result[k] = mergeValues(existingMap, newMap)
+				continue
+			}
+		}
+		result[k] = v // User value overrides default
+	}
+
+	return result
+}
+
+// saveComponentConfig saves the component config (including values) back to stack config
+func saveComponentConfig(cfg *config.Config, componentName string, componentConfig component.ComponentConfig) {
+	if cfg.Components == nil {
+		cfg.Components = make(config.ComponentMap)
+	}
+
+	compCfg, exists := cfg.Components[componentName]
+	if !exists {
+		compCfg = config.ComponentConfig{Config: make(map[string]any)}
+	}
+	if compCfg.Config == nil {
+		compCfg.Config = make(map[string]any)
+	}
+
+	// Fields to exclude from saving (internal/runtime only)
+	internalFields := map[string]bool{
+		"helm_client": true,
+		"k8s_client":  true,
+		"host":        true,
+		"ssh_conn":    true,
+		"cluster_vip": true, // Runtime derived from cluster config
+	}
+
+	// Copy component config settings
+	for k, v := range componentConfig {
+		if !internalFields[k] {
+			compCfg.Config[k] = v
+		}
+	}
+
+	compCfg.Config["installed"] = true
+	cfg.Components[componentName] = compCfg
 }

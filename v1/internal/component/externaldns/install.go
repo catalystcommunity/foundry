@@ -39,39 +39,55 @@ func Install(ctx context.Context, helmClient HelmClient, k8sClient K8sClient, cf
 	values := buildHelmValues(cfg)
 
 	// Check if release already exists
+	var releaseExists bool
+	var releaseStatus string
 	releases, err := helmClient.List(ctx, cfg.Namespace)
 	if err == nil {
 		for _, rel := range releases {
 			if rel.Name == releaseName {
-				if rel.Status == "deployed" {
-					fmt.Println("  External-DNS already installed")
-					return verifyInstallation(ctx, k8sClient, cfg.Namespace)
-				}
-				// Uninstall failed release
-				fmt.Printf("  Removing failed release (status: %s)...\n", rel.Status)
-				if err := helmClient.Uninstall(ctx, helm.UninstallOptions{
-					ReleaseName: releaseName,
-					Namespace:   cfg.Namespace,
-				}); err != nil {
-					return fmt.Errorf("failed to uninstall existing release: %w", err)
-				}
+				releaseExists = true
+				releaseStatus = rel.Status
 				break
 			}
 		}
 	}
 
-	// Install External-DNS via Helm
-	if err := helmClient.Install(ctx, helm.InstallOptions{
-		ReleaseName:     releaseName,
-		Namespace:       cfg.Namespace,
-		Chart:           externalDNSChart,
-		Version:         cfg.Version,
-		Values:          values,
-		CreateNamespace: true,
-		Wait:            true,
-		Timeout:         5 * time.Minute,
-	}); err != nil {
-		return fmt.Errorf("failed to install external-dns: %w", err)
+	if releaseExists {
+		// Try to upgrade existing release (even if failed - avoid data loss)
+		fmt.Printf("  Upgrading External-DNS (current status: %s)...\n", releaseStatus)
+		if err := helmClient.Upgrade(ctx, helm.UpgradeOptions{
+			ReleaseName: releaseName,
+			Namespace:   cfg.Namespace,
+			Chart:       externalDNSChart,
+			Version:     cfg.Version,
+			Values:      values,
+			Wait:        true,
+			Timeout:     5 * time.Minute,
+		}); err != nil {
+			if releaseStatus != "deployed" {
+				// Upgrade of failed release didn't work - warn and skip
+				fmt.Printf("  ⚠ Warning: Failed to upgrade release (status: %s): %v\n", releaseStatus, err)
+				fmt.Println("  ⚠ Manual intervention required. You may need to:")
+				fmt.Println("    1. Check pod status: kubectl get pods -n", cfg.Namespace, "-l app.kubernetes.io/name=external-dns")
+				fmt.Println("    2. If data loss is acceptable, uninstall manually: helm uninstall external-dns -n", cfg.Namespace)
+				return fmt.Errorf("failed to upgrade external-dns (manual intervention required): %w", err)
+			}
+			return fmt.Errorf("failed to upgrade external-dns: %w", err)
+		}
+	} else {
+		// Install External-DNS via Helm
+		if err := helmClient.Install(ctx, helm.InstallOptions{
+			ReleaseName:     releaseName,
+			Namespace:       cfg.Namespace,
+			Chart:           externalDNSChart,
+			Version:         cfg.Version,
+			Values:          values,
+			CreateNamespace: true,
+			Wait:            true,
+			Timeout:         5 * time.Minute,
+		}); err != nil {
+			return fmt.Errorf("failed to install external-dns: %w", err)
+		}
 	}
 
 	// Verify installation
