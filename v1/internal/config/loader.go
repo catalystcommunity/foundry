@@ -42,6 +42,19 @@ func LoadFromReader(r io.Reader) (*Config, error) {
 	return &config, nil
 }
 
+// ConfigFileHeader is the header comment added to saved config files
+const ConfigFileHeader = `# Foundry Stack Configuration
+#
+# This file contains your cluster configuration and installed component settings.
+#
+# COMPONENT VALUES WARNING:
+# The 'values' section under each component contains Helm chart values.
+# Modifying these values may change expected behavior and break the component.
+# The CLI tool has no validation for custom values - proceed with caution.
+# To reset a component to defaults, delete its 'values' section and reinstall.
+#
+`
+
 // Save writes a configuration to the given path
 func Save(cfg *Config, path string) error {
 	// Ensure the directory exists
@@ -56,8 +69,12 @@ func Save(cfg *Config, path string) error {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
 
+	// Prepend header comment
+	fullData := []byte(ConfigFileHeader)
+	fullData = append(fullData, data...)
+
 	// Write to file with appropriate permissions
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	if err := os.WriteFile(path, fullData, 0644); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
 

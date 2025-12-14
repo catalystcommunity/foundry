@@ -49,7 +49,10 @@ Host = any           ; Defined in internal/host/types.go (Go type)
 ComponentMap = {* text => ComponentConfig}
 
 ; Individual component configuration
-; Supports arbitrary additional configuration via inline map
+; The config field supports arbitrary settings for the component, including:
+;   - Component-specific configuration (namespace, storage_size, etc.)
+;   - values: Helm chart values for customization (WARNING: may break component if modified)
+; The Go type uses yaml:",inline" to flatten config into the parent object
 ComponentConfig = {
     ? version: text,
     ? hosts: [* text],

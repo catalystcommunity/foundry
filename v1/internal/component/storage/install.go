@@ -93,30 +93,21 @@ func installLocalPath(ctx context.Context, helmClient HelmClient, k8sClient K8sC
 
 	// Check if helm release already exists (for upgrades when we installed via helm)
 	var releaseExists bool
+	var releaseStatus string
 	releases, err = helmClient.List(ctx, cfg.Namespace)
 	if err == nil {
 		for _, rel := range releases {
 			if rel.Name == "local-path-provisioner" {
-				if rel.Status == "deployed" {
-					releaseExists = true
-					break
-				}
-				// Uninstall failed release
-				fmt.Printf("  Removing failed release (status: %s)...\n", rel.Status)
-				if err := helmClient.Uninstall(ctx, helm.UninstallOptions{
-					ReleaseName: "local-path-provisioner",
-					Namespace:   cfg.Namespace,
-				}); err != nil {
-					return fmt.Errorf("failed to uninstall existing release: %w", err)
-				}
+				releaseExists = true
+				releaseStatus = rel.Status
 				break
 			}
 		}
 	}
 
 	if releaseExists {
-		// Upgrade existing release
-		fmt.Println("  Upgrading local-path-provisioner...")
+		// Try to upgrade existing release (even if failed - avoid data loss)
+		fmt.Printf("  Upgrading local-path-provisioner (current status: %s)...\n", releaseStatus)
 		if err := helmClient.Upgrade(ctx, helm.UpgradeOptions{
 			ReleaseName: "local-path-provisioner",
 			Namespace:   cfg.Namespace,
@@ -126,6 +117,14 @@ func installLocalPath(ctx context.Context, helmClient HelmClient, k8sClient K8sC
 			Wait:        true,
 			Timeout:     5 * time.Minute,
 		}); err != nil {
+			if releaseStatus != "deployed" {
+				// Upgrade of failed release didn't work - warn and skip
+				fmt.Printf("  ⚠ Warning: Failed to upgrade release (status: %s): %v\n", releaseStatus, err)
+				fmt.Println("  ⚠ Manual intervention required. You may need to:")
+				fmt.Println("    1. Check pod status: kubectl get pods -n", cfg.Namespace, "-l app.kubernetes.io/name=local-path-provisioner")
+				fmt.Println("    2. If data loss is acceptable, uninstall manually: helm uninstall local-path-provisioner -n", cfg.Namespace)
+				return fmt.Errorf("failed to upgrade local-path-provisioner (manual intervention required): %w", err)
+			}
 			return fmt.Errorf("failed to upgrade local-path-provisioner: %w", err)
 		}
 	} else {
@@ -206,39 +205,55 @@ func installNFS(ctx context.Context, helmClient HelmClient, k8sClient K8sClient,
 	}
 
 	// Check if release already exists
+	var releaseExists bool
+	var releaseStatus string
 	releases, err := helmClient.List(ctx, cfg.Namespace)
 	if err == nil {
 		for _, rel := range releases {
 			if rel.Name == "nfs-subdir-external-provisioner" {
-				if rel.Status == "deployed" {
-					fmt.Println("  nfs-subdir-external-provisioner already installed")
-					return nil
-				}
-				// Uninstall failed release
-				fmt.Printf("  Removing failed release (status: %s)...\n", rel.Status)
-				if err := helmClient.Uninstall(ctx, helm.UninstallOptions{
-					ReleaseName: "nfs-subdir-external-provisioner",
-					Namespace:   cfg.Namespace,
-				}); err != nil {
-					return fmt.Errorf("failed to uninstall existing release: %w", err)
-				}
+				releaseExists = true
+				releaseStatus = rel.Status
 				break
 			}
 		}
 	}
 
-	// Install via Helm
-	if err := helmClient.Install(ctx, helm.InstallOptions{
-		ReleaseName:     "nfs-subdir-external-provisioner",
-		Namespace:       cfg.Namespace,
-		Chart:           nfsChart,
-		Version:         version,
-		Values:          values,
-		CreateNamespace: true,
-		Wait:            true,
-		Timeout:         5 * time.Minute,
-	}); err != nil {
-		return fmt.Errorf("failed to install nfs-subdir-external-provisioner: %w", err)
+	if releaseExists {
+		// Try to upgrade existing release (even if failed - avoid data loss)
+		fmt.Printf("  Upgrading nfs-subdir-external-provisioner (current status: %s)...\n", releaseStatus)
+		if err := helmClient.Upgrade(ctx, helm.UpgradeOptions{
+			ReleaseName: "nfs-subdir-external-provisioner",
+			Namespace:   cfg.Namespace,
+			Chart:       nfsChart,
+			Version:     version,
+			Values:      values,
+			Wait:        true,
+			Timeout:     5 * time.Minute,
+		}); err != nil {
+			if releaseStatus != "deployed" {
+				// Upgrade of failed release didn't work - warn and skip
+				fmt.Printf("  ⚠ Warning: Failed to upgrade release (status: %s): %v\n", releaseStatus, err)
+				fmt.Println("  ⚠ Manual intervention required. You may need to:")
+				fmt.Println("    1. Check pod status: kubectl get pods -n", cfg.Namespace, "-l app.kubernetes.io/name=nfs-subdir-external-provisioner")
+				fmt.Println("    2. If data loss is acceptable, uninstall manually: helm uninstall nfs-subdir-external-provisioner -n", cfg.Namespace)
+				return fmt.Errorf("failed to upgrade nfs-subdir-external-provisioner (manual intervention required): %w", err)
+			}
+			return fmt.Errorf("failed to upgrade nfs-subdir-external-provisioner: %w", err)
+		}
+	} else {
+		// Install via Helm
+		if err := helmClient.Install(ctx, helm.InstallOptions{
+			ReleaseName:     "nfs-subdir-external-provisioner",
+			Namespace:       cfg.Namespace,
+			Chart:           nfsChart,
+			Version:         version,
+			Values:          values,
+			CreateNamespace: true,
+			Wait:            true,
+			Timeout:         5 * time.Minute,
+		}); err != nil {
+			return fmt.Errorf("failed to install nfs-subdir-external-provisioner: %w", err)
+		}
 	}
 
 	fmt.Println("  nfs-subdir-external-provisioner installed successfully")
@@ -311,30 +326,21 @@ func installLonghorn(ctx context.Context, helmClient HelmClient, k8sClient K8sCl
 
 	// Check if release already exists
 	var releaseExists bool
+	var releaseStatus string
 	releases, err := helmClient.List(ctx, namespace)
 	if err == nil {
 		for _, rel := range releases {
 			if rel.Name == "longhorn" {
-				if rel.Status == "deployed" {
-					releaseExists = true
-					break
-				}
-				// Uninstall failed release
-				fmt.Printf("  Removing failed release (status: %s)...\n", rel.Status)
-				if err := helmClient.Uninstall(ctx, helm.UninstallOptions{
-					ReleaseName: "longhorn",
-					Namespace:   namespace,
-				}); err != nil {
-					return fmt.Errorf("failed to uninstall existing release: %w", err)
-				}
+				releaseExists = true
+				releaseStatus = rel.Status
 				break
 			}
 		}
 	}
 
 	if releaseExists {
-		// Upgrade existing release
-		fmt.Println("  Upgrading Longhorn...")
+		// Try to upgrade existing release (even if failed - avoid data loss)
+		fmt.Printf("  Upgrading Longhorn (current status: %s)...\n", releaseStatus)
 		if err := helmClient.Upgrade(ctx, helm.UpgradeOptions{
 			ReleaseName: "longhorn",
 			Namespace:   namespace,
@@ -344,6 +350,15 @@ func installLonghorn(ctx context.Context, helmClient HelmClient, k8sClient K8sCl
 			Wait:        true,
 			Timeout:     10 * time.Minute,
 		}); err != nil {
+			if releaseStatus != "deployed" {
+				// Upgrade of failed release didn't work - warn and skip
+				fmt.Printf("  ⚠ Warning: Failed to upgrade release (status: %s): %v\n", releaseStatus, err)
+				fmt.Println("  ⚠ Manual intervention required. You may need to:")
+				fmt.Println("    1. Check pod status: kubectl get pods -n", namespace, "-l app.kubernetes.io/name=longhorn")
+				fmt.Println("    2. Check PVC status: kubectl get pvc -n", namespace)
+				fmt.Println("    3. If data loss is acceptable, uninstall manually: helm uninstall longhorn -n", namespace)
+				return fmt.Errorf("failed to upgrade longhorn (manual intervention required): %w", err)
+			}
 			return fmt.Errorf("failed to upgrade longhorn: %w", err)
 		}
 	} else {
