@@ -107,7 +107,7 @@ func TestInstall_InstallChartError(t *testing.T) {
 	assert.Contains(t, err.Error(), "failed to install external-dns")
 }
 
-func TestInstall_FailedReleaseCleanedup(t *testing.T) {
+func TestInstall_FailedReleaseUpgraded(t *testing.T) {
 	helmClient := &mockHelmClient{
 		listReleases: []helm.Release{
 			{
@@ -127,12 +127,12 @@ func TestInstall_FailedReleaseCleanedup(t *testing.T) {
 	err := Install(context.Background(), helmClient, k8sClient, cfg)
 	require.NoError(t, err)
 
-	// Should have uninstalled the failed release
-	require.Len(t, helmClient.uninstallCalls, 1)
-	assert.Equal(t, releaseName, helmClient.uninstallCalls[0].ReleaseName)
+	// Should have attempted to upgrade the failed release (not uninstall - to avoid data loss)
+	require.Len(t, helmClient.upgradeCalls, 1)
+	assert.Equal(t, releaseName, helmClient.upgradeCalls[0].ReleaseName)
 
-	// And installed fresh
-	require.Len(t, helmClient.chartsInstalled, 1)
+	// Should NOT have installed fresh (upgrade was used instead)
+	assert.Empty(t, helmClient.chartsInstalled)
 }
 
 func TestBuildHelmValues_NoProvider(t *testing.T) {

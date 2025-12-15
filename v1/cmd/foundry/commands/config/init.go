@@ -114,7 +114,7 @@ func promptForConfigValues() (string, error) {
 		return "", err
 	}
 
-	domain, err := prompt("Domain", "cluster.local")
+	domain, err := prompt("Domain", "catalyst.local")
 	if err != nil {
 		return "", err
 	}

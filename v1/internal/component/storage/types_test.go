@@ -301,10 +301,12 @@ func TestComponent_Status_NoHelmClient(t *testing.T) {
 type mockHelmClient struct {
 	addRepoErr      error
 	installErr      error
+	upgradeErr      error
 	listReleases    []helm.Release
 	listErr         error
 	reposAdded      []helm.RepoAddOptions
 	chartsInstalled []helm.InstallOptions
+	upgradeCalls    []helm.UpgradeOptions
 	uninstallCalls  []helm.UninstallOptions
 }
 
@@ -319,7 +321,8 @@ func (m *mockHelmClient) Install(ctx context.Context, opts helm.InstallOptions) 
 }
 
 func (m *mockHelmClient) Upgrade(ctx context.Context, opts helm.UpgradeOptions) error {
-	return nil
+	m.upgradeCalls = append(m.upgradeCalls, opts)
+	return m.upgradeErr
 }
 
 func (m *mockHelmClient) List(ctx context.Context, namespace string) ([]helm.Release, error) {
