@@ -143,6 +143,19 @@ func buildHelmValues(cfg *Config) map[string]interface{} {
 	// Gateway API CRDs are managed by our gateway-api component, not the Contour chart
 	// The official chart doesn't install CRDs by default anyway
 
+	// Enable metrics and ServiceMonitor for Prometheus
+	values["metrics"] = map[string]interface{}{
+		"contour": map[string]interface{}{
+			"enabled": true,
+		},
+		"envoy": map[string]interface{}{
+			"enabled": true,
+		},
+		"serviceMonitor": map[string]interface{}{
+			"enabled": true,
+		},
+	}
+
 	return values
 }
 

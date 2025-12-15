@@ -72,6 +72,12 @@ func Install(ctx context.Context, cfg *Config, componentCfg component.ComponentC
 				"namespace": cfg.Namespace,
 			},
 		},
+		// Enable ServiceMonitor for Prometheus
+		"prometheus": map[string]interface{}{
+			"servicemonitor": map[string]interface{}{
+				"enabled": true,
+			},
+		},
 	}
 
 	// Check if release already exists

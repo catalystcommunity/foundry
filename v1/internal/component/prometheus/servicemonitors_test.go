@@ -1,24 +1,9 @@
 package prometheus
 
 import (
-	"context"
 	"strings"
 	"testing"
 )
-
-// mockK8sApplyClient is a mock implementation of K8sApplyClient for testing
-type mockK8sApplyClient struct {
-	appliedManifests []string
-	shouldFail       bool
-}
-
-func (m *mockK8sApplyClient) ApplyManifest(ctx context.Context, manifest string) error {
-	if m.shouldFail {
-		return context.DeadlineExceeded
-	}
-	m.appliedManifests = append(m.appliedManifests, manifest)
-	return nil
-}
 
 func TestGetServiceMonitorManifest(t *testing.T) {
 	tests := []struct {
@@ -84,105 +69,5 @@ func TestGetServiceMonitorManifest(t *testing.T) {
 				}
 			}
 		})
-	}
-}
-
-func TestCoreServiceMonitors(t *testing.T) {
-	monitors := CoreServiceMonitors()
-
-	if len(monitors) == 0 {
-		t.Error("CoreServiceMonitors returned empty list")
-	}
-
-	// Verify all monitors have required fields
-	for _, m := range monitors {
-		if m.Name == "" {
-			t.Error("ServiceMonitor missing name")
-		}
-		if m.Namespace == "" {
-			t.Error("ServiceMonitor missing namespace")
-		}
-		if len(m.Selector) == 0 {
-			t.Errorf("ServiceMonitor %s missing selector", m.Name)
-		}
-		if m.Port == "" && m.TargetPort == 0 {
-			t.Errorf("ServiceMonitor %s missing port or targetPort", m.Name)
-		}
-	}
-
-	// Check for expected monitors
-	expectedNames := []string{
-		"contour-envoy",
-		"contour-controller",
-		"seaweedfs-master",
-		"seaweedfs-volume",
-		"seaweedfs-filer",
-		"loki",
-		"longhorn-manager",
-		"cert-manager",
-		"external-dns",
-	}
-
-	names := GetServiceMonitorNames()
-	for _, expected := range expectedNames {
-		found := false
-		for _, name := range names {
-			if name == expected {
-				found = true
-				break
-			}
-		}
-		if !found {
-			t.Errorf("missing expected ServiceMonitor: %s", expected)
-		}
-	}
-}
-
-func TestInstallCoreServiceMonitors(t *testing.T) {
-	ctx := context.Background()
-
-	t.Run("successful installation", func(t *testing.T) {
-		mockClient := &mockK8sApplyClient{}
-		err := InstallCoreServiceMonitors(ctx, mockClient)
-		if err != nil {
-			t.Errorf("unexpected error: %v", err)
-		}
-
-		// Should have applied manifests for all monitors
-		expectedCount := len(CoreServiceMonitors())
-		if len(mockClient.appliedManifests) != expectedCount {
-			t.Errorf("expected %d manifests, got %d", expectedCount, len(mockClient.appliedManifests))
-		}
-	})
-
-	t.Run("nil client", func(t *testing.T) {
-		err := InstallCoreServiceMonitors(ctx, nil)
-		if err == nil {
-			t.Error("expected error for nil client")
-		}
-	})
-
-	t.Run("continues on individual failures", func(t *testing.T) {
-		mockClient := &mockK8sApplyClient{shouldFail: true}
-		// Should not return error - just log warnings
-		err := InstallCoreServiceMonitors(ctx, mockClient)
-		if err != nil {
-			t.Errorf("unexpected error: %v", err)
-		}
-	})
-}
-
-func TestGetServiceMonitorNames(t *testing.T) {
-	names := GetServiceMonitorNames()
-
-	if len(names) == 0 {
-		t.Error("GetServiceMonitorNames returned empty list")
-	}
-
-	// All names should be non-empty
-	for _, name := range names {
-		if name == "" {
-			t.Error("GetServiceMonitorNames returned empty name")
-		}
 	}
 }
