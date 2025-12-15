@@ -4,6 +4,7 @@
 ; control plane and worker nodes.
 
 options {
+    go_module: "github.com/catalystcommunity/foundry/v1",
     go_package: "github.com/catalystcommunity/foundry/v1/internal/component/k3s"
 }
 

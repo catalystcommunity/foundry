@@ -4,6 +4,7 @@
 ; into the Kubernetes cluster.
 
 options {
+    go_module: "github.com/catalystcommunity/foundry/v1",
     go_package: "github.com/catalystcommunity/foundry/v1/internal/component/contour"
 }
 
@@ -16,5 +17,6 @@ Config = {
     envoy_replica_count: uint @go_name("EnvoyReplicaCount"),          ; Number of Envoy replicas to run, default: 2
     use_kubevip: bool @go_name("UseKubeVIP"),                  ; Enable kube-vip cloud provider, default: true
     default_ingress_class: bool @go_name("DefaultIngressClass"),        ; Set Contour as default IngressClass, default: true
+    gateway_api_version: text @go_name("GatewayAPIVersion"),    ; Gateway API version, default: "v1.3.0"
     values: {* text => any},            ; Additional Helm values to pass to the chart
 }

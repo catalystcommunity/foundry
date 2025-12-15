@@ -4,7 +4,14 @@ import (
 	"fmt"
 	"net"
 	"strings"
+
+	"github.com/catalystcommunity/foundry/v1/internal/host"
 )
+
+// Host is a type alias referencing the host package's Host type.
+// This alias exists because CSIL cannot express Go type aliases to external packages.
+// The Config.Hosts field uses []*host.Host via @go_type annotation.
+type Host = host.Host
 
 // All type definitions (NetworkConfig, DHCPRange, DNSConfig, DNSZone, ClusterConfig, NodeConfig,
 // ComponentMap, ComponentConfig, ObsConfig, PrometheusConfig, LokiConfig, GrafanaConfig,

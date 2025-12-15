@@ -4,6 +4,7 @@
 ; in ~/.foundry/stack.yaml under the _setup_state key.
 
 options {
+    go_module: "github.com/catalystcommunity/foundry/v1",
     go_package: "github.com/catalystcommunity/foundry/v1/internal/setup"
 }
 
@@ -12,6 +13,7 @@ SetupState = {
     network_planned: bool,
     network_validated: bool,
     openbao_installed: bool @go_name("OpenBAOInstalled"),
+    openbao_initialized: bool @go_name("OpenBAOInitialized"),
     dns_installed: bool @go_name("DNSInstalled"),
     dns_zones_created: bool @go_name("DNSZonesCreated"),
     zot_installed: bool,
