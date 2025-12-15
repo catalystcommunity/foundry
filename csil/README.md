@@ -29,14 +29,9 @@ CSIL provides a single source of truth for data structure definitions, enabling:
 csil/
 ├── v1/                          # Version 1 definitions
 │   ├── config/                  # YAML configuration types
-│   │   ├── core.csil            # Config, NetworkConfig, DNSConfig
-│   │   ├── cluster.csil         # ClusterConfig, NodeConfig
-│   │   ├── components.csil      # ComponentConfig, ComponentMap
-│   │   ├── observability.csil   # Observability configs
-│   │   └── storage.csil         # Storage configs
+│   │   └── network-simple.csil  # Config, NetworkConfig, DNSConfig, etc.
 │   ├── openbao/                 # OpenBAO storage formats
-│   │   ├── ssh-keys.csil        # SSH key storage format
-│   │   └── k3s-tokens.csil      # K3s token storage format
+│   │   └── ssh-keys.csil        # SSH key storage format
 │   ├── components/              # Component-specific config types
 │   │   ├── openbao.csil         # OpenBAO component config
 │   │   ├── k3s.csil             # K3s component config
@@ -44,8 +39,6 @@ csil/
 │   │   ├── zot.csil             # Zot component config
 │   │   ├── contour.csil         # Contour component config
 │   │   └── certmanager.csil     # cert-manager component config
-│   ├── generated-configs/       # Config files we generate for other tools
-│   │   └── zot-config.csil      # Zot's config.json format
 │   └── setup/                   # Setup wizard state
 │       └── state.csil           # SetupState
 └── README.md                    # This file
@@ -53,30 +46,94 @@ csil/
 
 ## Code Generation
 
-### Generate Go Types
+### Generate All Go Types (Single Command)
 
-From the `csilgen` directory:
+From the foundry repository root:
 
 ```bash
-# Generate from a single CSIL file
-csilgen generate \
-  --input ../foundry/csil/v1/config/core.csil \
-  --target go \
-  --output ../foundry/v1/internal/config/generated/
-
-# Generated code goes in <package>/generated/ subdirectory
+csilgen generate --input csil/v1/ --target go --output v1/
 ```
+
+This single command:
+- Processes all CSIL files in `csil/v1/`
+- Uses `go_module` and `go_package` options to determine output paths
+- Generates `types.gen.go` in each target package directory
+
+### How Package Routing Works
+
+Each CSIL file specifies its target Go package via options:
+
+```csil
+options {
+    go_module: "github.com/catalystcommunity/foundry/v1",
+    go_package: "github.com/catalystcommunity/foundry/v1/internal/config"
+}
+```
+
+The Go generator strips `go_module` from `go_package` to get the relative output path.
+For example: `go_package` minus `go_module` = `internal/config` -> outputs to `v1/internal/config/types.gen.go`
 
 ### Generated Code Structure
 
 ```
-v1/internal/config/
-├── generated/              # Generated from CSIL
-│   ├── types.go           # Generated structs
-│   └── .generated         # Marker file (DO NOT EDIT)
-├── loader.go              # Hand-written (uses generated types)
-└── validation.go          # Hand-written (business logic)
+v1/internal/
+├── config/
+│   ├── types.gen.go        # Generated from csil/v1/config/network-simple.csil
+│   ├── types.go            # Hand-written (validation, type aliases)
+│   └── loader.go           # Hand-written (uses generated types)
+├── setup/
+│   └── types.gen.go        # Generated from csil/v1/setup/state.csil
+├── ssh/
+│   └── types.gen.go        # Generated from csil/v1/openbao/ssh-keys.csil
+└── component/
+    ├── certmanager/
+    │   └── types.gen.go    # Generated from csil/v1/components/certmanager.csil
+    ├── contour/
+    │   └── types.gen.go    # Generated from csil/v1/components/contour.csil
+    ├── dns/
+    │   └── types.gen.go    # Generated from csil/v1/components/dns.csil
+    ├── k3s/
+    │   └── types.gen.go    # Generated from csil/v1/components/k3s.csil
+    ├── openbao/
+    │   └── types.gen.go    # Generated from csil/v1/components/openbao.csil
+    └── zot/
+        └── types.gen.go    # Generated from csil/v1/components/zot.csil
 ```
+
+## CSIL File Requirements
+
+Each CSIL file that generates Go code must have:
+
+1. **`go_module`** - The Go module path (from `go.mod`)
+2. **`go_package`** - The full Go package path for generated types
+
+Example:
+```csil
+options {
+    go_module: "github.com/catalystcommunity/foundry/v1",
+    go_package: "github.com/catalystcommunity/foundry/v1/internal/component/dns",
+    go_imports: ["github.com/catalystcommunity/foundry/v1/internal/host"]  ; optional
+}
+
+Config = {
+    version: text,
+    namespace: text
+}
+```
+
+### External Type References
+
+For types defined in other packages, use `@go_type` annotation:
+
+```csil
+Config = {
+    hosts: [* any] @go_type("[]*host.Host"),
+    setup_state: any @go_type("*setup.SetupState")
+}
+```
+
+Note: Type aliases to external packages (e.g., `type Host = host.Host`) must be defined
+in hand-written Go files, as CSIL cannot express cross-package type aliases.
 
 ## Versioning Strategy
 
@@ -91,8 +148,8 @@ Check for breaking changes between versions:
 
 ```bash
 csilgen breaking \
-  --current csil/v1/config/core.csil \
-  --new csil/v2/config/core.csil
+  --current csil/v1/config/network-simple.csil \
+  --new csil/v2/config/network-simple.csil
 ```
 
 **Breaking changes include**:
@@ -106,30 +163,13 @@ csilgen breaking \
 - Adding new types
 - Documentation updates
 
-### Migration Process
-
-1. Create new version directory: `csil/v2/`
-2. Copy and modify CSIL files
-3. Run breaking change detection
-4. Generate code for both versions
-5. Migrate hand-written code incrementally
-
-## Current Parser Limitations
-
-The current csilgen parser (as of Phase 2) has some limitations:
-
-1. **No `.default()` constraints** - Document defaults in comments instead
-2. **No optional field syntax (`?`)** - All fields are required; use pointers in Go for optionals
-3. **No constraint operators** - `.size()`, `.ge()`, etc. not fully supported
-4. **Inline map syntax limited** - Extract `{* text => Type}` to top-level type aliases
-5. **Reserved keywords** - "service" is reserved; use alternatives like "svc"
-
-**Workarounds**:
-- Document default values in comments
-- Use generated constructors in Go for defaults
-- Define map types separately (e.g., `SubPathMap = {* text => SubPath}`)
-
 ## Common Tasks
+
+### Regenerate All Types
+
+```bash
+csilgen generate --input csil/v1/ --target go --output v1/
+```
 
 ### Adding a New Field
 
@@ -137,66 +177,29 @@ The current csilgen parser (as of Phase 2) has some limitations:
    ```csil
    Config = {
        existing_field: text,
-       new_field: text,  ; New optional field
+       ? new_field: text  ; Optional field
    }
    ```
 
-2. Regenerate Go code:
-   ```bash
-   csilgen generate --input csil/v1/config/core.csil --target go --output v1/internal/config/generated/
-   ```
+2. Regenerate: `csilgen generate --input csil/v1/ --target go --output v1/`
 
-3. Update hand-written code to use new field
+3. Update hand-written code if needed
 
 4. Run tests: `go test ./...`
 
-### Modifying Field Types
+### Adding a New Component
 
-1. Check for breaking changes first
-2. Update CSIL definition
-3. Regenerate code
-4. Update hand-written code
-5. Test thoroughly
+1. Create CSIL file: `csil/v1/components/newcomponent.csil`
 
-### Adding a New Type
+2. Add options block with `go_module` and `go_package`
 
-1. Create CSIL file in appropriate directory
-2. Define type with full documentation
-3. Generate Go code
-4. Create hand-written integration code
-5. Add tests
+3. Define types
 
-## Integration with Foundry
+4. Regenerate all types
 
-Generated types are integrated via type aliases and imports:
-
-```go
-// v1/internal/config/types.go
-package config
-
-import "github.com/catalystcommunity/foundry/v1/internal/config/generated"
-
-// Config is generated from CSIL definitions
-type Config = generated.Config
-
-// Additional hand-written validation
-func (c *Config) ValidateCrossField() error {
-    // Complex business logic not in CSIL
-}
-```
+5. Create hand-written integration code in the new package
 
 ## Links
 
 - [Foundry DESIGN.md](../DESIGN.md) - Overall architecture
-- [Foundry CSIL Plan](../foundry-csil-plan.md) - Migration plan and status
-- [csilgen README](../../csilgen/README.md) - csilgen usage and documentation
-
-## Contributing
-
-When modifying CSIL definitions:
-
-1. **Document changes** - Update comments to explain field purposes
-2. **Check for breaking changes** - Run `csilgen breaking` before major changes
-3. **Regenerate code** - Always regenerate after CSIL changes
-4. **Test thoroughly** - Ensure all tests pass after regeneration
-5. **Update migration plan** - Mark tasks complete in `foundry-csil-plan.md`
+- [csilgen README](https://github.com/catalystcommunity/csilgen) - csilgen usage and documentation

@@ -7,6 +7,7 @@
 ; are NOT defined here. This only defines Foundry's component config.
 
 options {
+    go_module: "github.com/catalystcommunity/foundry/v1",
     go_package: "github.com/catalystcommunity/foundry/v1/internal/component/dns"
 }
 

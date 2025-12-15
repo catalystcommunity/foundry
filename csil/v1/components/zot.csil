@@ -4,6 +4,7 @@
 ; systemd service on infrastructure hosts.
 
 options {
+    go_module: "github.com/catalystcommunity/foundry/v1",
     go_package: "github.com/catalystcommunity/foundry/v1/internal/component/zot"
 }
 

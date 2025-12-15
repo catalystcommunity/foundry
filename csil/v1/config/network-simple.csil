@@ -4,6 +4,7 @@
 ; Full CDDL version in core.csil
 
 options {
+    go_module: "github.com/catalystcommunity/foundry/v1",
     go_package: "github.com/catalystcommunity/foundry/v1/internal/config",
     go_imports: [
         "github.com/catalystcommunity/foundry/v1/internal/setup",
@@ -41,9 +42,12 @@ DNSZone = {
     ? public_cname: text @go_name("PublicCNAME")
 }
 
-; Forward declarations for types defined elsewhere
-ClusterConfig = any  ; Defined in cluster.csil
-Host = any           ; Defined in internal/host/types.go (Go type)
+; Cluster configuration for K3s
+ClusterConfig = {
+    name: text,
+    domain: text,
+    vip: text @go_name("VIP")  ; Kubernetes VIP (Virtual IP for cluster API access)
+}
 
 ; Map of component names to their configurations
 ComponentMap = {* text => ComponentConfig}
@@ -83,6 +87,7 @@ GrafanaConfig = {
 
 ; Storage backend configuration
 StorageConfig = {
+    backend: text,
     ? truenas: TrueNASConfig @go_name("TrueNAS")
 }
 
@@ -93,9 +98,7 @@ TrueNASConfig = {
 }
 
 ; Main stack configuration loaded from YAML
-; Note: SetupState uses @go_type to reference the setup package type
-; Note: Host uses @go_type to reference the host package type
-; Imports will need to be added manually after generation
+; Note: External types use @go_type to reference their package types
 Config = {
     ? network: NetworkConfig,
     ? dns: DNSConfig @go_name("DNS"),
@@ -103,6 +106,6 @@ Config = {
     components: ComponentMap,
     ? observability: ObsConfig,
     ? storage: StorageConfig,
-    hosts: [* Host] .size(1..) @go_type("[]*host.Host") @go_name("Hosts"),
-    setup_state: SetupState @go_type("*setup.SetupState") @go_name("SetupState")
+    hosts: [* any] .size(1..) @go_type("[]*host.Host") @go_name("Hosts"),
+    setup_state: any @go_type("*setup.SetupState") @go_name("SetupState")
 }
