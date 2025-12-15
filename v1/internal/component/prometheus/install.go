@@ -309,50 +309,6 @@ func containsSubstring(s, substr string) bool {
 	return false
 }
 
-// CreateServiceMonitor creates a ServiceMonitor for a service
-// This is a helper for other components to expose metrics to Prometheus
-type ServiceMonitorSpec struct {
-	Name       string            // Name of the ServiceMonitor
-	Namespace  string            // Namespace for the ServiceMonitor
-	Selector   map[string]string // Label selector for target services
-	Port       string            // Port name to scrape (e.g., "metrics")
-	Path       string            // Metrics path (default: /metrics)
-	Interval   string            // Scrape interval (default: 30s)
-	TargetPort int               // Target port number (if port name not used)
-}
-
-// GetServiceMonitorYAML returns the YAML for a ServiceMonitor
-func GetServiceMonitorYAML(spec ServiceMonitorSpec) string {
-	if spec.Path == "" {
-		spec.Path = "/metrics"
-	}
-	if spec.Interval == "" {
-		spec.Interval = "30s"
-	}
-
-	selectorLabels := ""
-	for k, v := range spec.Selector {
-		selectorLabels += fmt.Sprintf("        %s: %s\n", k, v)
-	}
-
-	endpoint := ""
-	if spec.Port != "" {
-		endpoint = fmt.Sprintf("port: %s", spec.Port)
-	} else if spec.TargetPort > 0 {
-		endpoint = fmt.Sprintf("targetPort: %d", spec.TargetPort)
-	}
-
-	return fmt.Sprintf(`apiVersion: monitoring.coreos.com/v1
-kind: ServiceMonitor
-metadata:
-  name: %s
-  namespace: %s
-spec:
-  selector:
-    matchLabels:
-%s  endpoints:
-    - %s
-      path: %s
-      interval: %s
-`, spec.Name, spec.Namespace, selectorLabels, endpoint, spec.Path, spec.Interval)
-}
+// NOTE: ServiceMonitor utilities are available in servicemonitors.go:
+// - ServiceMonitorConfig: struct for ServiceMonitor configuration
+// - GetServiceMonitorManifest: generates ServiceMonitor YAML manifest

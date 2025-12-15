@@ -435,5 +435,12 @@ func buildLonghornValues(cfg *Config) map[string]interface{} {
 		}
 	}
 
+	// Enable metrics and ServiceMonitor for Prometheus
+	values["metrics"] = map[string]interface{}{
+		"serviceMonitor": map[string]interface{}{
+			"enabled": true,
+		},
+	}
+
 	return values
 }

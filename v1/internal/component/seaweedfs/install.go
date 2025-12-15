@@ -250,6 +250,13 @@ func buildHelmValues(cfg *Config) map[string]interface{} {
 		}
 	}
 
+	// Enable global monitoring with ServiceMonitors for Prometheus
+	values["global"] = map[string]interface{}{
+		"monitoring": map[string]interface{}{
+			"enabled": true,
+		},
+	}
+
 	return values
 }
 

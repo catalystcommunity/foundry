@@ -1,14 +1,8 @@
 package prometheus
 
 import (
-	"context"
 	"fmt"
 )
-
-// K8sApplyClient defines the interface for applying Kubernetes manifests
-type K8sApplyClient interface {
-	ApplyManifest(ctx context.Context, manifest string) error
-}
 
 // ServiceMonitorConfig holds configuration for creating a ServiceMonitor
 type ServiceMonitorConfig struct {
@@ -65,143 +59,16 @@ spec:
 `, cfg.Name, cfg.Namespace, selectorLabels, endpoint, cfg.Path, cfg.Interval, scrapeTimeout)
 }
 
-// CoreServiceMonitors returns ServiceMonitor configurations for Foundry core components
-func CoreServiceMonitors() []ServiceMonitorConfig {
-	return []ServiceMonitorConfig{
-		// Contour - Envoy proxy metrics
-		{
-			Name:      "contour-envoy",
-			Namespace: "monitoring",
-			Selector: map[string]string{
-				"app.kubernetes.io/component": "envoy",
-				"app.kubernetes.io/name":      "contour",
-			},
-			TargetPort: 8002,
-			Path:       "/stats/prometheus",
-			Interval:   "30s",
-		},
-		// Contour - Contour controller metrics
-		{
-			Name:      "contour-controller",
-			Namespace: "monitoring",
-			Selector: map[string]string{
-				"app.kubernetes.io/component": "contour",
-				"app.kubernetes.io/name":      "contour",
-			},
-			Port:     "metrics",
-			Path:     "/metrics",
-			Interval: "30s",
-		},
-		// SeaweedFS - Master metrics
-		{
-			Name:      "seaweedfs-master",
-			Namespace: "monitoring",
-			Selector: map[string]string{
-				"app.kubernetes.io/component": "master",
-				"app.kubernetes.io/name":      "seaweedfs",
-			},
-			TargetPort: 9333,
-			Path:       "/metrics",
-			Interval:   "30s",
-		},
-		// SeaweedFS - Volume metrics
-		{
-			Name:      "seaweedfs-volume",
-			Namespace: "monitoring",
-			Selector: map[string]string{
-				"app.kubernetes.io/component": "volume",
-				"app.kubernetes.io/name":      "seaweedfs",
-			},
-			TargetPort: 8080,
-			Path:       "/metrics",
-			Interval:   "30s",
-		},
-		// SeaweedFS - Filer metrics
-		{
-			Name:      "seaweedfs-filer",
-			Namespace: "monitoring",
-			Selector: map[string]string{
-				"app.kubernetes.io/component": "filer",
-				"app.kubernetes.io/name":      "seaweedfs",
-			},
-			TargetPort: 8888,
-			Path:       "/metrics",
-			Interval:   "30s",
-		},
-		// Loki metrics
-		{
-			Name:      "loki",
-			Namespace: "monitoring",
-			Selector: map[string]string{
-				"app.kubernetes.io/name": "loki",
-			},
-			Port:     "http-metrics",
-			Path:     "/metrics",
-			Interval: "30s",
-		},
-		// Longhorn - Manager metrics
-		{
-			Name:      "longhorn-manager",
-			Namespace: "monitoring",
-			Selector: map[string]string{
-				"app": "longhorn-manager",
-			},
-			Port:     "manager",
-			Path:     "/metrics",
-			Interval: "30s",
-		},
-		// Cert-Manager metrics
-		{
-			Name:      "cert-manager",
-			Namespace: "monitoring",
-			Selector: map[string]string{
-				"app.kubernetes.io/name":      "cert-manager",
-				"app.kubernetes.io/component": "controller",
-			},
-			Port:     "http-metrics",
-			Path:     "/metrics",
-			Interval: "60s",
-		},
-		// External-DNS metrics
-		{
-			Name:      "external-dns",
-			Namespace: "monitoring",
-			Selector: map[string]string{
-				"app.kubernetes.io/name": "external-dns",
-			},
-			Port:     "http",
-			Path:     "/metrics",
-			Interval: "60s",
-		},
-	}
-}
-
-// InstallCoreServiceMonitors creates ServiceMonitors for Foundry core components
-func InstallCoreServiceMonitors(ctx context.Context, k8sClient K8sApplyClient) error {
-	if k8sClient == nil {
-		return fmt.Errorf("k8s client cannot be nil")
-	}
-
-	monitors := CoreServiceMonitors()
-	for _, cfg := range monitors {
-		manifest := GetServiceMonitorManifest(cfg)
-		if err := k8sClient.ApplyManifest(ctx, manifest); err != nil {
-			// Log warning but continue - some services may not exist yet
-			fmt.Printf("  Warning: failed to create ServiceMonitor %s: %v\n", cfg.Name, err)
-			continue
-		}
-		fmt.Printf("  Created ServiceMonitor: %s\n", cfg.Name)
-	}
-
-	return nil
-}
-
-// GetServiceMonitorNames returns the names of all core ServiceMonitors
-func GetServiceMonitorNames() []string {
-	monitors := CoreServiceMonitors()
-	names := make([]string, len(monitors))
-	for i, m := range monitors {
-		names[i] = m.Name
-	}
-	return names
-}
+// NOTE: Core component ServiceMonitors are now created by their respective Helm charts.
+// The following components enable ServiceMonitors via Helm values:
+// - Contour: metrics.serviceMonitor.enabled
+// - SeaweedFS: global.monitoring.enabled
+// - Loki: monitoring.serviceMonitor.enabled
+// - Longhorn: metrics.serviceMonitor.enabled
+// - Cert-Manager: prometheus.servicemonitor.enabled
+// - External-DNS: serviceMonitor.enabled
+// - Grafana: serviceMonitor.enabled
+// - Velero: metrics.serviceMonitor.enabled
+//
+// The GetServiceMonitorManifest function above can still be used to create
+// custom ServiceMonitors for components that don't have Helm chart support.
