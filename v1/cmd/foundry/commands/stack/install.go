@@ -134,6 +134,11 @@ Examples:
 			Name:  "forwarder",
 			Usage: "DNS forwarder (can be specified multiple times, default: 8.8.8.8, 1.1.1.1)",
 		},
+		&cli.StringFlag{
+			Name:  "user",
+			Usage: "SSH user for hosts (default: root)",
+			Value: "root",
+		},
 		// Operational flags
 		&cli.BoolFlag{
 			Name:  "dry-run",
@@ -294,7 +299,7 @@ func loadOrCreateConfig(ctx context.Context, cmd *cli.Command, configPath string
 
 	// If we have all required flags, create config non-interactively
 	if clusterName != "" && domain != "" && len(hosts) > 0 && vip != "" {
-		cfg, err = createConfigFromFlags(clusterName, domain, hosts, vip, cmd.StringSlice("forwarder"))
+		cfg, err = createConfigFromFlags(clusterName, domain, hosts, vip, cmd.StringSlice("forwarder"), cmd.String("user"))
 		if err != nil {
 			return nil, false, fmt.Errorf("failed to create config from flags: %w", err)
 		}
@@ -320,7 +325,7 @@ func loadOrCreateConfig(ctx context.Context, cmd *cli.Command, configPath string
 }
 
 // createConfigFromFlags creates a config from command-line flags
-func createConfigFromFlags(clusterName, domain string, hosts []string, vip string, forwarders []string) (*config.Config, error) {
+func createConfigFromFlags(clusterName, domain string, hosts []string, vip string, forwarders []string, sshUser string) (*config.Config, error) {
 	// Parse hosts (format: hostname:ip)
 	// In the new schema, create Host objects with appropriate roles
 	var hostConfigs []*config.Host
@@ -338,7 +343,7 @@ func createConfigFromFlags(clusterName, domain string, hosts []string, vip strin
 			Hostname: hostname,
 			Address:  ip,
 			Port:     22,
-			User:     "root",
+			User:     sshUser,
 			Roles: []string{
 				"openbao",
 				"dns",
@@ -413,6 +418,17 @@ func createConfigInteractive() (*config.Config, error) {
 	}
 	hostname, ip := parts[0], parts[1]
 
+	// SSH User
+	fmt.Print("SSH user [root]: ")
+	sshUser, err := reader.ReadString('\n')
+	if err != nil {
+		return nil, err
+	}
+	sshUser = strings.TrimSpace(sshUser)
+	if sshUser == "" {
+		sshUser = "root"
+	}
+
 	// VIP
 	fmt.Print("Kubernetes VIP: ")
 	vip, err := reader.ReadString('\n')
@@ -432,7 +448,7 @@ func createConfigInteractive() (*config.Config, error) {
 				Hostname: hostname,
 				Address:  ip,
 				Port:     22,
-				User:     "root",
+				User:     sshUser,
 				Roles: []string{
 					"openbao",
 					"dns",

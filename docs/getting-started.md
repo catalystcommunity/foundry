@@ -1,254 +1,267 @@
 # Getting Started with Foundry
 
-Foundry is a CLI tool for managing Catalyst Community tech stacks. This guide will help you get started with the basics.
+Foundry is a CLI tool for deploying a complete Kubernetes-based infrastructure stack on Debian/Ubuntu hosts.
 
-## Before You Begin
+## Prerequisites
 
-**Prerequisites:** Foundry requires specific infrastructure and software to be in place before you begin. Please review the [Prerequisites Guide](./prerequisites.md) to ensure your environment is ready.
+Before you begin, ensure you have:
 
-**Important Notes:**
-- Foundry assumes **full management** of infrastructure hosts
-- Foundry may configure DNS settings, systemd services, and container workloads
-- SSH keys are generated automatically and stored securely in OpenBAO after bootstrap
-- The bootstrap process tracks state to enable resuming from any checkpoint
+**On each infrastructure host:**
+- Debian 11/12 or Ubuntu 22.04/24.04 installed
+- SSH server running with password authentication enabled
+- A non-root user account (or root access)
+- Static IP address (or DHCP reservation)
+
+**On your network:**
+- An available VIP (Virtual IP) for Kubernetes that won't conflict with other IPs
+- Outbound internet access for downloading packages and container images
+
+**On your management machine:**
+- Go 1.23+ installed (for building Foundry from source)
+- Network access to your infrastructure hosts via SSH
+
+See the [Prerequisites Guide](./prerequisites.md) for detailed requirements and validation scripts.
 
 ## Installation
 
-### From Source
-
-**Requirements:** Go 1.23 or later ([installation instructions](./prerequisites.md#install-go))
-
 ```bash
 git clone https://github.com/catalystcommunity/foundry.git
-cd foundry
+cd foundry/v1
 go build -o foundry ./cmd/foundry
 sudo mv foundry /usr/local/bin/
-```
 
-**Note:** You can also keep the binary in the project directory and run it as `./foundry` if you prefer not to install system-wide.
-
-### Verify Installation
-
-```bash
+# Verify
 foundry --version
 ```
 
-## Quick Start
+## Quick Start: Single Host
 
-### 1. Initialize a Configuration
+The fastest way to get started is a single-host deployment where one machine runs everything.
 
-Create your first Foundry configuration:
+**What you need:**
+- One Debian/Ubuntu host with SSH access
+- A VIP address (unused IP in the same subnet)
+
+**Run one command:**
 
 ```bash
+foundry stack install
+```
+
+**You'll be prompted for:**
+1. Cluster name (default: `my-cluster`)
+2. Domain (default: `catalyst.local`)
+3. Infrastructure host in `hostname:ip` format (e.g., `node1:192.168.1.10`)
+4. SSH user (default: `root`)
+5. Kubernetes VIP (e.g., `192.168.1.20`)
+
+**During installation, you'll also be prompted for:**
+- SSH password for the specified user (used once to install SSH key)
+- Root password (only if the SSH user doesn't have sudo access)
+
+The installation takes 10-20 minutes and installs:
+- OpenBAO (secrets management)
+- PowerDNS (internal DNS)
+- Zot (container registry)
+- K3s (Kubernetes)
+- Gateway API + Contour (ingress)
+- Cert-Manager (certificates)
+- Longhorn (storage)
+- SeaweedFS (S3-compatible storage)
+- Prometheus + Loki + Grafana (observability)
+- Velero (backups)
+
+**After installation:**
+
+```bash
+# Check cluster status
+kubectl --kubeconfig ~/.foundry/kubeconfig get nodes
+
+# View stack status
+foundry stack status
+```
+
+## Quick Start: Multi-Host
+
+For production deployments, you'll want multiple hosts with different roles.
+
+### Option A: Interactive Setup
+
+```bash
+# Initialize config (creates ~/.foundry/stack.yaml)
 foundry config init
+
+# Add each host with specific roles
+foundry host add node1 --address 192.168.1.10 --user myuser \
+  --roles openbao,dns,zot,cluster-control-plane
+
+foundry host add node2 --address 192.168.1.11 --user myuser \
+  --roles cluster-worker
+
+foundry host add node3 --address 192.168.1.12 --user myuser \
+  --roles cluster-worker
+
+# Install the stack
+foundry stack install
 ```
 
-This will interactively prompt you for:
-- Cluster name
-- Domain name
-- Initial node configuration
-
-The configuration will be saved to `~/.foundry/stack.yaml`.
-
-### 2. Validate Your Configuration
+### Option B: Edit Configuration File
 
 ```bash
-foundry config validate
+# Initialize config
+foundry config init
+
+# Edit ~/.foundry/stack.yaml to add your hosts
 ```
 
-This validates:
-- YAML syntax
-- Required fields
-- Secret reference syntax
-- Node configuration
+Example multi-host configuration:
 
-### 3. Add a Host
+```yaml
+cluster:
+  name: production
+  domain: catalyst.local
+  vip: 192.168.1.20
 
-Add a remote host to your infrastructure:
+hosts:
+  - hostname: control1
+    address: 192.168.1.10
+    port: 22
+    user: myuser
+    roles:
+      - openbao
+      - dns
+      - zot
+      - cluster-control-plane
+
+  - hostname: worker1
+    address: 192.168.1.11
+    port: 22
+    user: myuser
+    roles:
+      - cluster-worker
+
+  - hostname: worker2
+    address: 192.168.1.12
+    port: 22
+    user: myuser
+    roles:
+      - cluster-worker
+```
+
+Then run:
 
 ```bash
-foundry host add
+foundry stack install
 ```
 
-You'll be prompted for:
-- Hostname (friendly name)
-- Address (IP or FQDN)
-- SSH user
-- SSH password (for initial setup)
+### Available Roles
 
-Foundry will:
-1. Test the SSH connection
-2. Generate an SSH key pair
-3. Install the public key on the host
-4. Store the host in the registry
+| Role | Description |
+|------|-------------|
+| `openbao` | OpenBAO secrets management server |
+| `dns` | PowerDNS server for internal DNS |
+| `zot` | Container image registry |
+| `cluster-control-plane` | Kubernetes control plane node |
+| `cluster-worker` | Kubernetes worker node |
 
-**SSH Key Lifecycle:**
-- Keys are initially generated and used immediately for connections
-- After OpenBAO is installed and initialized, keys are migrated to OpenBAO
-- All future operations retrieve keys from OpenBAO for secure storage
-- This bootstrap → secure storage transition is handled automatically
+## Accessing Services
 
-### 4. List Your Hosts
+After installation, services are accessible via DNS names on the `catalyst.local` domain (or your configured domain).
 
-```bash
-foundry host list
-```
+**To access services in your browser:**
 
-For detailed information:
+1. Configure your machine to use the PowerDNS server for DNS resolution
+2. Point your DNS to the host with the `dns` role
 
-```bash
-foundry host list --verbose
-```
+**Available services:**
+- `grafana.catalyst.local` - Observability dashboards
+- `prometheus.catalyst.local` - Metrics
+- `openbao.catalyst.local` - Secrets management UI
+- `zot.catalyst.local` - Container registry
 
-### 5. Configure a Host
-
-Run basic configuration on a host:
-
-```bash
-foundry host configure <hostname>
-```
-
-This will:
-- Update package lists
-- Install common tools (curl, git, vim, htop)
-- Configure time synchronization
+**DNS Resolution:**
+- Infrastructure services (`openbao`, `dns`, `zot`) resolve to their host IPs
+- All other `*.catalyst.local` names resolve to the VIP (handled by Kubernetes ingress)
 
 ## Configuration Directory
 
-Foundry stores configuration in `~/.foundry/`:
+Foundry stores all state in `~/.foundry/`:
 
 ```
 ~/.foundry/
-├── stack.yaml           # Your stack configuration
-├── other-config.yaml    # Additional configurations
-└── ...
+├── stack.yaml      # Stack configuration
+├── kubeconfig      # Kubernetes access config
+└── keys/           # SSH keys (migrated to OpenBAO after install)
 ```
 
-### Bootstrap State Tracking
+## Resuming Installation
 
-Foundry tracks installation progress in the `_setup_state` section of your config:
+If installation is interrupted, simply run `foundry stack install` again. Foundry tracks progress and resumes from the last checkpoint.
 
-```yaml
-_setup_state:
-  network_planned: false
-  network_validated: false
-  openbao_installed: false
-  dns_installed: false
-  dns_zones_created: false
-  zot_installed: false
-  k8s_installed: false
-  stack_complete: false
-```
-
-This enables:
-- **Resumability:** Stop and resume installation at any checkpoint
-- **Safety:** Prevent duplicate installations
-- **Clarity:** See exactly where you are in the bootstrap process
-
-You can view your current state with: `foundry config show`
-
-## Secret Management
-
-For development, Foundry can read secrets from `~/.foundryvars`:
+Check current progress:
 
 ```bash
-# Create a .foundryvars file in your home directory
-cat > ~/.foundryvars <<EOF
-# Format: instance/path:key=value
-myapp-prod/database/main:password=secret123
-foundry-core/openbao:token=root-token
-EOF
-
-chmod 600 ~/.foundryvars
+foundry config show
 ```
-
-See the [Secrets Guide](./secrets.md) for more details.
-
-## Next Steps
-
-### Learning Resources
-
-- Read the [Configuration Guide](./configuration.md) to learn about config file structure
-- Read the [Secrets Guide](./secrets.md) to understand secret management
-- Review [Component Documentation](./components.md) to understand the stack components
-- Learn about [DNS Configuration](./dns.md) for PowerDNS setup
-- Explore [Storage Configuration](./storage.md) for Longhorn and SeaweedFS setup
-
-### Validation Testing
-
-If you're validating a new Foundry installation or contributing to development:
-
-- Review `phase2-validation.md` in the project root for detailed testing procedures
-- This includes step-by-step validation of the complete bootstrap process
 
 ## Common Commands
 
 ```bash
-# Configuration management
-foundry config init                  # Create new config
-foundry config validate              # Validate config
-foundry config show                  # Display current config
-foundry config list                  # List all configs
+# Stack management
+foundry stack install          # Install complete stack
+foundry stack status           # Show installation status
+
+# Configuration
+foundry config init            # Create new configuration
+foundry config validate        # Validate configuration
+foundry config show            # Display current config
 
 # Host management
-foundry host add                     # Add a new host
-foundry host list                    # List all hosts
-foundry host list --verbose          # List hosts with details
-foundry host configure <hostname>    # Configure a host
+foundry host add               # Add a new host
+foundry host list              # List all hosts
+foundry host configure <name>  # Configure a specific host
 
-# General
-foundry --help                       # Show help
-foundry --version                    # Show version
+# Components
+foundry component list         # List available components
+foundry component status       # Show component status
 ```
 
 ## Troubleshooting
 
 ### SSH Connection Issues
 
-If you have trouble connecting to a host:
+```bash
+# Verify host is reachable
+ping <host-ip>
 
-1. Verify the host is reachable: `ping <address>`
-2. Verify SSH is running: `nc -zv <address> 22`
-3. Verify credentials are correct
-4. Check firewall rules
+# Verify SSH is running
+nc -zv <host-ip> 22
 
-### Configuration Issues
+# Test SSH connection manually
+ssh user@host-ip
+```
 
-If config validation fails:
+### DNS Not Resolving
 
-1. Check YAML syntax
-2. Verify all required fields are present
-3. Check secret reference syntax: `${secret:path:key}`
+1. Verify PowerDNS is running: `foundry component status dns`
+2. Ensure your machine uses the DNS server IP for resolution
+3. Test with: `dig @<dns-server-ip> grafana.catalyst.local`
 
-### Bootstrap and Interim State Issues
+### Installation Stuck
 
-If you encounter issues during the bootstrap process:
+1. Check progress: `foundry config show`
+2. Re-run: `foundry stack install` (resumes from checkpoint)
+3. Check logs on the host if a specific component fails
 
-**SSH Keys Not Working:**
-- Check if OpenBAO is installed: `foundry component status openbao`
-- If OpenBAO is not yet installed, keys are stored in-memory only
-- After OpenBAO is available, keys will be migrated automatically
+## Next Steps
 
-**Installation Stuck:**
-- Check `_setup_state` in your config: `foundry config show`
-- You can resume from any checkpoint by re-running the failed command
-- State tracking prevents duplicate installations
+- [Configuration Guide](./configuration.md) - Detailed configuration options
+- [DNS Guide](./dns.md) - PowerDNS configuration
+- [Storage Guide](./storage.md) - Longhorn and SeaweedFS
+- [Observability Guide](./observability.md) - Prometheus, Loki, Grafana
+- [Backups Guide](./backups.md) - Velero backup configuration
 
-**Reset and Start Over:**
-- Use `scripts/reset-local-state.sh` to clean local state
-- Reset VMs via Proxmox UI to restore to clean state
-- This is safe and designed for testing/validation
+## Getting Help
 
-**DNS Configuration:**
-- Foundry installs PowerDNS for internal service discovery
-- PowerDNS forwards external queries to your existing DNS
-- Host DNS configuration may need adjustment (documented during validation)
-
-### Getting Help
-
-- Check the documentation in the `docs/` directory
-- Review [Prerequisites](./prerequisites.md) for environment setup
-- Review `phase2-validation.md` for detailed bootstrap validation
-- Run commands with `--help` flag
 - Join the [Catalyst Community Discord](https://discord.gg/sfNb9xRjPn)
 - Report issues on [GitHub](https://github.com/catalystcommunity/foundry/issues)
