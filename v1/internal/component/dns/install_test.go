@@ -181,13 +181,8 @@ func TestBuildRecursorExecStart(t *testing.T) {
 	assert.Contains(t, result, "--config-dir=/etc/powerdns-recursor")
 }
 
-func TestBuildExecStop(t *testing.T) {
-	result := buildExecStop("powerdns-auth")
-	assert.Equal(t, "docker stop powerdns-auth", result)
-
-	result = buildExecStop("powerdns-recursor")
-	assert.Equal(t, "docker stop powerdns-recursor", result)
-}
+// Note: ExecStop was removed in favor of letting systemd handle container lifecycle
+// via SIGTERM forwarding. See createSystemdServices for details on the pattern used.
 
 // Note: These tests only verify command construction and error handling.
 // Full integration tests with actual SSH connections are in integration tests.

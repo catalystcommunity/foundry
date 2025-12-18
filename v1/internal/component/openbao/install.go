@@ -222,6 +222,8 @@ func buildExecStart(cfg *Config, runtimePath string) string {
 		// Foreground mode (no -d) - systemd best practice
 		"--name openbao",
 		"--user 374:374", // Run as foundrysys user
+		// Disable AppArmor - nerdctl-default profile blocks runc signal operations
+		"--security-opt apparmor=unconfined",
 		fmt.Sprintf("-p %s:8200", strings.Split(cfg.Address, ":")[1]),
 		fmt.Sprintf("-v %s:/vault/data", cfg.DataPath),
 		fmt.Sprintf("-v %s:/vault/config", cfg.ConfigPath),

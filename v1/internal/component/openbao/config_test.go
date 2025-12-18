@@ -28,6 +28,10 @@ func TestGenerateConfig(t *testing.T) {
 				`address     = "0.0.0.0:8200"`,
 				`tls_disable = 1`,
 				`api_addr = "http://0.0.0.0:8200"`,
+				// Telemetry for Prometheus metrics
+				"telemetry {",
+				"disable_hostname = true",
+				`prometheus_retention_time = "60s"`,
 			},
 		},
 		{
@@ -93,4 +97,5 @@ func TestGenerateConfig_ValidHCL(t *testing.T) {
 	assert.True(t, strings.Contains(result, "{") && strings.Contains(result, "}"), "should have braces")
 	assert.True(t, strings.Contains(result, "storage"), "should have storage block")
 	assert.True(t, strings.Contains(result, "listener"), "should have listener block")
+	assert.True(t, strings.Contains(result, "telemetry"), "should have telemetry block for Prometheus metrics")
 }

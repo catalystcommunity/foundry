@@ -244,15 +244,22 @@ func createSystemdServices(conn *ssh.Connection, cfg *Config, authImage, recurso
 	adapter := &sshExecutorAdapter{conn: conn}
 
 	// Create auth service
+	// Use the same pattern as OpenBAO for proper container lifecycle management:
+	// - ExecStartPre cleans up existing container before starting
+	// - No ExecStop - systemd sends SIGTERM to docker process which forwards to container
+	// - ExecStopPost cleans up the container after stopping
+	// - TimeoutStopSec gives container time to gracefully shutdown
 	authUnit := systemd.UnitFile{
-		Description: "PowerDNS Authoritative Server (Foundry)",
-		After:       []string{"network.target"},
-		Wants:       []string{"network.target"},
-		Type:        "simple",
-		Restart:     "always",
-		ExecStart:   buildAuthExecStart(authImage, cfg),
-		ExecStop:    buildExecStop("powerdns-auth"),
-		WantedBy:    []string{"multi-user.target"},
+		Description:    "PowerDNS Authoritative Server (Foundry)",
+		After:          []string{"network.target"},
+		Wants:          []string{"network.target"},
+		Type:           "simple",
+		Restart:        "always",
+		ExecStartPre:   "-docker rm -f powerdns-auth",
+		ExecStart:      buildAuthExecStart(authImage, cfg),
+		ExecStopPost:   "-docker rm -f powerdns-auth",
+		TimeoutStopSec: 30,
+		WantedBy:       []string{"multi-user.target"},
 	}
 
 	if err := systemd.CreateService(adapter, "powerdns-auth", &authUnit); err != nil {
@@ -261,14 +268,16 @@ func createSystemdServices(conn *ssh.Connection, cfg *Config, authImage, recurso
 
 	// Create recursor service
 	recursorUnit := systemd.UnitFile{
-		Description: "PowerDNS Recursor (Foundry)",
-		After:       []string{"network.target"},
-		Wants:       []string{"network.target"},
-		Type:        "simple",
-		Restart:     "always",
-		ExecStart:   buildRecursorExecStart(recursorImage, cfg),
-		ExecStop:    buildExecStop("powerdns-recursor"),
-		WantedBy:    []string{"multi-user.target"},
+		Description:    "PowerDNS Recursor (Foundry)",
+		After:          []string{"network.target"},
+		Wants:          []string{"network.target"},
+		Type:           "simple",
+		Restart:        "always",
+		ExecStartPre:   "-docker rm -f powerdns-recursor",
+		ExecStart:      buildRecursorExecStart(recursorImage, cfg),
+		ExecStopPost:   "-docker rm -f powerdns-recursor",
+		TimeoutStopSec: 30,
+		WantedBy:       []string{"multi-user.target"},
 	}
 
 	if err := systemd.CreateService(adapter, "powerdns-recursor", &recursorUnit); err != nil {
@@ -280,8 +289,11 @@ func createSystemdServices(conn *ssh.Connection, cfg *Config, authImage, recurso
 
 // buildAuthExecStart builds the ExecStart command for the auth service.
 func buildAuthExecStart(image string, cfg *Config) string {
+	// Note: No --rm flag - systemd manages the container lifecycle via ExecStartPre/ExecStopPost
+	// --security-opt apparmor=unconfined: nerdctl-default profile blocks runc signal operations
 	return fmt.Sprintf(
-		"docker run --rm --name powerdns-auth "+
+		"docker run --name powerdns-auth "+
+			"--security-opt apparmor=unconfined "+
 			"--network=host "+
 			"-v %s/auth:/etc/powerdns "+
 			"-v %s:/var/lib/powerdns "+
@@ -295,8 +307,11 @@ func buildAuthExecStart(image string, cfg *Config) string {
 
 // buildRecursorExecStart builds the ExecStart command for the recursor service.
 func buildRecursorExecStart(image string, cfg *Config) string {
+	// Note: No --rm flag - systemd manages the container lifecycle via ExecStartPre/ExecStopPost
+	// --security-opt apparmor=unconfined: nerdctl-default profile blocks runc signal operations
 	return fmt.Sprintf(
-		"docker run --rm --name powerdns-recursor "+
+		"docker run --name powerdns-recursor "+
+			"--security-opt apparmor=unconfined "+
 			"--user root "+
 			"--network=host "+
 			"-v %s/recursor:/etc/powerdns-recursor "+
@@ -305,11 +320,6 @@ func buildRecursorExecStart(image string, cfg *Config) string {
 		cfg.ConfigDir,
 		image,
 	)
-}
-
-// buildExecStop builds the ExecStop command for a service.
-func buildExecStop(containerName string) string {
-	return fmt.Sprintf("docker stop %s", containerName)
 }
 
 // initializeDatabase initializes the SQLite database for PowerDNS.

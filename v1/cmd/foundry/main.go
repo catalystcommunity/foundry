@@ -16,6 +16,7 @@ import (
 	logscmd "github.com/catalystcommunity/foundry/v1/cmd/foundry/commands/logs"
 	metricscmd "github.com/catalystcommunity/foundry/v1/cmd/foundry/commands/metrics"
 	networkcmd "github.com/catalystcommunity/foundry/v1/cmd/foundry/commands/network"
+	openbaocmd "github.com/catalystcommunity/foundry/v1/cmd/foundry/commands/openbao"
 	setupcmd "github.com/catalystcommunity/foundry/v1/cmd/foundry/commands/setup"
 	stackcmd "github.com/catalystcommunity/foundry/v1/cmd/foundry/commands/stack"
 	storagecmd "github.com/catalystcommunity/foundry/v1/cmd/foundry/commands/storage"
@@ -67,6 +68,7 @@ func main() {
 			logscmd.Command,
 			metricscmd.Command,
 			networkcmd.Command,
+			openbaocmd.Command,
 			setupcmd.Commands(),
 			stackcmd.Command,
 			storagecmd.Command,

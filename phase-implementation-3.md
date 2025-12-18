@@ -53,7 +53,7 @@ This provides a consistent S3 API with high performance, simplifying component c
 **Working States**:
 - [x] Prometheus deployed via kube-prometheus-stack Helm chart
 - [x] ServiceMonitors configured for auto-discovery
-- [ ] Scraping K3s, OpenBAO, Zot metrics
+- [x] Scraping K3s, OpenBAO, Zot metrics
 - [x] PVC for Prometheus TSDB
 - [x] Retention configured per stack.yaml
 
@@ -61,10 +61,10 @@ This provides a consistent S3 API with high performance, simplifying component c
 - ~~Deploy kube-prometheus-stack Helm chart~~ ✓ Implemented
 - ~~Configure Prometheus retention~~ ✓ Implemented (configurable retention_days and retention_size)
 - ~~Set up service discovery for `foundry-*` namespaces~~ ✓ Configured with nil selectors for all namespaces
-- [ ] Create ServiceMonitors for core components (OpenBAO, Zot, etc.)
+- ~~Create ServiceMonitors for core components (OpenBAO, Zot, etc.)~~ ✓ External targets auto-configured via additionalScrapeConfigs
 - ~~Configure PVC for storage~~ ✓ Implemented with configurable storage class and size
 - [ ] Set up alerting rules (basic)
-- [ ] Test metric collection
+- [x] Test metric collection
 
 **Files**:
 - `v1/internal/component/prometheus/types.go` ✓

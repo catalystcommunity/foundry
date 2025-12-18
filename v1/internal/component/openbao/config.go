@@ -16,9 +16,20 @@ storage "file" {
 listener "tcp" {
   address     = "{{ .Address }}"
   tls_disable = 1
+  # Enable unauthenticated metrics access for Prometheus scraping
+  telemetry {
+    unauthenticated_metrics_access = true
+  }
 }
 
 api_addr = "http://{{ .Address }}"
+
+# Telemetry configuration for Prometheus metrics
+# Metrics are available at /v1/sys/metrics?format=prometheus
+telemetry {
+  disable_hostname = true
+  prometheus_retention_time = "60s"
+}
 `
 
 // GenerateConfig creates an OpenBAO configuration file from the template

@@ -162,6 +162,12 @@ func buildHelmValues(cfg *Config) map[string]interface{} {
 	prometheusSpec["ruleSelector"] = map[string]interface{}{}
 	prometheusSpec["ruleNamespaceSelector"] = map[string]interface{}{}
 
+	// Add scrape configs for external (non-K8s) services
+	if len(cfg.ExternalTargets) > 0 {
+		scrapeConfigs := buildAdditionalScrapeConfigs(cfg.ExternalTargets)
+		prometheusSpec["additionalScrapeConfigs"] = scrapeConfigs
+	}
+
 	values["prometheus"] = map[string]interface{}{
 		"prometheusSpec": prometheusSpec,
 	}
@@ -312,3 +318,41 @@ func containsSubstring(s, substr string) bool {
 // NOTE: ServiceMonitor utilities are available in servicemonitors.go:
 // - ServiceMonitorConfig: struct for ServiceMonitor configuration
 // - GetServiceMonitorManifest: generates ServiceMonitor YAML manifest
+
+// buildAdditionalScrapeConfigs converts ExternalTargets to Prometheus scrape configs
+// for services running outside of Kubernetes (e.g., systemd-based services)
+func buildAdditionalScrapeConfigs(targets []ExternalTarget) []map[string]interface{} {
+	configs := make([]map[string]interface{}, 0, len(targets))
+
+	for _, target := range targets {
+		config := map[string]interface{}{
+			"job_name": target.Name,
+			"static_configs": []map[string]interface{}{
+				{
+					"targets": target.Targets,
+				},
+			},
+		}
+
+		// Set metrics path (default to /metrics)
+		metricsPath := target.MetricsPath
+		if metricsPath == "" {
+			metricsPath = "/metrics"
+		}
+		config["metrics_path"] = metricsPath
+
+		// Add scrape interval if specified
+		if target.ScrapeInterval != "" {
+			config["scrape_interval"] = target.ScrapeInterval
+		}
+
+		// Add query parameters if specified (e.g., format=prometheus for OpenBAO)
+		if len(target.Params) > 0 {
+			config["params"] = target.Params
+		}
+
+		configs = append(configs, config)
+	}
+
+	return configs
+}
