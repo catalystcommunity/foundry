@@ -334,11 +334,15 @@ func TestCreateSystemdService_Success(t *testing.T) {
 			assert.Contains(t, cmd, "ExecStart=")
 			assert.Contains(t, cmd, "docker run")
 			assert.Contains(t, cmd, "--name foundry-zot")
+			assert.Contains(t, cmd, "--security-opt apparmor=unconfined")
 			assert.Contains(t, cmd, "-p 5000:5000")
 			assert.Contains(t, cmd, "-v /var/lib/foundry-zot:/var/lib/zot")
 			assert.Contains(t, cmd, "-v /etc/foundry-zot/config.json:/etc/zot/config.json")
 			assert.Contains(t, cmd, "ghcr.io/project-zot/zot:latest")
-			assert.Contains(t, cmd, "ExecStop=/usr/bin/docker stop")
+			// No ExecStop - systemd handles graceful shutdown via signals
+			// ExecStopPost cleans up the container after stopping
+			assert.Contains(t, cmd, "ExecStopPost=")
+			assert.Contains(t, cmd, "TimeoutStopSec=30")
 			assert.Contains(t, cmd, "[Install]")
 			assert.Contains(t, cmd, "WantedBy=multi-user.target")
 			break

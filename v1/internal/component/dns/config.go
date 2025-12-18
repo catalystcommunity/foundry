@@ -96,6 +96,7 @@ recursor:
 
 # Web service (API) settings
 webservice:
+  webserver: true
   api_key: {{.APIKey}}
   address: 0.0.0.0
   port: 8082

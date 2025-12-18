@@ -9,6 +9,24 @@ import (
 	"github.com/catalystcommunity/foundry/v1/internal/k8s"
 )
 
+// ExternalTarget represents an external service to scrape metrics from
+type ExternalTarget struct {
+	// Name is the job name for this scrape target
+	Name string `json:"name" yaml:"name"`
+
+	// Targets is a list of host:port endpoints to scrape
+	Targets []string `json:"targets" yaml:"targets"`
+
+	// MetricsPath is the path to scrape metrics from (default: /metrics)
+	MetricsPath string `json:"metrics_path" yaml:"metrics_path"`
+
+	// Params are optional query parameters to add to scrape requests
+	Params map[string][]string `json:"params,omitempty" yaml:"params,omitempty"`
+
+	// ScrapeInterval overrides the default scrape interval for this target
+	ScrapeInterval string `json:"scrape_interval,omitempty" yaml:"scrape_interval,omitempty"`
+}
+
 // Config holds Prometheus stack component configuration
 type Config struct {
 	// Version is the Helm chart version to install
@@ -49,6 +67,10 @@ type Config struct {
 
 	// IngressHost is the hostname for Prometheus Ingress
 	IngressHost string `json:"ingress_host" yaml:"ingress_host"`
+
+	// ExternalTargets is a list of external services to scrape metrics from
+	// These are systemd-based services running outside of Kubernetes
+	ExternalTargets []ExternalTarget `json:"external_targets" yaml:"external_targets"`
 
 	// Values allows passing additional Helm values
 	Values map[string]interface{} `json:"values" yaml:",inline"`
@@ -159,7 +181,7 @@ func DefaultConfig() *Config {
 		Namespace:               "monitoring",
 		RetentionDays:           15,
 		RetentionSize:           "10GB", // Must end with 'B' per Prometheus CRD spec
-		StorageClass:            "", // Use cluster default
+		StorageClass:            "",     // Use cluster default
 		StorageSize:             "20Gi",
 		AlertmanagerEnabled:     true,
 		GrafanaEnabled:          false, // We deploy Grafana separately
@@ -167,6 +189,7 @@ func DefaultConfig() *Config {
 		KubeStateMetricsEnabled: true,
 		ScrapeInterval:          "30s",
 		IngressEnabled:          false,
+		ExternalTargets:         []ExternalTarget{},
 		Values:                  make(map[string]interface{}),
 	}
 }
@@ -229,6 +252,49 @@ func ParseConfig(cfg component.ComponentConfig) (*Config, error) {
 
 	if values, ok := cfg.GetMap("values"); ok {
 		config.Values = values
+	}
+
+	// Parse external targets for scraping non-K8s services
+	if targets, ok := cfg["external_targets"]; ok {
+		if targetSlice, ok := targets.([]ExternalTarget); ok {
+			config.ExternalTargets = targetSlice
+		} else if targetInterfaces, ok := targets.([]interface{}); ok {
+			// Handle case where targets come as []interface{} from YAML parsing
+			for _, ti := range targetInterfaces {
+				if tm, ok := ti.(map[string]interface{}); ok {
+					target := ExternalTarget{}
+					if name, ok := tm["name"].(string); ok {
+						target.Name = name
+					}
+					if path, ok := tm["metrics_path"].(string); ok {
+						target.MetricsPath = path
+					}
+					if interval, ok := tm["scrape_interval"].(string); ok {
+						target.ScrapeInterval = interval
+					}
+					if tgts, ok := tm["targets"].([]interface{}); ok {
+						for _, t := range tgts {
+							if ts, ok := t.(string); ok {
+								target.Targets = append(target.Targets, ts)
+							}
+						}
+					}
+					if params, ok := tm["params"].(map[string]interface{}); ok {
+						target.Params = make(map[string][]string)
+						for k, v := range params {
+							if vs, ok := v.([]interface{}); ok {
+								for _, val := range vs {
+									if s, ok := val.(string); ok {
+										target.Params[k] = append(target.Params[k], s)
+									}
+								}
+							}
+						}
+					}
+					config.ExternalTargets = append(config.ExternalTargets, target)
+				}
+			}
+		}
 	}
 
 	// Validate configuration

@@ -239,6 +239,11 @@ func installK8sComponent(ctx context.Context, cmd *cli.Command, name string, sta
 	case "seaweedfs":
 		componentWithClients = seaweedfs.NewComponent(helmClient, k8sClient)
 	case "prometheus":
+		// Auto-populate external targets for infrastructure services
+		externalTargets := buildExternalTargetsFromStackConfig(stackConfig)
+		if len(externalTargets) > 0 {
+			cfg["external_targets"] = externalTargets
+		}
 		componentWithClients = prometheus.NewComponent(helmClient, k8sClient)
 	case "loki":
 		// Get SeaweedFS credentials from the SeaweedFS secret
@@ -1019,4 +1024,61 @@ func isHelmReleaseInstalled(componentName string) bool {
 	}
 
 	return false
+}
+
+// buildExternalTargetsFromStackConfig creates Prometheus external targets for
+// installed infrastructure services (OpenBAO, Zot, PowerDNS) based on stack config
+func buildExternalTargetsFromStackConfig(stackConfig *config.Config) []prometheus.ExternalTarget {
+	var targets []prometheus.ExternalTarget
+
+	// Check if stack config and setup state are available
+	if stackConfig == nil || stackConfig.SetupState == nil {
+		return targets
+	}
+
+	// OpenBAO metrics at /v1/sys/metrics?format=prometheus on port 8200
+	if stackConfig.SetupState.OpenBAOInstalled {
+		if addr, err := stackConfig.GetPrimaryOpenBAOAddress(); err == nil {
+			targets = append(targets, prometheus.ExternalTarget{
+				Name:        "openbao",
+				Targets:     []string{fmt.Sprintf("%s:8200", addr)},
+				MetricsPath: "/v1/sys/metrics",
+				Params: map[string][]string{
+					"format": {"prometheus"},
+				},
+			})
+		}
+	}
+
+	// Zot registry metrics at /metrics on port 5000
+	if stackConfig.SetupState.ZotInstalled {
+		if addr, err := stackConfig.GetPrimaryZotAddress(); err == nil {
+			targets = append(targets, prometheus.ExternalTarget{
+				Name:        "zot",
+				Targets:     []string{fmt.Sprintf("%s:5000", addr)},
+				MetricsPath: "/metrics",
+			})
+		}
+	}
+
+	// PowerDNS metrics (native Prometheus since v4.3.0+/v4.4.0+)
+	// Auth server on port 8081, Recursor on port 8082
+	if stackConfig.SetupState.DNSInstalled {
+		if addr, err := stackConfig.GetPrimaryDNSAddress(); err == nil {
+			// PowerDNS Authoritative Server
+			targets = append(targets, prometheus.ExternalTarget{
+				Name:        "powerdns-auth",
+				Targets:     []string{fmt.Sprintf("%s:8081", addr)},
+				MetricsPath: "/metrics",
+			})
+			// PowerDNS Recursor
+			targets = append(targets, prometheus.ExternalTarget{
+				Name:        "powerdns-recursor",
+				Targets:     []string{fmt.Sprintf("%s:8082", addr)},
+				MetricsPath: "/metrics",
+			})
+		}
+	}
+
+	return targets
 }

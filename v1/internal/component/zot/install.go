@@ -115,7 +115,6 @@ func createSystemdService(conn container.SSHExecutor, runtime container.Runtime,
 	configPath := filepath.Join(cfg.ConfigDir, "config.json")
 
 	execStart := buildExecStart(runtimePath, imageName, int(cfg.Port), dataDir, configPath)
-	execStop := fmt.Sprintf("%s stop -t 10 foundry-zot", runtimePath)
 
 	// Create systemd unit file using helper
 	unit := systemd.ContainerUnitFile(
@@ -123,9 +122,14 @@ func createSystemdService(conn container.SSHExecutor, runtime container.Runtime,
 		"Foundry Zot Registry",
 		execStart,
 	)
-	unit.ExecStop = execStop
 	// Clean up any existing container before starting
 	unit.ExecStartPre = fmt.Sprintf("-%s rm -f foundry-zot", runtimePath)
+	// No ExecStop - systemd sends SIGTERM to docker process which forwards to container
+	// Using explicit stop can hit AppArmor issues on Ubuntu/Debian
+	// Clean up the container after stopping
+	unit.ExecStopPost = fmt.Sprintf("-%s rm -f foundry-zot", runtimePath)
+	// Give container time to gracefully shutdown
+	unit.TimeoutStopSec = 30
 
 	// Create the service
 	if err := systemd.CreateService(conn, "foundry-zot", unit); err != nil {
@@ -147,6 +151,8 @@ func detectRuntimePath(conn container.SSHExecutor, runtimeType string) (string, 
 
 // buildExecStart builds the ExecStart command for the systemd service
 func buildExecStart(runtimePath, image string, port int, dataDir, configPath string) string {
-	return fmt.Sprintf("%s run --rm --name foundry-zot -p %d:%d -v %s:/var/lib/zot -v %s:/etc/zot/config.json %s",
+	// Note: No --rm flag - systemd manages the container lifecycle via ExecStartPre/ExecStopPost
+	// --security-opt apparmor=unconfined: nerdctl-default profile blocks runc signal operations
+	return fmt.Sprintf("%s run --name foundry-zot --security-opt apparmor=unconfined -p %d:%d -v %s:/var/lib/zot -v %s:/etc/zot/config.json %s",
 		runtimePath, port, port, dataDir, configPath, image)
 }

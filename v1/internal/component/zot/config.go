@@ -73,9 +73,10 @@ type BearerConfig struct {
 
 // Extensions represents optional Zot extensions
 type Extensions struct {
-	Sync   *SyncExtension   `json:"sync,omitempty"`
-	Search *SearchExtension `json:"search,omitempty"`
-	UI     *UIExtension     `json:"ui,omitempty"`
+	Sync    *SyncExtension    `json:"sync,omitempty"`
+	Search  *SearchExtension  `json:"search,omitempty"`
+	UI      *UIExtension      `json:"ui,omitempty"`
+	Metrics *MetricsExtension `json:"metrics,omitempty"`
 }
 
 // SyncExtension enables pull-through cache
@@ -123,6 +124,17 @@ type UIExtension struct {
 	Enable bool `json:"enable"`
 }
 
+// MetricsExtension enables Prometheus metrics
+type MetricsExtension struct {
+	Enable     bool                      `json:"enable"`
+	Prometheus *MetricsPrometheusConfig `json:"prometheus,omitempty"`
+}
+
+// MetricsPrometheusConfig holds Prometheus-specific metrics configuration
+type MetricsPrometheusConfig struct {
+	Path string `json:"path"`
+}
+
 // LogConfiguration represents logging settings
 type LogConfiguration struct {
 	Level  string `json:"level"`
@@ -149,30 +161,38 @@ func GenerateConfig(cfg *Config) (string, error) {
 		},
 	}
 
+	// Always enable metrics for Prometheus scraping
+	zotConfig.Extensions = &Extensions{
+		Metrics: &MetricsExtension{
+			Enable: true,
+			Prometheus: &MetricsPrometheusConfig{
+				Path: "/metrics",
+			},
+		},
+	}
+
 	// Add pull-through cache for registries if enabled
 	if cfg.PullThroughCache {
-		zotConfig.Extensions = &Extensions{
-			Sync: &SyncExtension{
-				Enable: true,
-				Registries: []RegistryConfig{
-					{
-						URLs:      []string{"https://registry-1.docker.io"},
-						TLSVerify: true,
-						OnDemand:  true,
-					},
-					{
-						URLs:      []string{"https://ghcr.io"},
-						TLSVerify: true,
-						OnDemand:  true,
-					},
+		zotConfig.Extensions.Sync = &SyncExtension{
+			Enable: true,
+			Registries: []RegistryConfig{
+				{
+					URLs:      []string{"https://registry-1.docker.io"},
+					TLSVerify: true,
+					OnDemand:  true,
+				},
+				{
+					URLs:      []string{"https://ghcr.io"},
+					TLSVerify: true,
+					OnDemand:  true,
 				},
 			},
-			Search: &SearchExtension{
-				Enable: true,
-			},
-			UI: &UIExtension{
-				Enable: true,
-			},
+		}
+		zotConfig.Extensions.Search = &SearchExtension{
+			Enable: true,
+		}
+		zotConfig.Extensions.UI = &UIExtension{
+			Enable: true,
 		}
 	}
 

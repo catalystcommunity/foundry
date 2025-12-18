@@ -67,6 +67,12 @@ func TestGenerateConfig_WithPullThroughCache(t *testing.T) {
 	assert.True(t, zotConfig.Extensions.Search.Enable)
 	require.NotNil(t, zotConfig.Extensions.UI)
 	assert.True(t, zotConfig.Extensions.UI.Enable)
+
+	// Verify metrics are always enabled
+	require.NotNil(t, zotConfig.Extensions.Metrics)
+	assert.True(t, zotConfig.Extensions.Metrics.Enable)
+	require.NotNil(t, zotConfig.Extensions.Metrics.Prometheus)
+	assert.Equal(t, "/metrics", zotConfig.Extensions.Metrics.Prometheus.Path)
 }
 
 func TestGenerateConfig_WithoutPullThroughCache(t *testing.T) {
@@ -80,8 +86,16 @@ func TestGenerateConfig_WithoutPullThroughCache(t *testing.T) {
 	err = json.Unmarshal([]byte(configStr), &zotConfig)
 	require.NoError(t, err)
 
-	// Extensions should be nil when pull-through cache is disabled
-	assert.Nil(t, zotConfig.Extensions)
+	// Extensions should still contain metrics (always enabled for Prometheus)
+	// but Sync, Search, and UI should be nil when pull-through cache is disabled
+	require.NotNil(t, zotConfig.Extensions)
+	require.NotNil(t, zotConfig.Extensions.Metrics)
+	assert.True(t, zotConfig.Extensions.Metrics.Enable)
+	require.NotNil(t, zotConfig.Extensions.Metrics.Prometheus)
+	assert.Equal(t, "/metrics", zotConfig.Extensions.Metrics.Prometheus.Path)
+	assert.Nil(t, zotConfig.Extensions.Sync)
+	assert.Nil(t, zotConfig.Extensions.Search)
+	assert.Nil(t, zotConfig.Extensions.UI)
 }
 
 func TestGenerateConfig_CustomPort(t *testing.T) {

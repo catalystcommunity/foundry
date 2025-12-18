@@ -365,4 +365,116 @@ func TestContainsSubstring(t *testing.T) {
 	}
 }
 
+func TestBuildHelmValues_ExternalTargets(t *testing.T) {
+	cfg := &Config{
+		RetentionDays:  15,
+		RetentionSize:  "10GB",
+		ScrapeInterval: "30s",
+		ExternalTargets: []ExternalTarget{
+			{
+				Name:        "openbao",
+				Targets:     []string{"192.168.1.10:8200"},
+				MetricsPath: "/v1/sys/metrics",
+				Params: map[string][]string{
+					"format": {"prometheus"},
+				},
+			},
+			{
+				Name:        "zot",
+				Targets:     []string{"192.168.1.10:5000"},
+				MetricsPath: "/metrics",
+			},
+		},
+	}
+
+	values := buildHelmValues(cfg)
+
+	prometheus, ok := values["prometheus"].(map[string]interface{})
+	require.True(t, ok)
+
+	prometheusSpec, ok := prometheus["prometheusSpec"].(map[string]interface{})
+	require.True(t, ok)
+
+	// Check additionalScrapeConfigs is set
+	scrapeConfigs, ok := prometheusSpec["additionalScrapeConfigs"].([]map[string]interface{})
+	require.True(t, ok)
+	require.Len(t, scrapeConfigs, 2)
+
+	// Verify OpenBAO config
+	assert.Equal(t, "openbao", scrapeConfigs[0]["job_name"])
+	assert.Equal(t, "/v1/sys/metrics", scrapeConfigs[0]["metrics_path"])
+	params, ok := scrapeConfigs[0]["params"].(map[string][]string)
+	require.True(t, ok)
+	assert.Equal(t, []string{"prometheus"}, params["format"])
+
+	// Verify Zot config
+	assert.Equal(t, "zot", scrapeConfigs[1]["job_name"])
+	assert.Equal(t, "/metrics", scrapeConfigs[1]["metrics_path"])
+}
+
+func TestBuildHelmValues_NoExternalTargets(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.ExternalTargets = []ExternalTarget{} // Empty
+
+	values := buildHelmValues(cfg)
+
+	prometheus, ok := values["prometheus"].(map[string]interface{})
+	require.True(t, ok)
+
+	prometheusSpec, ok := prometheus["prometheusSpec"].(map[string]interface{})
+	require.True(t, ok)
+
+	// additionalScrapeConfigs should not be set when no external targets
+	_, exists := prometheusSpec["additionalScrapeConfigs"]
+	assert.False(t, exists)
+}
+
+func TestBuildAdditionalScrapeConfigs(t *testing.T) {
+	targets := []ExternalTarget{
+		{
+			Name:        "openbao",
+			Targets:     []string{"10.0.0.1:8200", "10.0.0.2:8200"},
+			MetricsPath: "/v1/sys/metrics",
+			Params: map[string][]string{
+				"format": {"prometheus"},
+			},
+			ScrapeInterval: "15s",
+		},
+		{
+			Name:        "powerdns-auth",
+			Targets:     []string{"10.0.0.1:8081"},
+			MetricsPath: "/metrics",
+		},
+		{
+			Name:    "default-path",
+			Targets: []string{"10.0.0.1:9100"},
+			// MetricsPath not set, should default to /metrics
+		},
+	}
+
+	configs := buildAdditionalScrapeConfigs(targets)
+	require.Len(t, configs, 3)
+
+	// Test OpenBAO config with params and interval
+	assert.Equal(t, "openbao", configs[0]["job_name"])
+	assert.Equal(t, "/v1/sys/metrics", configs[0]["metrics_path"])
+	assert.Equal(t, "15s", configs[0]["scrape_interval"])
+	staticConfigs := configs[0]["static_configs"].([]map[string]interface{})
+	assert.Equal(t, []string{"10.0.0.1:8200", "10.0.0.2:8200"}, staticConfigs[0]["targets"])
+	params := configs[0]["params"].(map[string][]string)
+	assert.Equal(t, []string{"prometheus"}, params["format"])
+
+	// Test PowerDNS config (no params, no interval)
+	assert.Equal(t, "powerdns-auth", configs[1]["job_name"])
+	assert.Equal(t, "/metrics", configs[1]["metrics_path"])
+	_, hasInterval := configs[1]["scrape_interval"]
+	assert.False(t, hasInterval)
+	_, hasParams := configs[1]["params"]
+	assert.False(t, hasParams)
+
+	// Test default path
+	assert.Equal(t, "default-path", configs[2]["job_name"])
+	assert.Equal(t, "/metrics", configs[2]["metrics_path"]) // Should default to /metrics
+}
+
 // NOTE: ServiceMonitor YAML generation tests are in servicemonitors_test.go
