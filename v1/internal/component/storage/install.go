@@ -300,6 +300,27 @@ func buildNFSValues(cfg *Config) map[string]interface{} {
 func installLonghorn(ctx context.Context, helmClient HelmClient, k8sClient K8sClient, cfg *Config) error {
 	fmt.Println("  Installing Longhorn...")
 
+	// Check for ServiceMonitor CRD if ServiceMonitor is enabled
+	// If CRD doesn't exist, automatically disable ServiceMonitor for initial install
+	// It will be enabled when storage is upgraded after Prometheus is installed
+	serviceMonitorAvailable := false
+	if cfg.Longhorn != nil && cfg.Longhorn.ServiceMonitorEnabled {
+		if k8sClient != nil {
+			crdExists, err := k8sClient.ServiceMonitorCRDExists(ctx)
+			if err != nil {
+				fmt.Printf("  ⚠ Could not check for ServiceMonitor CRD: %v\n", err)
+			} else if !crdExists {
+				fmt.Println("  ⚠ ServiceMonitor CRD not available - installing without metrics integration")
+				fmt.Println("    (ServiceMonitor will be enabled when storage is upgraded after Prometheus)")
+				// Temporarily disable for this install
+				cfg.Longhorn.ServiceMonitorEnabled = false
+			} else {
+				serviceMonitorAvailable = true
+			}
+		}
+	}
+	_ = serviceMonitorAvailable // Will be used for logging
+
 	// Add Helm repository
 	if err := helmClient.AddRepo(ctx, helm.RepoAddOptions{
 		Name:        longhornRepoName,
@@ -435,12 +456,14 @@ func buildLonghornValues(cfg *Config) map[string]interface{} {
 		}
 	}
 
-	// Enable metrics and ServiceMonitor for Prometheus
-	values["metrics"] = map[string]interface{}{
-		"serviceMonitor": map[string]interface{}{
+	// Enable metrics, and ServiceMonitor if configured (requires CRD from Prometheus Operator)
+	metricsConfig := map[string]interface{}{}
+	if cfg.Longhorn != nil && cfg.Longhorn.ServiceMonitorEnabled {
+		metricsConfig["serviceMonitor"] = map[string]interface{}{
 			"enabled": true,
-		},
+		}
 	}
+	values["metrics"] = metricsConfig
 
 	return values
 }

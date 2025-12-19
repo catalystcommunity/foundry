@@ -291,10 +291,10 @@ func TestComponent_Status_NoHelmClient(t *testing.T) {
 	status, err := comp.Status(context.Background())
 
 	assert.NoError(t, err)
-	// When no helm client, assumes K3s bundled local-path provisioner is available
-	assert.True(t, status.Installed)
-	assert.True(t, status.Healthy)
-	assert.Contains(t, status.Message, "assuming K3s bundled local-path provisioner")
+	// When no client available, cannot verify status so returns false
+	assert.False(t, status.Installed)
+	assert.False(t, status.Healthy)
+	assert.Contains(t, status.Message, "no client available to verify storage status")
 }
 
 // mockHelmClient is a mock implementation of HelmClient for testing
@@ -336,10 +336,12 @@ func (m *mockHelmClient) Uninstall(ctx context.Context, opts helm.UninstallOptio
 
 // mockK8sClient is a mock implementation of K8sClient for testing
 type mockK8sClient struct {
-	pods         []*k8s.Pod
-	podsErr      error
-	manifests    []string
-	manifestsErr error
+	pods                       []*k8s.Pod
+	podsErr                    error
+	manifests                  []string
+	manifestsErr               error
+	serviceMonitorCRDExists    bool
+	serviceMonitorCRDExistsErr error
 }
 
 func (m *mockK8sClient) GetPods(ctx context.Context, namespace string) ([]*k8s.Pod, error) {
@@ -349,6 +351,10 @@ func (m *mockK8sClient) GetPods(ctx context.Context, namespace string) ([]*k8s.P
 func (m *mockK8sClient) ApplyManifest(ctx context.Context, manifest string) error {
 	m.manifests = append(m.manifests, manifest)
 	return m.manifestsErr
+}
+
+func (m *mockK8sClient) ServiceMonitorCRDExists(ctx context.Context) (bool, error) {
+	return m.serviceMonitorCRDExists, m.serviceMonitorCRDExistsErr
 }
 
 func TestComponent_Status_LocalPathInstalled(t *testing.T) {
@@ -403,8 +409,8 @@ func TestComponent_Status_NoRelease(t *testing.T) {
 	status, err := comp.Status(context.Background())
 
 	assert.NoError(t, err)
-	// When no releases found, assumes K3s bundled local-path provisioner is available
-	assert.True(t, status.Installed)
-	assert.True(t, status.Healthy)
-	assert.Contains(t, status.Message, "assuming K3s bundled local-path provisioner")
+	// When no releases found and cannot verify, returns not installed
+	assert.False(t, status.Installed)
+	assert.False(t, status.Healthy)
+	assert.Contains(t, status.Message, "no client available to verify storage status")
 }

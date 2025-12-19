@@ -59,6 +59,9 @@ type Config struct {
 	// IngressHostS3 is the hostname for S3 API Ingress
 	IngressHostS3 string `json:"ingress_host_s3" yaml:"ingress_host_s3"`
 
+	// ServiceMonitorEnabled enables ServiceMonitor for Prometheus metrics (default: true, requires CRD)
+	ServiceMonitorEnabled bool `json:"service_monitor_enabled" yaml:"service_monitor_enabled"`
+
 	// Values allows passing additional Helm values
 	Values map[string]interface{} `json:"values" yaml:",inline"`
 }
@@ -78,6 +81,7 @@ type K8sClient interface {
 	ApplyManifest(ctx context.Context, manifest string) error
 	DeleteJob(ctx context.Context, namespace, name string) error
 	WaitForJobComplete(ctx context.Context, namespace, name string, timeout time.Duration) error
+	ServiceMonitorCRDExists(ctx context.Context) (bool, error)
 }
 
 // Component implements the component.Component interface for SeaweedFS
@@ -167,22 +171,23 @@ func (c *Component) Dependencies() []string {
 // DefaultConfig returns a Config with sensible defaults
 func DefaultConfig() *Config {
 	return &Config{
-		Version:          "4.0.401", // SeaweedFS Helm chart version (app version 4.01)
-		Namespace:        "seaweedfs",
-		MasterReplicas:   1,
-		VolumeReplicas:   1,
-		FilerReplicas:    1,
-		StorageClass:     "", // Use cluster default
-		StorageSize:      "50Gi",
-		S3Enabled:        true,
-		S3Port:           8333,
-		AccessKey:        "", // Will be auto-generated
-		SecretKey:        "", // Will be auto-generated
-		Buckets:          []string{},
-		IngressEnabled:   false,
-		IngressHostFiler: "",
-		IngressHostS3:    "",
-		Values:           make(map[string]interface{}),
+		Version:               "4.0.401", // SeaweedFS Helm chart version (app version 4.01)
+		Namespace:             "seaweedfs",
+		MasterReplicas:        1,
+		VolumeReplicas:        1,
+		FilerReplicas:         1,
+		StorageClass:          "", // Use cluster default
+		StorageSize:           "50Gi",
+		S3Enabled:             true,
+		S3Port:                8333,
+		AccessKey:             "", // Will be auto-generated
+		SecretKey:             "", // Will be auto-generated
+		Buckets:               []string{},
+		IngressEnabled:        false,
+		IngressHostFiler:      "",
+		IngressHostS3:         "",
+		ServiceMonitorEnabled: true,
+		Values:                make(map[string]interface{}),
 	}
 }
 
@@ -248,6 +253,10 @@ func ParseConfig(cfg component.ComponentConfig) (*Config, error) {
 
 	if ingressHostS3, ok := cfg.GetString("ingress_host_s3"); ok {
 		config.IngressHostS3 = ingressHostS3
+	}
+
+	if serviceMonitorEnabled, ok := cfg.GetBool("service_monitor_enabled"); ok {
+		config.ServiceMonitorEnabled = serviceMonitorEnabled
 	}
 
 	if values, ok := cfg.GetMap("values"); ok {

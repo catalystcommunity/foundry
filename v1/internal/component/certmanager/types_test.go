@@ -104,7 +104,9 @@ func TestParseConfig(t *testing.T) {
 		{
 			name:  "empty map",
 			input: map[string]interface{}{},
-			expected: &Config{},
+			expected: &Config{
+				ServiceMonitorEnabled: true, // Default
+			},
 		},
 		{
 			name: "full config",
@@ -118,13 +120,14 @@ func TestParseConfig(t *testing.T) {
 				"install_crds":          false,
 			},
 			expected: &Config{
-				Namespace:           "custom-ns",
-				Version:             "v1.14.0",
-				CreateDefaultIssuer: true,
-				DefaultIssuerType:   "acme",
-				ACMEEmail:           "test@example.com",
-				ACMEServer:          "https://acme-staging.example.com/directory",
-				InstallCRDs:         false,
+				Namespace:             "custom-ns",
+				Version:               "v1.14.0",
+				CreateDefaultIssuer:   true,
+				DefaultIssuerType:     "acme",
+				ACMEEmail:             "test@example.com",
+				ACMEServer:            "https://acme-staging.example.com/directory",
+				InstallCRDs:           false,
+				ServiceMonitorEnabled: true, // Default
 			},
 		},
 		{
@@ -134,8 +137,9 @@ func TestParseConfig(t *testing.T) {
 				"version":   "v1.13.0",
 			},
 			expected: &Config{
-				Namespace: "test-ns",
-				Version:   "v1.13.0",
+				Namespace:             "test-ns",
+				Version:               "v1.13.0",
+				ServiceMonitorEnabled: true, // Default
 			},
 		},
 		{
@@ -144,7 +148,9 @@ func TestParseConfig(t *testing.T) {
 				"namespace":             123, // Should be string
 				"create_default_issuer": "true", // Should be bool
 			},
-			expected: &Config{},
+			expected: &Config{
+				ServiceMonitorEnabled: true, // Default
+			},
 		},
 	}
 

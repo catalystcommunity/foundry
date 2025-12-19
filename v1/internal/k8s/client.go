@@ -533,3 +533,27 @@ func (c *Client) WaitForJobComplete(ctx context.Context, namespace, name string,
 		}
 	}
 }
+
+// CRDExists checks if a CustomResourceDefinition exists in the cluster
+func (c *Client) CRDExists(ctx context.Context, crdName string) (bool, error) {
+	crdGVR := schema.GroupVersionResource{
+		Group:    "apiextensions.k8s.io",
+		Version:  "v1",
+		Resource: "customresourcedefinitions",
+	}
+
+	_, err := c.dynamicClient.Resource(crdGVR).Get(ctx, crdName, metav1.GetOptions{})
+	if err != nil {
+		// Check if it's a "not found" error
+		if strings.Contains(err.Error(), "not found") {
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to check CRD %s: %w", crdName, err)
+	}
+	return true, nil
+}
+
+// ServiceMonitorCRDExists checks if the ServiceMonitor CRD from Prometheus Operator is installed
+func (c *Client) ServiceMonitorCRDExists(ctx context.Context) (bool, error) {
+	return c.CRDExists(ctx, "servicemonitors.monitoring.coreos.com")
+}

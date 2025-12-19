@@ -96,6 +96,9 @@ type LonghornConfig struct {
 
 	// IngressHost is the hostname for Longhorn UI Ingress
 	IngressHost string `json:"ingress_host" yaml:"ingress_host"`
+
+	// ServiceMonitorEnabled enables ServiceMonitor for Prometheus metrics (default: true, requires CRD)
+	ServiceMonitorEnabled bool `json:"service_monitor_enabled" yaml:"service_monitor_enabled"`
 }
 
 // HelmClient defines the Helm operations needed for storage component
@@ -111,6 +114,7 @@ type HelmClient interface {
 type K8sClient interface {
 	GetPods(ctx context.Context, namespace string) ([]*k8s.Pod, error)
 	ApplyManifest(ctx context.Context, manifest string) error
+	ServiceMonitorCRDExists(ctx context.Context) (bool, error)
 }
 
 // Component implements the component.Component interface for storage provisioning
@@ -195,13 +199,12 @@ func (c *Component) Status(ctx context.Context) (*component.ComponentStatus, err
 		}
 	}
 
-	// Fall back: Check if K3s bundled local-path provisioner is running
-	// by looking for the local-path-provisioner pod in kube-system
-	// This is a best-effort check when we don't have clients initialized
+	// Fall back: When we don't have clients, we can't verify installation status
+	// Return false to allow the install process to proceed
 	return &component.ComponentStatus{
-		Installed: true, // Assume storage is available if K3s is running (it includes local-path)
-		Healthy:   true,
-		Message:   "assuming K3s bundled local-path provisioner (no client to verify)",
+		Installed: false,
+		Healthy:   false,
+		Message:   "no client available to verify storage status",
 	}, nil
 }
 
@@ -286,7 +289,9 @@ func ParseConfig(cfg component.ComponentConfig) (*Config, error) {
 	}
 
 	if longhornCfg, ok := cfg.GetMap("longhorn"); ok {
-		config.Longhorn = &LonghornConfig{}
+		config.Longhorn = &LonghornConfig{
+			ServiceMonitorEnabled: true, // Default to true
+		}
 		if replicaCount, ok := longhornCfg["replica_count"].(float64); ok {
 			config.Longhorn.ReplicaCount = int(replicaCount)
 		}
@@ -310,6 +315,9 @@ func ParseConfig(cfg component.ComponentConfig) (*Config, error) {
 		}
 		if ingressHost, ok := longhornCfg["ingress_host"].(string); ok {
 			config.Longhorn.IngressHost = ingressHost
+		}
+		if serviceMonitorEnabled, ok := longhornCfg["service_monitor_enabled"].(bool); ok {
+			config.Longhorn.ServiceMonitorEnabled = serviceMonitorEnabled
 		}
 	}
 
@@ -348,6 +356,7 @@ func (c *Config) Validate() error {
 				DataPath:                     "/var/lib/longhorn",
 				GuaranteedInstanceManagerCPU: 12,
 				DefaultDataLocality:          "disabled",
+				ServiceMonitorEnabled:        true,
 			}
 		}
 		if c.Longhorn.ReplicaCount < 1 {

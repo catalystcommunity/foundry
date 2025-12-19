@@ -23,6 +23,21 @@ func Install(ctx context.Context, helmClient HelmClient, k8sClient K8sClient, cf
 		cfg = DefaultConfig()
 	}
 
+	// Check for ServiceMonitor CRD if ServiceMonitor is enabled
+	if cfg.ServiceMonitorEnabled {
+		if k8sClient != nil {
+			crdExists, err := k8sClient.ServiceMonitorCRDExists(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to check for ServiceMonitor CRD: %w", err)
+			}
+			if !crdExists {
+				return fmt.Errorf("ServiceMonitor CRD not found but service_monitor_enabled is true. " +
+					"Either install Prometheus first (which includes the CRD), or set service_monitor_enabled: false " +
+					"in your stack.yaml under components.seaweedfs")
+			}
+		}
+	}
+
 	fmt.Println("  Installing SeaweedFS...")
 
 	// Add Helm repository
@@ -250,11 +265,13 @@ func buildHelmValues(cfg *Config) map[string]interface{} {
 		}
 	}
 
-	// Enable global monitoring with ServiceMonitors for Prometheus
-	values["global"] = map[string]interface{}{
-		"monitoring": map[string]interface{}{
-			"enabled": true,
-		},
+	// Enable global monitoring with ServiceMonitors for Prometheus (if configured)
+	if cfg.ServiceMonitorEnabled {
+		values["global"] = map[string]interface{}{
+			"monitoring": map[string]interface{}{
+				"enabled": true,
+			},
+		}
 	}
 
 	return values

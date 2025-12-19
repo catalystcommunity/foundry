@@ -325,11 +325,13 @@ func (m *mockHelmClient) Uninstall(ctx context.Context, opts helm.UninstallOptio
 
 // mockK8sClient is a mock implementation of K8sClient for testing
 type mockK8sClient struct {
-	pods             []*k8s.Pod
-	podsErr          error
-	applyManifestErr error
-	deleteJobErr     error
-	waitJobErr       error
+	pods                       []*k8s.Pod
+	podsErr                    error
+	applyManifestErr           error
+	deleteJobErr               error
+	waitJobErr                 error
+	serviceMonitorCRDExists    bool
+	serviceMonitorCRDExistsErr error
 }
 
 func (m *mockK8sClient) GetPods(ctx context.Context, namespace string) ([]*k8s.Pod, error) {
@@ -346,6 +348,10 @@ func (m *mockK8sClient) DeleteJob(ctx context.Context, namespace, name string) e
 
 func (m *mockK8sClient) WaitForJobComplete(ctx context.Context, namespace, name string, timeout time.Duration) error {
 	return m.waitJobErr
+}
+
+func (m *mockK8sClient) ServiceMonitorCRDExists(ctx context.Context) (bool, error) {
+	return m.serviceMonitorCRDExists, m.serviceMonitorCRDExistsErr
 }
 
 func TestComponent_Status_SeaweedFSInstalled(t *testing.T) {

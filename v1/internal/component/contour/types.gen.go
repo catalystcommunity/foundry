@@ -12,6 +12,7 @@ type Config struct {
 	UseKubeVIP bool `json:"use_kubevip" yaml:"use_kubevip"`
 	DefaultIngressClass bool `json:"default_ingress_class" yaml:"default_ingress_class"`
 	GatewayAPIVersion string `json:"gateway_api_version" yaml:"gateway_api_version"`
+	ServiceMonitorEnabled bool `json:"service_monitor_enabled" yaml:"service_monitor_enabled"`
 	Values map[string]any `json:"values" yaml:",inline"`
 }
 

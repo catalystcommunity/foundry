@@ -18,5 +18,6 @@ Config = {
     use_kubevip: bool @go_name("UseKubeVIP"),                  ; Enable kube-vip cloud provider, default: true
     default_ingress_class: bool @go_name("DefaultIngressClass"),        ; Set Contour as default IngressClass, default: true
     gateway_api_version: text @go_name("GatewayAPIVersion"),    ; Gateway API version, default: "v1.3.0"
+    service_monitor_enabled: bool @go_name("ServiceMonitorEnabled"),  ; Enable ServiceMonitor for Prometheus, default: true (requires CRD)
     values: {* text => any},            ; Additional Helm values to pass to the chart
 }
