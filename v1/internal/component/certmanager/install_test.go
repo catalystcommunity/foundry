@@ -78,6 +78,11 @@ func (m *MockK8sClient) ApplyManifest(ctx context.Context, manifest string) erro
 	return args.Error(0)
 }
 
+func (m *MockK8sClient) ServiceMonitorCRDExists(ctx context.Context) (bool, error) {
+	args := m.Called(ctx)
+	return args.Bool(0), args.Error(1)
+}
+
 func TestInstall_Success(t *testing.T) {
 	ctx := context.Background()
 	cfg := &Config{

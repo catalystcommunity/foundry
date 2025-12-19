@@ -36,6 +36,7 @@ type K8sClient interface {
 	GetNamespace(ctx context.Context, name string) (*k8s.Namespace, error)
 	CreateNamespace(ctx context.Context, name string) error
 	ApplyManifest(ctx context.Context, manifest string) error
+	ServiceMonitorCRDExists(ctx context.Context) (bool, error)
 }
 
 // Install installs cert-manager via Helm
@@ -49,6 +50,19 @@ func Install(ctx context.Context, cfg *Config, componentCfg component.ComponentC
 	k8sClient, ok := componentCfg["k8s_client"].(K8sClient)
 	if !ok || k8sClient == nil {
 		return fmt.Errorf("k8s_client not provided in component config")
+	}
+
+	// Check for ServiceMonitor CRD if ServiceMonitor is enabled
+	if cfg.ServiceMonitorEnabled {
+		crdExists, err := k8sClient.ServiceMonitorCRDExists(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to check for ServiceMonitor CRD: %w", err)
+		}
+		if !crdExists {
+			return fmt.Errorf("ServiceMonitor CRD not found but service_monitor_enabled is true. " +
+				"Either install Prometheus first (which includes the CRD), or set service_monitor_enabled: false " +
+				"in your stack.yaml under components.cert-manager")
+		}
 	}
 
 	// Ensure namespace exists
@@ -72,12 +86,15 @@ func Install(ctx context.Context, cfg *Config, componentCfg component.ComponentC
 				"namespace": cfg.Namespace,
 			},
 		},
-		// Enable ServiceMonitor for Prometheus
-		"prometheus": map[string]interface{}{
+	}
+
+	// Only enable ServiceMonitor if configured (requires CRD from Prometheus Operator)
+	if cfg.ServiceMonitorEnabled {
+		values["prometheus"] = map[string]interface{}{
 			"servicemonitor": map[string]interface{}{
 				"enabled": true,
 			},
-		},
+		}
 	}
 
 	// Check if release already exists

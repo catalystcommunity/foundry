@@ -107,6 +107,7 @@ func TestInstall_NilConfig(t *testing.T) {
 		pods: []*k8s.Pod{
 			{Name: "seaweedfs-master-0", Namespace: "seaweedfs", Status: "Running"},
 		},
+		serviceMonitorCRDExists: true, // Default config has ServiceMonitorEnabled=true
 	}
 
 	// Should use default config

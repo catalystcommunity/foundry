@@ -55,14 +55,14 @@ func checkAllComponentsInstalled(ctx context.Context, state *setup.SetupState) b
 	}
 
 	// Check Phase 3 components via actual status
-	// Order: gateway-api, contour, cert-manager, storage, seaweedfs, prometheus, external-dns, loki, grafana, velero
+	// Order: gateway-api, storage, prometheus, contour, cert-manager, seaweedfs, external-dns, loki, grafana, velero
 	phase3Components := []string{
 		"gateway-api",
+		"storage",
+		"prometheus",
 		"contour",
 		"cert-manager",
-		"storage",
 		"seaweedfs",
-		"prometheus",
 		"external-dns",
 		"loki",
 		"grafana",
@@ -654,6 +654,29 @@ func installComponents(ctx context.Context, cfg *config.Config, configPath strin
 				trackComponent("gateway-api")
 			},
 		},
+		// Storage must come before prometheus because prometheus is configured to use
+		// the longhorn storage class which is provided by the storage component
+		{
+			name: "storage",
+			checkFunc: func(s *setup.SetupState) bool {
+				return checkComponentStatus("storage")
+			},
+			setFunc: func(s *setup.SetupState) {
+				trackComponent("storage")
+			},
+		},
+		// Prometheus must come before contour, cert-manager, and seaweedfs
+		// because those components enable ServiceMonitor which requires the CRD
+		// installed by the kube-prometheus-stack Helm chart
+		{
+			name: "prometheus",
+			checkFunc: func(s *setup.SetupState) bool {
+				return checkComponentStatus("prometheus")
+			},
+			setFunc: func(s *setup.SetupState) {
+				trackComponent("prometheus")
+			},
+		},
 		{
 			name: "contour",
 			checkFunc: func(s *setup.SetupState) bool {
@@ -673,30 +696,12 @@ func installComponents(ctx context.Context, cfg *config.Config, configPath strin
 			},
 		},
 		{
-			name: "storage",
-			checkFunc: func(s *setup.SetupState) bool {
-				return checkComponentStatus("storage")
-			},
-			setFunc: func(s *setup.SetupState) {
-				trackComponent("storage")
-			},
-		},
-		{
 			name: "seaweedfs",
 			checkFunc: func(s *setup.SetupState) bool {
 				return checkComponentStatus("seaweedfs")
 			},
 			setFunc: func(s *setup.SetupState) {
 				trackComponent("seaweedfs")
-			},
-		},
-		{
-			name: "prometheus",
-			checkFunc: func(s *setup.SetupState) bool {
-				return checkComponentStatus("prometheus")
-			},
-			setFunc: func(s *setup.SetupState) {
-				trackComponent("prometheus")
 			},
 		},
 		{
@@ -904,6 +909,61 @@ func installK8sComponent(ctx context.Context, cfg *config.Config, componentName 
 	saveComponentConfig(cfg, componentName, componentConfig)
 
 	fmt.Printf("  ✓ %s installed successfully\n", componentName)
+
+	// After prometheus is installed, upgrade storage to enable ServiceMonitor
+	// This solves the chicken-and-egg problem: storage needs to come before prometheus
+	// (for storage class), but ServiceMonitor requires the CRD from prometheus
+	if componentName == "prometheus" {
+		if err := upgradeStorageWithServiceMonitor(ctx, cfg, helmClient, k8sClient); err != nil {
+			// Log warning but don't fail - storage is functional, just without metrics
+			fmt.Printf("  ⚠ Could not enable storage ServiceMonitor: %v\n", err)
+		}
+	}
+
+	return nil
+}
+
+// upgradeStorageWithServiceMonitor upgrades storage (Longhorn) to enable ServiceMonitor
+// after Prometheus has been installed and the CRD is available
+func upgradeStorageWithServiceMonitor(ctx context.Context, cfg *config.Config, helmClient *helm.Client, k8sClient *k8s.Client) error {
+	// Only upgrade if storage backend is Longhorn
+	if cfg.Storage == nil || cfg.Storage.Backend != "longhorn" {
+		// Check component config too
+		if cfg.Components != nil {
+			if storageCfg, exists := cfg.Components["storage"]; exists {
+				if backend, ok := storageCfg.Config["backend"].(string); ok && backend != "longhorn" {
+					return nil // Not using Longhorn, nothing to upgrade
+				}
+			}
+		}
+	}
+
+	// Check if ServiceMonitor CRD is now available
+	if k8sClient != nil {
+		crdExists, err := k8sClient.ServiceMonitorCRDExists(ctx)
+		if err != nil || !crdExists {
+			return fmt.Errorf("ServiceMonitor CRD still not available")
+		}
+	}
+
+	fmt.Println("  Enabling ServiceMonitor for storage...")
+
+	// Create storage component with ServiceMonitor enabled
+	storageComp := storage.NewComponent(helmClient, k8sClient)
+
+	// Build config with ServiceMonitor enabled
+	componentConfig := buildStorageConfig(ctx, cfg)
+	// Ensure ServiceMonitor is enabled for the upgrade
+	if longhornCfg, ok := componentConfig["longhorn"].(map[string]interface{}); ok {
+		longhornCfg["service_monitor_enabled"] = true
+	}
+
+	// Use Upgrade method if available, otherwise Install will handle upgrade
+	if err := storageComp.Install(ctx, componentConfig); err != nil {
+		return fmt.Errorf("failed to upgrade storage: %w", err)
+	}
+
+	fmt.Println("  ✓ Storage ServiceMonitor enabled")
 	return nil
 }
 
@@ -2336,7 +2396,7 @@ func configureHost(conn *ssh.Connection, h *config.Host, nonInteractive bool) er
 		fmt.Println("    ✓ User has sudo access")
 	}
 
-	// Step 2: Update package lists
+	// Step 2: Update package lists and fix any broken packages
 	fmt.Println("    Updating package lists...")
 	result, err := conn.Exec("sudo apt-get update -qq")
 	if err != nil || result.ExitCode != 0 {
@@ -2345,14 +2405,22 @@ func configureHost(conn *ssh.Connection, h *config.Host, nonInteractive bool) er
 		fmt.Println("    ✓ Package lists updated")
 	}
 
-	// Step 3: Install common tools (with --fix-missing for robustness)
+	// Fix any packages left in a broken state from previous failed installs
+	// This must happen BEFORE attempting new package installations
+	conn.Exec("sudo dpkg --configure -a 2>/dev/null || true")
+	result, err = conn.Exec("sudo apt-get --fix-broken install -y -qq")
+	if err != nil || result.ExitCode != 0 {
+		fmt.Printf("    ⚠ Package repair warning (continuing): %s\n", result.Stderr)
+	}
+
+	// Step 3: Install common tools
 	// Includes open-iscsi for Longhorn storage support
 	fmt.Println("    Installing common tools...")
-	result, err = conn.Exec("sudo apt-get install -y --fix-missing curl git vim htop open-iscsi")
+	result, err = conn.Exec("sudo apt-get install -y curl git vim htop open-iscsi")
 	if err != nil || result.ExitCode != 0 {
 		// If full install fails, try just curl and open-iscsi (required for storage)
 		fmt.Printf("    ⚠ Some tools failed to install, retrying with essentials only...\n")
-		result, err = conn.Exec("sudo apt-get install -y --fix-missing curl open-iscsi")
+		result, err = conn.Exec("sudo apt-get install -y curl open-iscsi")
 		if err != nil || result.ExitCode != 0 {
 			return fmt.Errorf("failed to install curl/open-iscsi (required): %s", result.Stderr)
 		}

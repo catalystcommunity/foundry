@@ -49,12 +49,18 @@ func (m *mockHelmClient) Close() error {
 
 // mockK8sClient is a mock implementation of k8s.Client for testing
 type mockK8sClient struct {
-	pods    []*k8s.Pod
-	podsErr error
+	pods                      []*k8s.Pod
+	podsErr                   error
+	serviceMonitorCRDExists   bool
+	serviceMonitorCRDExistsErr error
 }
 
 func (m *mockK8sClient) GetPods(ctx context.Context, namespace string) ([]*k8s.Pod, error) {
 	return m.pods, m.podsErr
+}
+
+func (m *mockK8sClient) ServiceMonitorCRDExists(ctx context.Context) (bool, error) {
+	return m.serviceMonitorCRDExists, m.serviceMonitorCRDExistsErr
 }
 
 func TestBuildHelmValues_Defaults(t *testing.T) {
@@ -198,6 +204,7 @@ func TestInstall_Success(t *testing.T) {
 			{Name: "contour-1", Namespace: "projectcontour", Status: "Running"},
 			{Name: "envoy-1", Namespace: "projectcontour", Status: "Running"},
 		},
+		serviceMonitorCRDExists: true, // Default config has ServiceMonitorEnabled=true
 	}
 
 	cfg := DefaultConfig()
@@ -237,6 +244,7 @@ func TestInstall_NilConfig(t *testing.T) {
 		pods: []*k8s.Pod{
 			{Name: "contour-1", Namespace: "projectcontour", Status: "Running"},
 		},
+		serviceMonitorCRDExists: true, // Default config has ServiceMonitorEnabled=true
 	}
 
 	// Should use default config
@@ -252,7 +260,9 @@ func TestInstall_AddRepoError(t *testing.T) {
 	helmClient := &mockHelmClient{
 		addRepoErr: assert.AnError,
 	}
-	k8sClient := &mockK8sClient{}
+	k8sClient := &mockK8sClient{
+		serviceMonitorCRDExists: true, // Default config has ServiceMonitorEnabled=true
+	}
 
 	err := Install(context.Background(), helmClient, k8sClient, DefaultConfig())
 	assert.Error(t, err)
@@ -263,7 +273,9 @@ func TestInstall_InstallChartError(t *testing.T) {
 	helmClient := &mockHelmClient{
 		installErr: assert.AnError,
 	}
-	k8sClient := &mockK8sClient{}
+	k8sClient := &mockK8sClient{
+		serviceMonitorCRDExists: true, // Default config has ServiceMonitorEnabled=true
+	}
 
 	err := Install(context.Background(), helmClient, k8sClient, DefaultConfig())
 	assert.Error(t, err)

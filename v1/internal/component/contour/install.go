@@ -26,6 +26,19 @@ func Install(ctx context.Context, helmClient HelmClient, k8sClient K8sClient, cf
 		cfg = DefaultConfig()
 	}
 
+	// Check for ServiceMonitor CRD if ServiceMonitor is enabled
+	if cfg.ServiceMonitorEnabled {
+		crdExists, err := k8sClient.ServiceMonitorCRDExists(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to check for ServiceMonitor CRD: %w", err)
+		}
+		if !crdExists {
+			return fmt.Errorf("ServiceMonitor CRD not found but service_monitor_enabled is true. " +
+				"Either install Prometheus first (which includes the CRD), or set service_monitor_enabled: false " +
+				"in your stack.yaml under components.contour")
+		}
+	}
+
 	// Add Project Contour Helm repository
 	if err := helmClient.AddRepo(ctx, helm.RepoAddOptions{
 		Name:        contourRepoName,
@@ -143,18 +156,23 @@ func buildHelmValues(cfg *Config) map[string]interface{} {
 	// Gateway API CRDs are managed by our gateway-api component, not the Contour chart
 	// The official chart doesn't install CRDs by default anyway
 
-	// Enable metrics and ServiceMonitor for Prometheus
-	values["metrics"] = map[string]interface{}{
+	// Enable metrics for Prometheus
+	metricsConfig := map[string]interface{}{
 		"contour": map[string]interface{}{
 			"enabled": true,
 		},
 		"envoy": map[string]interface{}{
 			"enabled": true,
 		},
-		"serviceMonitor": map[string]interface{}{
-			"enabled": true,
-		},
 	}
+
+	// Only enable ServiceMonitor if configured (requires CRD from Prometheus Operator)
+	if cfg.ServiceMonitorEnabled {
+		metricsConfig["serviceMonitor"] = map[string]interface{}{
+			"enabled": true,
+		}
+	}
+	values["metrics"] = metricsConfig
 
 	return values
 }

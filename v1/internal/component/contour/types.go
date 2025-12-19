@@ -21,6 +21,7 @@ type HelmClient interface {
 // K8sClient defines the Kubernetes operations needed for Contour
 type K8sClient interface {
 	GetPods(ctx context.Context, namespace string) ([]*k8s.Pod, error)
+	ServiceMonitorCRDExists(ctx context.Context) (bool, error)
 }
 
 // Component implements the component.Component interface for Contour ingress controller
@@ -158,14 +159,15 @@ func GetClusterVIP() string {
 // DefaultConfig returns a Config with sensible defaults
 func DefaultConfig() *Config {
 	return &Config{
-		Version:             "0.1.0",   // Official Project Contour chart version (app version 1.32.0)
-		Namespace:           "projectcontour",
-		ReplicaCount:        2,
-		EnvoyReplicaCount:   2,
-		UseKubeVIP:          true,     // Enable for bare metal
-		DefaultIngressClass: true,     // Set as default
-		GatewayAPIVersion:   "v1.3.0", // Gateway API version
-		Values:              make(map[string]interface{}),
+		Version:               "0.1.0",   // Official Project Contour chart version (app version 1.32.0)
+		Namespace:             "projectcontour",
+		ReplicaCount:          2,
+		EnvoyReplicaCount:     2,
+		UseKubeVIP:            true,  // Enable for bare metal
+		DefaultIngressClass:   true,  // Set as default
+		GatewayAPIVersion:     "v1.3.0", // Gateway API version
+		ServiceMonitorEnabled: true,  // Enable ServiceMonitor for Prometheus (requires CRD)
+		Values:                make(map[string]interface{}),
 	}
 }
 
@@ -199,6 +201,10 @@ func ParseConfig(cfg component.ComponentConfig) (*Config, error) {
 
 	if gatewayAPIVersion, ok := cfg.GetString("gateway_api_version"); ok {
 		config.GatewayAPIVersion = gatewayAPIVersion
+	}
+
+	if serviceMonitorEnabled, ok := cfg.GetBool("service_monitor_enabled"); ok {
+		config.ServiceMonitorEnabled = serviceMonitorEnabled
 	}
 
 	if values, ok := cfg.GetMap("values"); ok {

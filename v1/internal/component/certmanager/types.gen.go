@@ -12,5 +12,6 @@ type Config struct {
 	ACMEEmail string `json:"acme_email" yaml:"acme_email"`
 	ACMEServer string `json:"acme_server" yaml:"acme_server"`
 	InstallCRDs bool `json:"install_crds" yaml:"install_crds"`
+	ServiceMonitorEnabled bool `json:"service_monitor_enabled" yaml:"service_monitor_enabled"`
 }
 

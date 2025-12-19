@@ -34,6 +34,9 @@ func NewComponent(cfg *Config) *Component {
 		cfg.ACMEServer = "https://acme-v02.api.letsencrypt.org/directory"
 	}
 	cfg.InstallCRDs = true // Always install CRDs
+	// ServiceMonitorEnabled defaults to true (set in ParseConfig or here if not set)
+	// Note: bool zero value is false, so we need to handle this carefully
+	// The CSIL default will be handled in ParseConfig
 
 	return &Component{
 		config: cfg,
@@ -82,7 +85,9 @@ func (c *Component) Config() interface{} {
 
 // ParseConfig parses component configuration from a map
 func ParseConfig(data map[string]interface{}) (*Config, error) {
-	cfg := &Config{}
+	cfg := &Config{
+		ServiceMonitorEnabled: true, // Default to true
+	}
 
 	if namespace, ok := data["namespace"].(string); ok {
 		cfg.Namespace = namespace
@@ -104,6 +109,9 @@ func ParseConfig(data map[string]interface{}) (*Config, error) {
 	}
 	if installCRDs, ok := data["install_crds"].(bool); ok {
 		cfg.InstallCRDs = installCRDs
+	}
+	if serviceMonitorEnabled, ok := data["service_monitor_enabled"].(bool); ok {
+		cfg.ServiceMonitorEnabled = serviceMonitorEnabled
 	}
 
 	return cfg, nil
