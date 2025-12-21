@@ -87,12 +87,19 @@ type SyncExtension struct {
 
 // RegistryConfig represents a registry for pull-through caching
 type RegistryConfig struct {
-	URLs         []string          `json:"urls"`
-	PollInterval string            `json:"pollInterval,omitempty"`
-	TLSVerify    bool              `json:"tlsVerify"`
-	CertDir      string            `json:"certDir,omitempty"`
-	OnDemand     bool              `json:"onDemand"`
-	Content      []ContentConfig   `json:"content,omitempty"`
+	URLs         []string             `json:"urls"`
+	PollInterval string               `json:"pollInterval,omitempty"`
+	TLSVerify    bool                 `json:"tlsVerify"`
+	CertDir      string               `json:"certDir,omitempty"`
+	OnDemand     bool                 `json:"onDemand"`
+	Content      []ContentConfig      `json:"content,omitempty"`
+	Credentials  *RegistryCredentials `json:"credentials,omitempty"`
+}
+
+// RegistryCredentials represents authentication credentials for a remote registry
+type RegistryCredentials struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
 }
 
 // ContentConfig represents content filtering for sync
@@ -142,8 +149,15 @@ type LogConfiguration struct {
 	Audit  string `json:"audit,omitempty"`
 }
 
+// UpstreamRegistryCredentials holds credentials for upstream registries (Docker Hub, etc)
+type UpstreamRegistryCredentials struct {
+	DockerHubUsername string
+	DockerHubPassword string
+}
+
 // GenerateConfig generates a Zot configuration based on the provided Config
-func GenerateConfig(cfg *Config) (string, error) {
+// upstreamCreds is optional and can be nil if no credentials are configured
+func GenerateConfig(cfg *Config, upstreamCreds *UpstreamRegistryCredentials) (string, error) {
 	zotConfig := &ZotConfig{
 		DistSpecVersion: "1.1.0",
 		Storage: StorageConfiguration{
@@ -173,14 +187,24 @@ func GenerateConfig(cfg *Config) (string, error) {
 
 	// Add pull-through cache for registries if enabled
 	if cfg.PullThroughCache {
+		// Configure Docker Hub registry with optional credentials
+		dockerHubRegistry := RegistryConfig{
+			URLs:      []string{"https://registry-1.docker.io"},
+			TLSVerify: true,
+			OnDemand:  true,
+		}
+		// Add Docker Hub credentials if provided (avoids rate limiting)
+		if upstreamCreds != nil && upstreamCreds.DockerHubUsername != "" && upstreamCreds.DockerHubPassword != "" {
+			dockerHubRegistry.Credentials = &RegistryCredentials{
+				Username: upstreamCreds.DockerHubUsername,
+				Password: upstreamCreds.DockerHubPassword,
+			}
+		}
+
 		zotConfig.Extensions.Sync = &SyncExtension{
 			Enable: true,
 			Registries: []RegistryConfig{
-				{
-					URLs:      []string{"https://registry-1.docker.io"},
-					TLSVerify: true,
-					OnDemand:  true,
-				},
+				dockerHubRegistry,
 				{
 					URLs:      []string{"https://ghcr.io"},
 					TLSVerify: true,
