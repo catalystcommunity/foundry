@@ -18,37 +18,82 @@ type ExecResult struct {
 	ExitCode int
 }
 
-// CheckSudoAccess checks if the current user has sudo access
-func CheckSudoAccess(executor CommandExecutor, user string) (bool, error) {
+// SudoStatus represents the state of sudo access for a user
+type SudoStatus int
+
+const (
+	// SudoNotInstalled means the sudo command is not available on the system
+	SudoNotInstalled SudoStatus = iota
+	// SudoNoAccess means sudo is installed but user is not in sudoers
+	SudoNoAccess
+	// SudoRequiresPassword means user has sudo but must enter a password
+	SudoRequiresPassword
+	// SudoPasswordless means user has full passwordless sudo access
+	SudoPasswordless
+)
+
+// String returns a human-readable description of the sudo status
+func (s SudoStatus) String() string {
+	switch s {
+	case SudoNotInstalled:
+		return "sudo not installed"
+	case SudoNoAccess:
+		return "user not in sudoers"
+	case SudoRequiresPassword:
+		return "sudo requires password"
+	case SudoPasswordless:
+		return "passwordless sudo configured"
+	default:
+		return "unknown"
+	}
+}
+
+// GetSudoStatus returns the detailed sudo status for the current user
+func GetSudoStatus(executor CommandExecutor) (SudoStatus, error) {
 	// First check if sudo command exists
 	result, err := executor.Exec("which sudo")
 	if err != nil {
-		return false, fmt.Errorf("failed to check for sudo: %w", err)
+		return SudoNotInstalled, fmt.Errorf("failed to check for sudo: %w", err)
 	}
 
 	if result.ExitCode != 0 {
-		// sudo command doesn't exist
-		return false, nil
+		return SudoNotInstalled, nil
 	}
 
-	// Check if user can run sudo (passwordless check)
+	// Check if user can run sudo without password
 	result, err = executor.Exec("sudo -n true 2>&1")
 	if err != nil {
-		return false, fmt.Errorf("failed to test sudo access: %w", err)
+		return SudoNoAccess, fmt.Errorf("failed to test sudo access: %w", err)
 	}
 
-	// Exit code 0 means user has sudo access (at least with a password)
-	// Exit code 1 with "password is required" means sudo works but needs password
-	// Any other error means no sudo access
+	// Exit code 0 means passwordless sudo works
 	if result.ExitCode == 0 {
-		return true, nil
+		return SudoPasswordless, nil
 	}
 
-	if strings.Contains(result.Stderr, "password is required") {
-		return true, nil // User has sudo but needs password
+	// Check stderr for password requirement indicator
+	stderr := result.Stderr
+	if stderr == "" {
+		stderr = result.Stdout // Some systems output to stdout
 	}
 
-	return false, nil
+	if strings.Contains(stderr, "password is required") ||
+		strings.Contains(stderr, "a password is required") {
+		return SudoRequiresPassword, nil
+	}
+
+	// User is not in sudoers or other access issue
+	return SudoNoAccess, nil
+}
+
+// CheckSudoAccess checks if the current user has sudo access (with or without password)
+// Deprecated: Use GetSudoStatus for more granular information
+func CheckSudoAccess(executor CommandExecutor, user string) (bool, error) {
+	status, err := GetSudoStatus(executor)
+	if err != nil {
+		return false, err
+	}
+	return status == SudoPasswordless || status == SudoRequiresPassword, nil
 }
 
 // SetupSudo installs sudo and configures it for the specified user
