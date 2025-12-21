@@ -40,19 +40,7 @@ func Install(ctx context.Context, helmClient HelmClient, k8sClient K8sClient, cf
 
 	fmt.Println("  Installing SeaweedFS...")
 
-	// Add Helm repository
-	if err := helmClient.AddRepo(ctx, helm.RepoAddOptions{
-		Name:        seaweedfsRepoName,
-		URL:         seaweedfsRepoURL,
-		ForceUpdate: true,
-	}); err != nil {
-		return fmt.Errorf("failed to add helm repository: %w", err)
-	}
-
-	// Build Helm values
-	values := buildHelmValues(cfg)
-
-	// Check if release already exists
+	// Check current state from Kubernetes
 	var releaseExists bool
 	var releaseStatus string
 	releases, err := helmClient.List(ctx, cfg.Namespace)
@@ -66,9 +54,24 @@ func Install(ctx context.Context, helmClient HelmClient, k8sClient K8sClient, cf
 		}
 	}
 
-	if releaseExists {
-		// Try to upgrade existing release (even if failed - avoid data loss)
+	// Step 1: Handle Helm release
+	if releaseExists && releaseStatus == "deployed" {
+		// Already deployed and healthy - skip helm operations
+		fmt.Println("  ✓ SeaweedFS helm release already deployed")
+	} else if releaseExists {
+		// Exists but not healthy - try to upgrade/repair
 		fmt.Printf("  Upgrading SeaweedFS (current status: %s)...\n", releaseStatus)
+
+		// Add Helm repository
+		if err := helmClient.AddRepo(ctx, helm.RepoAddOptions{
+			Name:        seaweedfsRepoName,
+			URL:         seaweedfsRepoURL,
+			ForceUpdate: true,
+		}); err != nil {
+			return fmt.Errorf("failed to add helm repository: %w", err)
+		}
+
+		values := buildHelmValues(cfg)
 		if err := helmClient.Upgrade(ctx, helm.UpgradeOptions{
 			ReleaseName: "seaweedfs",
 			Namespace:   cfg.Namespace,
@@ -78,19 +81,25 @@ func Install(ctx context.Context, helmClient HelmClient, k8sClient K8sClient, cf
 			Wait:        true,
 			Timeout:     10 * time.Minute,
 		}); err != nil {
-			if releaseStatus != "deployed" {
-				// Upgrade of failed release didn't work - warn and skip
-				fmt.Printf("  ⚠ Warning: Failed to upgrade release (status: %s): %v\n", releaseStatus, err)
-				fmt.Println("  ⚠ Manual intervention required. You may need to:")
-				fmt.Println("    1. Check pod status: kubectl get pods -n", cfg.Namespace)
-				fmt.Println("    2. Check PVC status: kubectl get pvc -n", cfg.Namespace)
-				fmt.Println("    3. If data loss is acceptable, uninstall manually: helm uninstall seaweedfs -n", cfg.Namespace)
-				return fmt.Errorf("failed to upgrade seaweedfs (manual intervention required): %w", err)
-			}
-			return fmt.Errorf("failed to upgrade seaweedfs: %w", err)
+			fmt.Printf("  ⚠ Warning: Failed to upgrade release (status: %s): %v\n", releaseStatus, err)
+			fmt.Println("  ⚠ Manual intervention required. You may need to:")
+			fmt.Println("    1. Check pod status: kubectl get pods -n", cfg.Namespace)
+			fmt.Println("    2. Check PVC status: kubectl get pvc -n", cfg.Namespace)
+			fmt.Println("    3. If data loss is acceptable, uninstall manually: helm uninstall seaweedfs -n", cfg.Namespace)
+			return fmt.Errorf("failed to upgrade seaweedfs (manual intervention required): %w", err)
 		}
 	} else {
-		// Install SeaweedFS via Helm
+		// Not installed - do fresh install
+		// Add Helm repository
+		if err := helmClient.AddRepo(ctx, helm.RepoAddOptions{
+			Name:        seaweedfsRepoName,
+			URL:         seaweedfsRepoURL,
+			ForceUpdate: true,
+		}); err != nil {
+			return fmt.Errorf("failed to add helm repository: %w", err)
+		}
+
+		values := buildHelmValues(cfg)
 		if err := helmClient.Install(ctx, helm.InstallOptions{
 			ReleaseName:     "seaweedfs",
 			Namespace:       cfg.Namespace,
@@ -105,20 +114,25 @@ func Install(ctx context.Context, helmClient HelmClient, k8sClient K8sClient, cf
 		}
 	}
 
-	// Verify installation
-	if k8sClient != nil {
+	// Step 2: Verify pods are running (only if we did install/upgrade)
+	if k8sClient != nil && !(releaseExists && releaseStatus == "deployed") {
 		if err := verifyInstallation(ctx, k8sClient, cfg.Namespace); err != nil {
 			return fmt.Errorf("installation verification failed: %w", err)
 		}
 	}
 
-	// Create buckets if specified
+	// Step 3: Create buckets if needed
+	// Skip if release was already deployed (buckets were created on first install)
 	if len(cfg.Buckets) > 0 && k8sClient != nil {
-		fmt.Printf("  Creating S3 buckets: %v\n", cfg.Buckets)
-		if err := createBuckets(ctx, k8sClient, cfg); err != nil {
-			return fmt.Errorf("failed to create buckets: %w", err)
+		if releaseExists && releaseStatus == "deployed" {
+			fmt.Println("  ✓ S3 buckets already configured (skipping)")
+		} else {
+			fmt.Printf("  Creating S3 buckets: %v\n", cfg.Buckets)
+			if err := createBuckets(ctx, k8sClient, cfg); err != nil {
+				return fmt.Errorf("failed to create buckets: %w", err)
+			}
+			fmt.Println("  S3 buckets created successfully")
 		}
-		fmt.Println("  S3 buckets created successfully")
 	}
 
 	fmt.Println("  SeaweedFS installed successfully")

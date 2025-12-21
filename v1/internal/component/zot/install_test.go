@@ -122,7 +122,7 @@ func (m *mockRuntime) IsAvailable() bool {
 func TestInstall_Success(t *testing.T) {
 	executor := newMockExecutor()
 	runtime := newMockRuntime()
-	cfg := DefaultConfig()
+	cfg := &ParsedConfig{Config: DefaultConfig()}
 
 	err := Install(executor, runtime, cfg)
 	require.NoError(t, err)
@@ -152,13 +152,13 @@ func TestInstall_Success(t *testing.T) {
 func TestInstall_CustomConfig(t *testing.T) {
 	executor := newMockExecutor()
 	runtime := newMockRuntime()
-	cfg := &Config{
+	cfg := &ParsedConfig{Config: &Config{
 		Version:          "v2.0.0",
 		DataDir:          "/custom/data",
 		ConfigDir:        "/custom/config",
 		Port:             5050,
 		PullThroughCache: true,
-	}
+	}}
 
 	err := Install(executor, runtime, cfg)
 	require.NoError(t, err)
@@ -187,11 +187,12 @@ func TestInstall_CustomConfig(t *testing.T) {
 func TestInstall_WithStorageBackend(t *testing.T) {
 	executor := newMockExecutor()
 	runtime := newMockRuntime()
-	cfg := DefaultConfig()
-	cfg.StorageBackend = &StorageConfig{
+	baseCfg := DefaultConfig()
+	baseCfg.StorageBackend = &StorageConfig{
 		Type:      "nfs",
 		MountPath: "/mnt/nfs/zot",
 	}
+	cfg := &ParsedConfig{Config: baseCfg}
 
 	err := Install(executor, runtime, cfg)
 	require.NoError(t, err)
@@ -214,7 +215,7 @@ func TestInstall_DirectoryCreationError(t *testing.T) {
 	executor := newMockExecutor()
 	executor.errors["sudo mkdir -p /var/lib/foundry-zot && sudo chown -R $(id -u):$(id -g) /var/lib/foundry-zot"] = fmt.Errorf("permission denied")
 	runtime := newMockRuntime()
-	cfg := DefaultConfig()
+	cfg := &ParsedConfig{Config: DefaultConfig()}
 
 	err := Install(executor, runtime, cfg)
 	require.Error(t, err)
@@ -225,7 +226,7 @@ func TestInstall_ImagePullError(t *testing.T) {
 	executor := newMockExecutor()
 	runtime := newMockRuntime()
 	runtime.pullError = fmt.Errorf("network error")
-	cfg := DefaultConfig()
+	cfg := &ParsedConfig{Config: DefaultConfig()}
 
 	err := Install(executor, runtime, cfg)
 	require.Error(t, err)
@@ -236,7 +237,7 @@ func TestInstall_ServiceStartError(t *testing.T) {
 	executor := newMockExecutor()
 	executor.errors["systemctl start foundry-zot"] = fmt.Errorf("service failed to start")
 	runtime := newMockRuntime()
-	cfg := DefaultConfig()
+	cfg := &ParsedConfig{Config: DefaultConfig()}
 
 	err := Install(executor, runtime, cfg)
 	require.Error(t, err)
@@ -248,7 +249,7 @@ func TestInstall_ServiceNotRunning(t *testing.T) {
 	// Override status check to return non-running state
 	executor.outputs["systemctl show foundry-zot"] = "LoadState=loaded\nActiveState=inactive\nSubState=dead"
 	runtime := newMockRuntime()
-	cfg := DefaultConfig()
+	cfg := &ParsedConfig{Config: DefaultConfig()}
 
 	err := Install(executor, runtime, cfg)
 	require.Error(t, err)
@@ -257,7 +258,7 @@ func TestInstall_ServiceNotRunning(t *testing.T) {
 
 func TestCreateDirectories_Success(t *testing.T) {
 	executor := newMockExecutor()
-	cfg := DefaultConfig()
+	cfg := &ParsedConfig{Config: DefaultConfig()}
 
 	err := createDirectories(executor, cfg)
 	require.NoError(t, err)
@@ -268,11 +269,12 @@ func TestCreateDirectories_Success(t *testing.T) {
 
 func TestCreateDirectories_WithStorageBackend(t *testing.T) {
 	executor := newMockExecutor()
-	cfg := DefaultConfig()
-	cfg.StorageBackend = &StorageConfig{
+	baseCfg := DefaultConfig()
+	baseCfg.StorageBackend = &StorageConfig{
 		Type:      "nfs",
 		MountPath: "/mnt/nfs/zot",
 	}
+	cfg := &ParsedConfig{Config: baseCfg}
 
 	err := createDirectories(executor, cfg)
 	require.NoError(t, err)
@@ -282,7 +284,7 @@ func TestCreateDirectories_WithStorageBackend(t *testing.T) {
 
 func TestWriteConfigFile_Success(t *testing.T) {
 	executor := newMockExecutor()
-	cfg := DefaultConfig()
+	cfg := &ParsedConfig{Config: DefaultConfig()}
 
 	err := writeConfigFile(executor, cfg)
 	require.NoError(t, err)
@@ -304,7 +306,7 @@ func TestWriteConfigFile_Success(t *testing.T) {
 func TestWriteConfigFile_Error(t *testing.T) {
 	executor := newMockExecutor()
 	executor.errors["sudo tee /etc/foundry-zot/config.json"] = fmt.Errorf("write error")
-	cfg := DefaultConfig()
+	cfg := &ParsedConfig{Config: DefaultConfig()}
 
 	err := writeConfigFile(executor, cfg)
 	require.Error(t, err)
@@ -314,7 +316,7 @@ func TestWriteConfigFile_Error(t *testing.T) {
 func TestCreateSystemdService_Success(t *testing.T) {
 	executor := newMockExecutor()
 	runtime := newMockRuntime()
-	cfg := DefaultConfig()
+	cfg := &ParsedConfig{Config: DefaultConfig()}
 
 	err := createSystemdService(executor, runtime, cfg)
 	require.NoError(t, err)
@@ -353,11 +355,12 @@ func TestCreateSystemdService_Success(t *testing.T) {
 func TestCreateSystemdService_WithStorageBackend(t *testing.T) {
 	executor := newMockExecutor()
 	runtime := newMockRuntime()
-	cfg := DefaultConfig()
-	cfg.StorageBackend = &StorageConfig{
+	baseCfg := DefaultConfig()
+	baseCfg.StorageBackend = &StorageConfig{
 		Type:      "nfs",
 		MountPath: "/mnt/nfs/zot",
 	}
+	cfg := &ParsedConfig{Config: baseCfg}
 
 	err := createSystemdService(executor, runtime, cfg)
 	require.NoError(t, err)

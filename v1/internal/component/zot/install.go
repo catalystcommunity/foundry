@@ -10,7 +10,7 @@ import (
 )
 
 // Install installs Zot registry as a containerized systemd service
-func Install(conn container.SSHExecutor, runtime container.Runtime, cfg *Config) error {
+func Install(conn container.SSHExecutor, runtime container.Runtime, cfg *ParsedConfig) error {
 	// Step 1: Create necessary directories
 	if err := createDirectories(conn, cfg); err != nil {
 		return fmt.Errorf("create directories: %w", err)
@@ -55,7 +55,7 @@ func Install(conn container.SSHExecutor, runtime container.Runtime, cfg *Config)
 }
 
 // createDirectories creates the necessary directories for Zot
-func createDirectories(conn container.SSHExecutor, cfg *Config) error {
+func createDirectories(conn container.SSHExecutor, cfg *ParsedConfig) error {
 	dirs := []string{
 		cfg.DataDir,
 		cfg.ConfigDir,
@@ -78,9 +78,9 @@ func createDirectories(conn container.SSHExecutor, cfg *Config) error {
 
 
 // writeConfigFile generates and writes the Zot config.json file
-func writeConfigFile(conn container.SSHExecutor, cfg *Config) error {
-	// Generate config content
-	configContent, err := GenerateConfig(cfg)
+func writeConfigFile(conn container.SSHExecutor, cfg *ParsedConfig) error {
+	// Generate config content (pass upstream credentials for pull-through cache)
+	configContent, err := GenerateConfig(cfg.Config, cfg.UpstreamCreds)
 	if err != nil {
 		return fmt.Errorf("generate config: %w", err)
 	}
@@ -97,7 +97,7 @@ func writeConfigFile(conn container.SSHExecutor, cfg *Config) error {
 }
 
 // createSystemdService creates the systemd service unit for Zot
-func createSystemdService(conn container.SSHExecutor, runtime container.Runtime, cfg *Config) error {
+func createSystemdService(conn container.SSHExecutor, runtime container.Runtime, cfg *ParsedConfig) error {
 	// Detect the actual runtime path
 	runtimePath, err := detectRuntimePath(conn, runtime.Name())
 	if err != nil {

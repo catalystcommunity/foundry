@@ -36,14 +36,14 @@ func (c *Component) Install(ctx context.Context, cfg component.ComponentConfig) 
 	// Store connection for use by other methods (Status, Uninstall, etc.)
 	c.conn = conn
 
-	config, err := ParseConfig(cfg)
+	parsedConfig, err := ParseConfig(cfg)
 	if err != nil {
 		return fmt.Errorf("parse config: %w", err)
 	}
 
 	// Create container runtime (default to docker, but can be configured)
 	var runtime container.Runtime
-	if config.ContainerRuntime == "podman" {
+	if parsedConfig.ContainerRuntime == "podman" {
 		runtime = container.NewPodmanRuntime(conn)
 	} else {
 		runtime = container.NewDockerRuntime(conn)
@@ -54,7 +54,7 @@ func (c *Component) Install(ctx context.Context, cfg component.ComponentConfig) 
 		return fmt.Errorf("%s runtime is not available on the host", runtime.Name())
 	}
 
-	return Install(conn, runtime, config)
+	return Install(conn, runtime, parsedConfig)
 }
 
 // Upgrade upgrades the Zot registry to a new version
@@ -100,9 +100,16 @@ func DefaultConfig() *Config {
 	}
 }
 
+// ParsedConfig extends Config with non-generated fields
+type ParsedConfig struct {
+	*Config
+	UpstreamCreds *UpstreamRegistryCredentials
+}
+
 // ParseConfig parses a ComponentConfig into a Zot Config
-func ParseConfig(cfg component.ComponentConfig) (*Config, error) {
+func ParseConfig(cfg component.ComponentConfig) (*ParsedConfig, error) {
 	config := DefaultConfig()
+	parsed := &ParsedConfig{Config: config}
 
 	if version, ok := cfg["version"].(string); ok {
 		config.Version = version
@@ -152,5 +159,15 @@ func ParseConfig(cfg component.ComponentConfig) (*Config, error) {
 		}
 	}
 
-	return config, nil
+	// Parse Docker Hub credentials for pull-through cache (avoids rate limiting)
+	dockerHubUser, hasUser := cfg["docker_hub_username"].(string)
+	dockerHubPass, hasPass := cfg["docker_hub_password"].(string)
+	if hasUser && hasPass && dockerHubUser != "" && dockerHubPass != "" {
+		parsed.UpstreamCreds = &UpstreamRegistryCredentials{
+			DockerHubUsername: dockerHubUser,
+			DockerHubPassword: dockerHubPass,
+		}
+	}
+
+	return parsed, nil
 }

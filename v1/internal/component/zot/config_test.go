@@ -11,7 +11,7 @@ import (
 func TestGenerateConfig_Defaults(t *testing.T) {
 	cfg := DefaultConfig()
 
-	configStr, err := GenerateConfig(cfg)
+	configStr, err := GenerateConfig(cfg, nil)
 	require.NoError(t, err)
 	require.NotEmpty(t, configStr)
 
@@ -35,7 +35,7 @@ func TestGenerateConfig_WithPullThroughCache(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.PullThroughCache = true
 
-	configStr, err := GenerateConfig(cfg)
+	configStr, err := GenerateConfig(cfg, nil)
 	require.NoError(t, err)
 
 	var zotConfig ZotConfig
@@ -79,7 +79,7 @@ func TestGenerateConfig_WithoutPullThroughCache(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.PullThroughCache = false
 
-	configStr, err := GenerateConfig(cfg)
+	configStr, err := GenerateConfig(cfg, nil)
 	require.NoError(t, err)
 
 	var zotConfig ZotConfig
@@ -102,7 +102,7 @@ func TestGenerateConfig_CustomPort(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Port = 5050
 
-	configStr, err := GenerateConfig(cfg)
+	configStr, err := GenerateConfig(cfg, nil)
 	require.NoError(t, err)
 
 	var zotConfig ZotConfig
@@ -116,7 +116,7 @@ func TestGenerateConfig_CustomDataDir(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.DataDir = "/custom/data/path"
 
-	configStr, err := GenerateConfig(cfg)
+	configStr, err := GenerateConfig(cfg, nil)
 	require.NoError(t, err)
 
 	var zotConfig ZotConfig
@@ -135,7 +135,7 @@ func TestGenerateConfig_WithBasicAuth(t *testing.T) {
 		},
 	}
 
-	configStr, err := GenerateConfig(cfg)
+	configStr, err := GenerateConfig(cfg, nil)
 	require.NoError(t, err)
 
 	var zotConfig ZotConfig
@@ -157,7 +157,7 @@ func TestGenerateConfig_WithUnknownAuth(t *testing.T) {
 	}
 
 	// Should not error, just ignore unknown auth type
-	configStr, err := GenerateConfig(cfg)
+	configStr, err := GenerateConfig(cfg, nil)
 	require.NoError(t, err)
 
 	var zotConfig ZotConfig
@@ -183,7 +183,7 @@ func TestGenerateConfig_ValidJSON(t *testing.T) {
 		},
 	}
 
-	configStr, err := GenerateConfig(cfg)
+	configStr, err := GenerateConfig(cfg, nil)
 	require.NoError(t, err)
 
 	// Should be valid JSON
@@ -215,7 +215,7 @@ func TestGenerateConfig_CompleteConfiguration(t *testing.T) {
 		},
 	}
 
-	configStr, err := GenerateConfig(cfg)
+	configStr, err := GenerateConfig(cfg, nil)
 	require.NoError(t, err)
 
 	var zotConfig ZotConfig
@@ -229,4 +229,55 @@ func TestGenerateConfig_CompleteConfiguration(t *testing.T) {
 	assert.NotNil(t, zotConfig.Extensions)
 	assert.NotNil(t, zotConfig.Extensions.Sync)
 	assert.NotNil(t, zotConfig.HTTP.Auth)
+}
+
+func TestGenerateConfig_WithDockerHubCredentials(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.PullThroughCache = true
+
+	creds := &UpstreamRegistryCredentials{
+		DockerHubUsername: "testuser",
+		DockerHubPassword: "testpass",
+	}
+
+	configStr, err := GenerateConfig(cfg, creds)
+	require.NoError(t, err)
+
+	var zotConfig ZotConfig
+	err = json.Unmarshal([]byte(configStr), &zotConfig)
+	require.NoError(t, err)
+
+	// Verify Docker Hub registry has credentials
+	require.NotNil(t, zotConfig.Extensions)
+	require.NotNil(t, zotConfig.Extensions.Sync)
+	require.Len(t, zotConfig.Extensions.Sync.Registries, 2)
+
+	dockerRegistry := zotConfig.Extensions.Sync.Registries[0]
+	require.NotNil(t, dockerRegistry.Credentials)
+	assert.Equal(t, "testuser", dockerRegistry.Credentials.Username)
+	assert.Equal(t, "testpass", dockerRegistry.Credentials.Password)
+
+	// GHCR should not have credentials
+	ghcrRegistry := zotConfig.Extensions.Sync.Registries[1]
+	assert.Nil(t, ghcrRegistry.Credentials)
+}
+
+func TestGenerateConfig_WithoutDockerHubCredentials(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.PullThroughCache = true
+
+	configStr, err := GenerateConfig(cfg, nil)
+	require.NoError(t, err)
+
+	var zotConfig ZotConfig
+	err = json.Unmarshal([]byte(configStr), &zotConfig)
+	require.NoError(t, err)
+
+	// Docker Hub registry should not have credentials
+	require.NotNil(t, zotConfig.Extensions)
+	require.NotNil(t, zotConfig.Extensions.Sync)
+	require.Len(t, zotConfig.Extensions.Sync.Registries, 2)
+
+	dockerRegistry := zotConfig.Extensions.Sync.Registries[0]
+	assert.Nil(t, dockerRegistry.Credentials)
 }

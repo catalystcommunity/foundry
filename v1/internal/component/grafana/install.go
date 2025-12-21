@@ -62,7 +62,7 @@ func Install(ctx context.Context, helmClient HelmClient, k8sClient K8sClient, cf
 			Version:     cfg.Version,
 			Values:      values,
 			Wait:        true,
-			Timeout:     10 * time.Minute,
+			Timeout:     15 * time.Minute,
 		}); err != nil {
 			if releaseStatus != "deployed" {
 				// Upgrade of failed release didn't work - warn and skip

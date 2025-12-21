@@ -1754,8 +1754,20 @@ func buildComponentConfig(ctx context.Context, cfg *config.Config, componentName
 		}
 
 	case "zot":
-		// Zot uses the base config (SSH connection is enough)
-		// No additional config needed
+		// Check for Docker Hub credentials (for pull-through cache rate limiting)
+		// Credentials may be:
+		// 1. Plain text in config → store in OpenBao, pass to Zot
+		// 2. Already a secret ref ${secret:zot:...} → resolve from OpenBao
+		// 3. Not configured → Zot works without them (with rate limiting)
+		if cfg.SetupState.OpenBAOInitialized {
+			username, password, err := getZotDockerHubCredentials(cfg, configDir)
+			if err != nil {
+				fmt.Printf("  ⚠ Warning: Failed to get Docker Hub credentials: %v\n", err)
+			} else if username != "" && password != "" {
+				compCfg["docker_hub_username"] = username
+				compCfg["docker_hub_password"] = password
+			}
+		}
 	}
 
 	return compCfg, nil
@@ -2192,6 +2204,98 @@ func generateDNSAPIKey() (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(bytes), nil
+}
+
+// getZotDockerHubCredentials retrieves or stores Docker Hub credentials for Zot
+// This enables authenticated pulls to avoid Docker Hub rate limiting
+func getZotDockerHubCredentials(cfg *config.Config, configDir string) (username, password string, err error) {
+	// Get OpenBAO address from config
+	addr, err := cfg.GetPrimaryOpenBAOAddress()
+	if err != nil {
+		return "", "", err
+	}
+	openBAOAddr := fmt.Sprintf("http://%s:8200", addr)
+
+	// Get OpenBAO token from keys file
+	keysPath := filepath.Join(configDir, "openbao-keys", cfg.Cluster.Name, "keys.json")
+	keysData, err := os.ReadFile(keysPath)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to read OpenBAO keys: %w", err)
+	}
+
+	var keys struct {
+		RootToken string `json:"root_token"`
+	}
+	if err := json.Unmarshal(keysData, &keys); err != nil {
+		return "", "", fmt.Errorf("failed to parse OpenBAO keys: %w", err)
+	}
+
+	openBAOClient := openbao.NewClient(openBAOAddr, keys.RootToken)
+
+	ctx := context.Background()
+
+	// First, check if credentials are in the component config
+	if cfg.Components != nil {
+		if zotCfg, exists := cfg.Components["zot"]; exists {
+			cfgUsername, hasUser := zotCfg.Config["docker_hub_username"].(string)
+			cfgPassword, hasPass := zotCfg.Config["docker_hub_password"].(string)
+
+			if hasUser && hasPass && cfgUsername != "" && cfgPassword != "" {
+				// Check if these are secret references
+				if isSecretRef(cfgPassword) {
+					// Read from OpenBao - zot secrets are stored at foundry-core/zot
+					secretData, err := openBAOClient.ReadSecretV2(ctx, "foundry-core", "zot")
+					if err != nil {
+						return "", "", fmt.Errorf("failed to read secret from OpenBao: %w", err)
+					}
+					if secretData != nil {
+						if u, ok := secretData["docker_hub_username"].(string); ok {
+							username = u
+						}
+						if p, ok := secretData["docker_hub_password"].(string); ok {
+							password = p
+						}
+					}
+				} else {
+					// Plain text credentials - store in OpenBao
+					fmt.Println("  Storing Docker Hub credentials in OpenBAO...")
+					secretData := map[string]interface{}{
+						"docker_hub_username": cfgUsername,
+						"docker_hub_password": cfgPassword,
+					}
+					if err := openBAOClient.WriteSecretV2(ctx, "foundry-core", "zot", secretData); err != nil {
+						return "", "", fmt.Errorf("failed to store credentials in OpenBAO: %w", err)
+					}
+					fmt.Println("  ✓ Docker Hub credentials stored in OpenBAO")
+					username = cfgUsername
+					password = cfgPassword
+				}
+				return username, password, nil
+			}
+		}
+	}
+
+	// If not in config, try to read existing credentials from OpenBao
+	existingData, err := openBAOClient.ReadSecretV2(ctx, "foundry-core", "zot")
+	if err == nil && existingData != nil {
+		if u, ok := existingData["docker_hub_username"].(string); ok {
+			username = u
+		}
+		if p, ok := existingData["docker_hub_password"].(string); ok {
+			password = p
+		}
+		if username != "" && password != "" {
+			return username, password, nil
+		}
+	}
+
+	// No credentials configured - return empty (Zot will work without them)
+	return "", "", nil
+}
+
+// isSecretRef checks if a string is a secret reference
+func isSecretRef(s string) bool {
+	return len(s) > 10 && s[:9] == "${secret:" && s[len(s)-1] == '}'
 }
 
 // findTemplatePlaceholders scans the config for any <PLACEHOLDER> values
