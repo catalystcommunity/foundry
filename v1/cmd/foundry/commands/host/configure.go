@@ -109,41 +109,83 @@ func runConfigure(ctx context.Context, cmd *cli.Command) error {
 	// Create executor adapter for sudo package
 	executor := &sudoCommandExecutor{conn: conn}
 
-	// Check if user has sudo access
+	// Check sudo status
 	fmt.Println()
 	fmt.Println("Checking sudo access...")
-	hasSudo, err := sudo.CheckSudoAccess(executor, h.User)
+	sudoStatus, err := sudo.GetSudoStatus(executor)
 	if err != nil {
 		return fmt.Errorf("failed to check sudo access: %w", err)
 	}
 
-	if !hasSudo {
-		fmt.Printf("✗ User '%s' does not have sudo access\n", h.User)
-		fmt.Println()
-		fmt.Println("To configure this host, Foundry needs to setup sudo.")
-		fmt.Print("Root password: ")
+	switch sudoStatus {
+	case sudo.SudoPasswordless:
+		fmt.Println("✓ Passwordless sudo already configured")
 
-		// Read root password securely
-		passwordBytes, err := term.ReadPassword(int(0)) // 0 = stdin
-		fmt.Println() // New line after password input
+	case sudo.SudoRequiresPassword:
+		fmt.Printf("User '%s' has sudo access but requires a password\n", h.User)
+		fmt.Println("Foundry requires passwordless sudo for automated operations")
+		fmt.Println()
+		fmt.Println("To configure passwordless sudo, we need to run commands as root.")
+		fmt.Print("Enter root password: ")
+
+		passwordBytes, err := term.ReadPassword(int(0))
+		fmt.Println()
 		if err != nil {
 			return fmt.Errorf("failed to read password: %w", err)
 		}
 		rootPassword := string(passwordBytes)
 
 		fmt.Println()
-		fmt.Println("Setting up sudo access...")
-
-		// Setup sudo
+		fmt.Println("Configuring passwordless sudo...")
 		if err := sudo.SetupSudo(executor, h.User, rootPassword); err != nil {
 			return fmt.Errorf("failed to setup sudo: %w", err)
 		}
+		fmt.Println("  ✓ Passwordless sudo configured for user '" + h.User + "'")
 
+	case sudo.SudoNoAccess:
+		fmt.Printf("User '%s' is not in the sudoers file\n", h.User)
+		fmt.Println("Foundry requires passwordless sudo for automated operations")
+		fmt.Println()
+		fmt.Println("To add user to sudoers, we need to run commands as root.")
+		fmt.Print("Enter root password: ")
+
+		passwordBytes, err := term.ReadPassword(int(0))
+		fmt.Println()
+		if err != nil {
+			return fmt.Errorf("failed to read password: %w", err)
+		}
+		rootPassword := string(passwordBytes)
+
+		fmt.Println()
+		fmt.Println("Adding user to sudoers with passwordless access...")
+		if err := sudo.SetupSudo(executor, h.User, rootPassword); err != nil {
+			return fmt.Errorf("failed to setup sudo: %w", err)
+		}
+		fmt.Println("  ✓ User '" + h.User + "' added to sudoers")
+		fmt.Println("  ✓ Passwordless sudo configured")
+
+	case sudo.SudoNotInstalled:
+		fmt.Println("sudo is not installed on this host")
+		fmt.Println("Foundry requires passwordless sudo for automated operations")
+		fmt.Println()
+		fmt.Println("To install sudo and configure access, we need to run commands as root.")
+		fmt.Print("Enter root password: ")
+
+		passwordBytes, err := term.ReadPassword(int(0))
+		fmt.Println()
+		if err != nil {
+			return fmt.Errorf("failed to read password: %w", err)
+		}
+		rootPassword := string(passwordBytes)
+
+		fmt.Println()
+		fmt.Println("Installing sudo and configuring passwordless access...")
+		if err := sudo.SetupSudo(executor, h.User, rootPassword); err != nil {
+			return fmt.Errorf("failed to setup sudo: %w", err)
+		}
 		fmt.Println("  ✓ sudo package installed")
 		fmt.Println("  ✓ User '" + h.User + "' added to sudoers")
-		fmt.Println("  ✓ sudo access configured")
-	} else {
-		fmt.Println("✓ User has sudo access")
+		fmt.Println("  ✓ Passwordless sudo configured")
 	}
 
 	// Build list of configuration commands
