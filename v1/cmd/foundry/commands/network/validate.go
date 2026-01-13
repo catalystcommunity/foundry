@@ -32,13 +32,6 @@ Requirements:
   - Network configuration must be present in config file
   - SSH access to at least one host (for reachability checks)`,
 	Flags: []cli.Flag{
-		&cli.StringFlag{
-			Name:    "config",
-			Aliases: []string{"c"},
-			Usage:   "Path to configuration file",
-			Value:   config.DefaultConfigPath(),
-			Sources: cli.EnvVars("FOUNDRY_CONFIG"),
-		},
 		&cli.BoolFlag{
 			Name:  "skip-reachability",
 			Usage: "Skip reachability checks (ping tests)",
@@ -54,11 +47,15 @@ Requirements:
 }
 
 func runValidate(ctx context.Context, cmd *cli.Command) error {
-	configPath := cmd.String("config")
 	skipReachability := cmd.Bool("skip-reachability")
 	skipDNS := cmd.Bool("skip-dns")
 
-	// Load configuration
+	// Load configuration (--config flag inherited from root command)
+	configPath, err := config.FindConfig(cmd.String("config"))
+	if err != nil {
+		return fmt.Errorf("failed to find config: %w", err)
+	}
+
 	cfg, err := config.Load(configPath)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)

@@ -27,9 +27,9 @@ func TestNewNodeRemoveCommand(t *testing.T) {
 			flagNames[name] = true
 		}
 	}
-	assert.True(t, flagNames["config"])
 	assert.True(t, flagNames["dry-run"])
 	assert.True(t, flagNames["force"])
+	// --config is now inherited from root command, not defined on subcommand
 }
 
 func TestNodeRemoveCommand_DryRun(t *testing.T) {
@@ -66,9 +66,16 @@ func TestNodeRemoveCommand_DryRun(t *testing.T) {
 	err = config.Save(testConfig, configPath)
 	require.NoError(t, err)
 
-	// Create CLI app
+	// Create CLI app (--config flag on root, inherited by subcommands)
 	app := &cli.Command{
 		Name: "foundry",
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:    "config",
+				Aliases: []string{"c"},
+				Usage:   "path to config file",
+			},
+		},
 		Commands: []*cli.Command{
 			Commands(),
 		},
@@ -104,8 +111,16 @@ func TestNodeRemoveCommand_MissingHostname(t *testing.T) {
 	err := config.Save(testConfig, configPath)
 	require.NoError(t, err)
 
+	// Create CLI app (--config flag on root, inherited by subcommands)
 	app := &cli.Command{
 		Name: "foundry",
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:    "config",
+				Aliases: []string{"c"},
+				Usage:   "path to config file",
+			},
+		},
 		Commands: []*cli.Command{
 			Commands(),
 		},
@@ -144,8 +159,16 @@ func TestNodeRemoveCommand_HostNotFound(t *testing.T) {
 	err := config.Save(testConfig, configPath)
 	require.NoError(t, err)
 
+	// Create CLI app (--config flag on root, inherited by subcommands)
 	app := &cli.Command{
 		Name: "foundry",
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:    "config",
+				Aliases: []string{"c"},
+				Usage:   "path to config file",
+			},
+		},
 		Commands: []*cli.Command{
 			Commands(),
 		},

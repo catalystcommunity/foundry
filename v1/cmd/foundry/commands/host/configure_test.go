@@ -84,9 +84,16 @@ func TestRunConfigure_NoSSHKey(t *testing.T) {
 	err = host.Add(h)
 	require.NoError(t, err)
 
-	// Create a test command
+	// Create a test command (--config flag on root, inherited by subcommands)
 	app := &cli.Command{
 		Name: "test",
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:    "config",
+				Aliases: []string{"c"},
+				Usage:   "path to config file",
+			},
+		},
 		Commands: []*cli.Command{
 			ConfigureCommand,
 		},

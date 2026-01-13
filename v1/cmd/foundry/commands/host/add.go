@@ -55,8 +55,8 @@ var AddCommand = &cli.Command{
 }
 
 func runAdd(ctx context.Context, cmd *cli.Command) error {
-	// Initialize config-based host registry
-	configPath, err := config.FindConfig("")
+	// Initialize config-based host registry (--config flag inherited from root command)
+	configPath, err := config.FindConfig(cmd.String("config"))
 	if err != nil {
 		return fmt.Errorf("failed to find config file: %w (run 'foundry config init' first)", err)
 	}

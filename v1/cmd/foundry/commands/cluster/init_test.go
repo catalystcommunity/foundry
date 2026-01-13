@@ -21,14 +21,12 @@ func TestInitCommand(t *testing.T) {
 	assert.Equal(t, "Initialize Kubernetes cluster", cmd.Usage)
 	assert.NotNil(t, cmd.Action)
 
-	// Check flags
-	assert.Len(t, cmd.Flags, 3)
+	// Check flags (--config is inherited from root command, not defined here)
+	assert.Len(t, cmd.Flags, 2)
 
-	var hasConfigFlag, hasSingleNodeFlag, hasDryRunFlag bool
+	var hasSingleNodeFlag, hasDryRunFlag bool
 	for _, flag := range cmd.Flags {
 		switch flag.Names()[0] {
-		case "config":
-			hasConfigFlag = true
 		case "single-node":
 			hasSingleNodeFlag = true
 		case "dry-run":
@@ -36,7 +34,6 @@ func TestInitCommand(t *testing.T) {
 		}
 	}
 
-	assert.True(t, hasConfigFlag, "should have config flag")
 	assert.True(t, hasSingleNodeFlag, "should have single-node flag")
 	assert.True(t, hasDryRunFlag, "should have dry-run flag")
 }
@@ -123,9 +120,16 @@ func TestRunClusterInit_MissingConfig(t *testing.T) {
 	tmpDir := t.TempDir()
 	nonExistentConfig := filepath.Join(tmpDir, "nonexistent.yaml")
 
-	// Create CLI app with cluster commands
+	// Create CLI app with cluster commands (--config flag on root, inherited by subcommands)
 	app := &cli.Command{
 		Name: "foundry",
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:    "config",
+				Aliases: []string{"c"},
+				Usage:   "path to config file",
+			},
+		},
 		Commands: []*cli.Command{
 			Commands(),
 		},
@@ -139,7 +143,7 @@ func TestRunClusterInit_MissingConfig(t *testing.T) {
 
 	// We expect an error since the config doesn't exist
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to load config")
+	assert.Contains(t, err.Error(), "failed to find config")
 }
 
 func TestRunClusterInit_DryRun(t *testing.T) {
@@ -173,9 +177,16 @@ func TestRunClusterInit_DryRun(t *testing.T) {
 	err := config.Save(testConfig, configPath)
 	require.NoError(t, err)
 
-	// Create CLI app
+	// Create CLI app (--config flag on root, inherited by subcommands)
 	app := &cli.Command{
 		Name: "foundry",
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:    "config",
+				Aliases: []string{"c"},
+				Usage:   "path to config file",
+			},
+		},
 		Commands: []*cli.Command{
 			Commands(),
 		},
@@ -209,9 +220,16 @@ func TestRunClusterInit_NoClusterConfig(t *testing.T) {
 	err := config.Save(testConfig, configPath)
 	require.NoError(t, err)
 
-	// Create CLI app
+	// Create CLI app (--config flag on root, inherited by subcommands)
 	app := &cli.Command{
 		Name: "foundry",
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:    "config",
+				Aliases: []string{"c"},
+				Usage:   "path to config file",
+			},
+		},
 		Commands: []*cli.Command{
 			Commands(),
 		},
@@ -249,9 +267,16 @@ func TestRunClusterInit_NoNodes(t *testing.T) {
 	err := config.Save(testConfig, configPath)
 	require.NoError(t, err)
 
-	// Create CLI app
+	// Create CLI app (--config flag on root, inherited by subcommands)
 	app := &cli.Command{
 		Name: "foundry",
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:    "config",
+				Aliases: []string{"c"},
+				Usage:   "path to config file",
+			},
+		},
 		Commands: []*cli.Command{
 			Commands(),
 		},
@@ -297,9 +322,16 @@ func TestRunClusterInit_SingleNodeFlag(t *testing.T) {
 	err := config.Save(testConfig, configPath)
 	require.NoError(t, err)
 
-	// Create CLI app
+	// Create CLI app (--config flag on root, inherited by subcommands)
 	app := &cli.Command{
 		Name: "foundry",
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:    "config",
+				Aliases: []string{"c"},
+				Usage:   "path to config file",
+			},
+		},
 		Commands: []*cli.Command{
 			Commands(),
 		},

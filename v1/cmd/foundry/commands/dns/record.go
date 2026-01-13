@@ -47,13 +47,6 @@ Examples:
   foundry dns record add example.com. @ TXT "v=spf1 mx ~all"
   foundry dns record add example.com. www.example.com. A 192.168.1.10 --ttl 7200`,
 	Flags: []cli.Flag{
-		&cli.StringFlag{
-			Name:    "config",
-			Aliases: []string{"c"},
-			Usage:   "Path to configuration file",
-			Value:   config.DefaultConfigPath(),
-			Sources: cli.EnvVars("FOUNDRY_CONFIG"),
-		},
 		&cli.IntFlag{
 			Name:  "ttl",
 			Usage: "Time to live in seconds",
@@ -75,13 +68,6 @@ Example:
   foundry dns record list example.com.`,
 	Flags: []cli.Flag{
 		&cli.StringFlag{
-			Name:    "config",
-			Aliases: []string{"c"},
-			Usage:   "Path to configuration file",
-			Value:   config.DefaultConfigPath(),
-			Sources: cli.EnvVars("FOUNDRY_CONFIG"),
-		},
-		&cli.StringFlag{
 			Name:  "type",
 			Usage: "Filter by record type (A, AAAA, CNAME, etc.)",
 		},
@@ -101,13 +87,6 @@ Examples:
   foundry dns record delete example.com. www.example.com. A
   foundry dns record delete example.com. mail.example.com. MX`,
 	Flags: []cli.Flag{
-		&cli.StringFlag{
-			Name:    "config",
-			Aliases: []string{"c"},
-			Usage:   "Path to configuration file",
-			Value:   config.DefaultConfigPath(),
-			Sources: cli.EnvVars("FOUNDRY_CONFIG"),
-		},
 		&cli.BoolFlag{
 			Name:  "yes",
 			Usage: "Skip confirmation prompt",
@@ -126,7 +105,6 @@ func runRecordAdd(ctx context.Context, cmd *cli.Command) error {
 	recordName := cmd.Args().Get(1)
 	recordType := strings.ToUpper(cmd.Args().Get(2))
 	recordContent := cmd.Args().Get(3)
-	configPath := cmd.String("config")
 	ttl := cmd.Int("ttl")
 
 	// Ensure zone name ends with dot
@@ -147,7 +125,12 @@ func runRecordAdd(ctx context.Context, cmd *cli.Command) error {
 		}
 	}
 
-	// Load configuration
+	// Load configuration (--config flag inherited from root command)
+	configPath, err := config.FindConfig(cmd.String("config"))
+	if err != nil {
+		return fmt.Errorf("failed to find config: %w", err)
+	}
+
 	cfg, err := config.Load(configPath)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
@@ -218,7 +201,12 @@ func runRecordList(ctx context.Context, cmd *cli.Command) error {
 		zoneName = zoneName + "."
 	}
 
-	// Load configuration
+	// Load configuration (--config flag inherited from root command)
+	configPath, err := config.FindConfig(cmd.String("config"))
+	if err != nil {
+		return fmt.Errorf("failed to find config: %w", err)
+	}
+
 	cfg, err := config.Load(configPath)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
@@ -334,7 +322,12 @@ func runRecordDelete(ctx context.Context, cmd *cli.Command) error {
 		}
 	}
 
-	// Load configuration
+	// Load configuration (--config flag inherited from root command)
+	configPath, err := config.FindConfig(cmd.String("config"))
+	if err != nil {
+		return fmt.Errorf("failed to find config: %w", err)
+	}
+
 	cfg, err := config.Load(configPath)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)

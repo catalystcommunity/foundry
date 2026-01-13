@@ -45,12 +45,6 @@ func initCommand() *cli.Command {
 		Name:  "init",
 		Usage: "Initialize Kubernetes cluster",
 		Flags: []cli.Flag{
-			&cli.StringFlag{
-				Name:    "config",
-				Aliases: []string{"c"},
-				Usage:   "Path to configuration file",
-				Sources: cli.EnvVars("FOUNDRY_CONFIG"),
-			},
 			&cli.BoolFlag{
 				Name:  "single-node",
 				Usage: "Initialize single-node cluster (overrides config)",
@@ -65,10 +59,10 @@ func initCommand() *cli.Command {
 }
 
 func runClusterInit(ctx context.Context, cmd *cli.Command) error {
-	// Load configuration
-	configPath := cmd.String("config")
-	if configPath == "" {
-		configPath = config.DefaultConfigPath()
+	// Load configuration (--config flag inherited from root command)
+	configPath, err := config.FindConfig(cmd.String("config"))
+	if err != nil {
+		return fmt.Errorf("failed to find config: %w", err)
 	}
 
 	cfg, err := config.Load(configPath)

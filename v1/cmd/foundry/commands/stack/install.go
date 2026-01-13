@@ -108,12 +108,6 @@ Examples:
   # Resume after interruption
   foundry stack install  # Automatically picks up where it left off`,
 	Flags: []cli.Flag{
-		&cli.StringFlag{
-			Name:    "config",
-			Aliases: []string{"c"},
-			Usage:   "Path to configuration file",
-			Sources: cli.EnvVars("FOUNDRY_CONFIG"),
-		},
 		// Config initialization flags
 		&cli.StringFlag{
 			Name:  "cluster-name",
@@ -182,9 +176,10 @@ func NewStackInstaller(registry *component.Registry, installer ComponentInstalle
 }
 
 func runStackInstall(ctx context.Context, cmd *cli.Command) error {
-	// Determine config path
-	configPath := cmd.String("config")
-	if configPath == "" {
+	// Determine config path (--config flag inherited from root command)
+	configPath, err := config.FindConfig(cmd.String("config"))
+	if err != nil {
+		// For install, missing config is OK - we'll create one
 		configPath = config.DefaultConfigPath()
 	}
 
