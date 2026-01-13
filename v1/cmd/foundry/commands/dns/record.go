@@ -52,6 +52,7 @@ Examples:
 			Aliases: []string{"c"},
 			Usage:   "Path to configuration file",
 			Value:   config.DefaultConfigPath(),
+			Sources: cli.EnvVars("FOUNDRY_CONFIG"),
 		},
 		&cli.IntFlag{
 			Name:  "ttl",
@@ -78,6 +79,7 @@ Example:
 			Aliases: []string{"c"},
 			Usage:   "Path to configuration file",
 			Value:   config.DefaultConfigPath(),
+			Sources: cli.EnvVars("FOUNDRY_CONFIG"),
 		},
 		&cli.StringFlag{
 			Name:  "type",
@@ -104,6 +106,7 @@ Examples:
 			Aliases: []string{"c"},
 			Usage:   "Path to configuration file",
 			Value:   config.DefaultConfigPath(),
+			Sources: cli.EnvVars("FOUNDRY_CONFIG"),
 		},
 		&cli.BoolFlag{
 			Name:  "yes",

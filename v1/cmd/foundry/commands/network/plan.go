@@ -38,6 +38,7 @@ After completing the wizard:
 			Aliases: []string{"c"},
 			Usage:   "Path to configuration file",
 			Value:   config.DefaultConfigPath(),
+			Sources: cli.EnvVars("FOUNDRY_CONFIG"),
 		},
 	},
 	Action: runPlan,

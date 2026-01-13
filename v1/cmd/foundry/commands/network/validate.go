@@ -37,6 +37,7 @@ Requirements:
 			Aliases: []string{"c"},
 			Usage:   "Path to configuration file",
 			Value:   config.DefaultConfigPath(),
+			Sources: cli.EnvVars("FOUNDRY_CONFIG"),
 		},
 		&cli.BoolFlag{
 			Name:  "skip-reachability",

@@ -19,6 +19,7 @@ var ValidateCommand = &cli.Command{
 			Name:    "config",
 			Aliases: []string{"c"},
 			Usage:   "Path to configuration file",
+			Sources: cli.EnvVars("FOUNDRY_CONFIG"),
 		},
 	},
 	Action: runStackValidate,
