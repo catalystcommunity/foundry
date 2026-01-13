@@ -36,15 +36,5 @@ func TestListCommand(t *testing.T) {
 	assert.NotNil(t, ListCommand, "ListCommand should not be nil")
 	assert.Equal(t, "list", ListCommand.Name)
 	assert.NotNil(t, ListCommand.Action, "ListCommand should have an action")
-
-	// Check flags
-	var foundConfig bool
-	for _, flag := range ListCommand.Flags {
-		switch flag.Names()[0] {
-		case "config":
-			foundConfig = true
-		}
-	}
-
-	assert.True(t, foundConfig, "Should have --config flag")
+	// --config is now inherited from root command, not defined on subcommand
 }

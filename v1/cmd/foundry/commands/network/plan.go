@@ -32,20 +32,16 @@ After completing the wizard:
   2. Assign roles to hosts (openbao, dns, zot, cluster-control-plane, cluster-worker)
   3. Configure static IPs or DHCP reservations for your infrastructure hosts
   4. Use 'foundry network validate' to verify the configuration`,
-	Flags: []cli.Flag{
-		&cli.StringFlag{
-			Name:    "config",
-			Aliases: []string{"c"},
-			Usage:   "Path to configuration file",
-			Value:   config.DefaultConfigPath(),
-			Sources: cli.EnvVars("FOUNDRY_CONFIG"),
-		},
-	},
 	Action: runPlan,
 }
 
 func runPlan(ctx context.Context, cmd *cli.Command) error {
-	configPath := cmd.String("config")
+	// Get config path (--config flag inherited from root command)
+	configPath, err := config.FindConfig(cmd.String("config"))
+	if err != nil {
+		// For plan, missing config is OK - use default path
+		configPath = config.DefaultConfigPath()
+	}
 
 	// Load existing config or create new one
 	cfg, err := config.Load(configPath)

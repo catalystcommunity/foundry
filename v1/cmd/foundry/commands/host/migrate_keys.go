@@ -39,8 +39,8 @@ OpenBAO must be installed and initialized before running this command.`,
 }
 
 func runMigrateKeys(ctx context.Context, cmd *cli.Command) error {
-	// Find config file
-	configPath, err := config.FindConfig("")
+	// Find config file (--config flag inherited from root command)
+	configPath, err := config.FindConfig(cmd.String("config"))
 	if err != nil {
 		return fmt.Errorf("failed to find config file: %w (run 'foundry config init' first)", err)
 	}

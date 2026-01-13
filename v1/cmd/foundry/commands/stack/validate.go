@@ -12,24 +12,16 @@ import (
 
 // ValidateCommand handles the 'foundry stack validate' command
 var ValidateCommand = &cli.Command{
-	Name:  "validate",
-	Usage: "Validate stack configuration without installing",
-	Flags: []cli.Flag{
-		&cli.StringFlag{
-			Name:    "config",
-			Aliases: []string{"c"},
-			Usage:   "Path to configuration file",
-			Sources: cli.EnvVars("FOUNDRY_CONFIG"),
-		},
-	},
+	Name:   "validate",
+	Usage:  "Validate stack configuration without installing",
 	Action: runStackValidate,
 }
 
 func runStackValidate(ctx context.Context, cmd *cli.Command) error {
-	// Load configuration
-	configPath := cmd.String("config")
-	if configPath == "" {
-		configPath = config.DefaultConfigPath()
+	// Load configuration (--config flag inherited from root command)
+	configPath, err := config.FindConfig(cmd.String("config"))
+	if err != nil {
+		return fmt.Errorf("failed to find config: %w", err)
 	}
 
 	cfg, err := config.Load(configPath)

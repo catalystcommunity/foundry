@@ -40,15 +40,6 @@ This command connects to PowerDNS and lists all configured zones.
 
 Example:
   foundry dns zone list`,
-	Flags: []cli.Flag{
-		&cli.StringFlag{
-			Name:    "config",
-			Aliases: []string{"c"},
-			Usage:   "Path to configuration file",
-			Value:   config.DefaultConfigPath(),
-			Sources: cli.EnvVars("FOUNDRY_CONFIG"),
-		},
-	},
 	Action: runZoneList,
 }
 
@@ -73,13 +64,6 @@ Examples:
   foundry dns zone create example.com --type Master
   foundry dns zone create infraexample.com --public --public-cname home.example.com`,
 	Flags: []cli.Flag{
-		&cli.StringFlag{
-			Name:    "config",
-			Aliases: []string{"c"},
-			Usage:   "Path to configuration file",
-			Value:   config.DefaultConfigPath(),
-			Sources: cli.EnvVars("FOUNDRY_CONFIG"),
-		},
 		&cli.StringFlag{
 			Name:  "type",
 			Usage: "Zone type (Native, Master, Slave)",
@@ -110,13 +94,6 @@ This action cannot be undone.
 Example:
   foundry dns zone delete example.com`,
 	Flags: []cli.Flag{
-		&cli.StringFlag{
-			Name:    "config",
-			Aliases: []string{"c"},
-			Usage:   "Path to configuration file",
-			Value:   config.DefaultConfigPath(),
-			Sources: cli.EnvVars("FOUNDRY_CONFIG"),
-		},
 		&cli.BoolFlag{
 			Name:  "yes",
 			Usage: "Skip confirmation prompt",
@@ -127,9 +104,12 @@ Example:
 }
 
 func runZoneList(ctx context.Context, cmd *cli.Command) error {
-	configPath := cmd.String("config")
+	// Load configuration (--config flag inherited from root command)
+	configPath, err := config.FindConfig(cmd.String("config"))
+	if err != nil {
+		return fmt.Errorf("failed to find config: %w", err)
+	}
 
-	// Load configuration
 	cfg, err := config.Load(configPath)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
@@ -197,7 +177,6 @@ func runZoneCreate(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	zoneName := cmd.Args().Get(0)
-	configPath := cmd.String("config")
 	zoneType := cmd.String("type")
 	isPublic := cmd.Bool("public")
 	publicCNAME := cmd.String("public-cname")
@@ -217,7 +196,12 @@ func runZoneCreate(ctx context.Context, cmd *cli.Command) error {
 		return fmt.Errorf(".local zones cannot be public")
 	}
 
-	// Load configuration
+	// Load configuration (--config flag inherited from root command)
+	configPath, err := config.FindConfig(cmd.String("config"))
+	if err != nil {
+		return fmt.Errorf("failed to find config: %w", err)
+	}
+
 	cfg, err := config.Load(configPath)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
@@ -290,7 +274,6 @@ func runZoneDelete(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	zoneName := cmd.Args().Get(0)
-	configPath := cmd.String("config")
 	skipConfirm := cmd.Bool("yes")
 
 	// Validate zone name
@@ -298,7 +281,12 @@ func runZoneDelete(ctx context.Context, cmd *cli.Command) error {
 		zoneName = zoneName + "."
 	}
 
-	// Load configuration
+	// Load configuration (--config flag inherited from root command)
+	configPath, err := config.FindConfig(cmd.String("config"))
+	if err != nil {
+		return fmt.Errorf("failed to find config: %w", err)
+	}
+
 	cfg, err := config.Load(configPath)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)

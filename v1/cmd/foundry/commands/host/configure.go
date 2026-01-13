@@ -19,12 +19,6 @@ var ConfigureCommand = &cli.Command{
 	Usage:     "Run basic configuration on a host",
 	ArgsUsage: "<hostname>",
 	Flags: []cli.Flag{
-		&cli.StringFlag{
-			Name:    "config",
-			Aliases: []string{"c"},
-			Usage:   "Path to configuration file",
-			Sources: cli.EnvVars("FOUNDRY_CONFIG"),
-		},
 		&cli.BoolFlag{
 			Name:  "skip-update",
 			Usage: "skip package updates",
@@ -54,14 +48,10 @@ func runConfigure(ctx context.Context, cmd *cli.Command) error {
 		return fmt.Errorf("host not found: %w", err)
 	}
 
-	// Load config to get cluster name
-	configPath := cmd.String("config")
-	if configPath == "" {
-		var err error
-		configPath, err = config.FindConfig("")
-		if err != nil {
-			return fmt.Errorf("failed to find config: %w", err)
-		}
+	// Load config to get cluster name (--config flag inherited from root command)
+	configPath, err := config.FindConfig(cmd.String("config"))
+	if err != nil {
+		return fmt.Errorf("failed to find config: %w", err)
 	}
 	cfg, err := config.Load(configPath)
 	if err != nil {

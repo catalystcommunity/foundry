@@ -30,12 +30,6 @@ func NewNodeAddCommand() *cli.Command {
 				Name:  "role",
 				Usage: "Node role: control-plane, worker, or both (default: auto)",
 			},
-			&cli.StringFlag{
-				Name:    "config",
-				Aliases: []string{"c"},
-				Usage:   "Path to configuration file",
-				Sources: cli.EnvVars("FOUNDRY_CONFIG"),
-			},
 			&cli.BoolFlag{
 				Name:  "dry-run",
 				Usage: "Show what would be done without making changes",
@@ -56,10 +50,10 @@ func runNodeAdd(ctx context.Context, cmd *cli.Command) error {
 	}
 	hostname := cmd.Args().Get(0)
 
-	// Load configuration
-	configPath := cmd.String("config")
-	if configPath == "" {
-		configPath = config.DefaultConfigPath()
+	// Load configuration (--config flag inherited from root command)
+	configPath, err := config.FindConfig(cmd.String("config"))
+	if err != nil {
+		return fmt.Errorf("failed to find config: %w", err)
 	}
 
 	cfg, err := config.Load(configPath)

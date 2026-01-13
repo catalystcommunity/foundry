@@ -487,5 +487,5 @@ func TestAddDiskCommand_Structure(t *testing.T) {
 	assert.Contains(t, flagNames, "dry-run")
 	assert.Contains(t, flagNames, "yes")
 	assert.Contains(t, flagNames, "y") // yes alias
-	assert.Contains(t, flagNames, "config")
+	// --config is now inherited from root command, not defined on subcommand
 }

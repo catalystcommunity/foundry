@@ -12,27 +12,19 @@ import (
 
 // StatusCommand handles the 'foundry stack status' command
 var StatusCommand = &cli.Command{
-	Name:  "status",
-	Usage: "Show status of all stack components",
-	Flags: []cli.Flag{
-		&cli.StringFlag{
-			Name:    "config",
-			Aliases: []string{"c"},
-			Usage:   "Path to configuration file",
-			Sources: cli.EnvVars("FOUNDRY_CONFIG"),
-		},
-	},
+	Name:   "status",
+	Usage:  "Show status of all stack components",
 	Action: runStackStatus,
 }
 
 func runStackStatus(ctx context.Context, cmd *cli.Command) error {
-	// Load configuration
-	configPath := cmd.String("config")
-	if configPath == "" {
-		configPath = config.DefaultConfigPath()
+	// Load configuration (--config flag inherited from root command)
+	configPath, err := config.FindConfig(cmd.String("config"))
+	if err != nil {
+		return fmt.Errorf("failed to find config: %w", err)
 	}
 
-	_, err := config.Load(configPath)
+	_, err = config.Load(configPath)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
