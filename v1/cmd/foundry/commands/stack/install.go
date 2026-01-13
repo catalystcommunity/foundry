@@ -112,6 +112,7 @@ Examples:
 			Name:    "config",
 			Aliases: []string{"c"},
 			Usage:   "Path to configuration file",
+			Sources: cli.EnvVars("FOUNDRY_CONFIG"),
 		},
 		// Config initialization flags
 		&cli.StringFlag{

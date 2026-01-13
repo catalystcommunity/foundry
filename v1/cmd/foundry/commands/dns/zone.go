@@ -46,6 +46,7 @@ Example:
 			Aliases: []string{"c"},
 			Usage:   "Path to configuration file",
 			Value:   config.DefaultConfigPath(),
+			Sources: cli.EnvVars("FOUNDRY_CONFIG"),
 		},
 	},
 	Action: runZoneList,
@@ -77,6 +78,7 @@ Examples:
 			Aliases: []string{"c"},
 			Usage:   "Path to configuration file",
 			Value:   config.DefaultConfigPath(),
+			Sources: cli.EnvVars("FOUNDRY_CONFIG"),
 		},
 		&cli.StringFlag{
 			Name:  "type",
@@ -113,6 +115,7 @@ Example:
 			Aliases: []string{"c"},
 			Usage:   "Path to configuration file",
 			Value:   config.DefaultConfigPath(),
+			Sources: cli.EnvVars("FOUNDRY_CONFIG"),
 		},
 		&cli.BoolFlag{
 			Name:  "yes",

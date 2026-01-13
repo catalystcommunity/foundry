@@ -24,6 +24,7 @@ func NewNodeRemoveCommand() *cli.Command {
 				Name:    "config",
 				Aliases: []string{"c"},
 				Usage:   "Path to configuration file",
+				Sources: cli.EnvVars("FOUNDRY_CONFIG"),
 			},
 			&cli.BoolFlag{
 				Name:  "dry-run",

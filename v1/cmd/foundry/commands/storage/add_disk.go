@@ -61,8 +61,10 @@ Examples:
 			Usage:   "Skip confirmation prompts",
 		},
 		&cli.StringFlag{
-			Name:  "config",
-			Usage: "Path to configuration file",
+			Name:    "config",
+			Aliases: []string{"c"},
+			Usage:   "Path to configuration file",
+			Sources: cli.EnvVars("FOUNDRY_CONFIG"),
 		},
 	},
 	Action: runAddDisk,
