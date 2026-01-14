@@ -47,16 +47,16 @@ func TestStatusCommand(t *testing.T) {
 			errorContains: "not found",
 		},
 		{
-			name:         "valid component - openbao",
-			args:         []string{"test", "status", "openbao"},
-			expectError:  false,
-			expectOutput: []string{"Checking status", "openbao", "Installed:"},
+			name:          "valid component - openbao (no config)",
+			args:          []string{"test", "status", "openbao"},
+			expectError:   true,
+			errorContains: "failed to find config",
 		},
 		{
-			name:         "valid component - dns",
-			args:         []string{"test", "status", "dns"},
-			expectError:  false,
-			expectOutput: []string{"Checking status", "dns", "Installed:"},
+			name:          "valid component - dns (no config)",
+			args:          []string{"test", "status", "dns"},
+			expectError:   true,
+			errorContains: "failed to find config",
 		},
 	}
 

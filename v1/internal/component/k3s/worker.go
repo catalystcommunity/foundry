@@ -53,7 +53,7 @@ func JoinWorker(ctx context.Context, executor SSHExecutor, serverURL string, tok
 	}
 
 	// Step 4: Wait for K3s agent to be ready
-	if err := waitForK3sAgentReady(executor); err != nil {
+	if err := waitForK3sAgentReady(executor, DefaultRetryConfig()); err != nil {
 		return fmt.Errorf("K3s agent failed to become ready: %w", err)
 	}
 
@@ -73,8 +73,8 @@ func generateK3sAgentInstallCommand(serverURL string, agentToken string) string 
 
 // waitForK3sAgentReady waits for K3s agent to be ready
 // Agent nodes don't have kubectl, so we check the service status instead
-func waitForK3sAgentReady(executor SSHExecutor) error {
-	for i := 0; i < MaxRetries; i++ {
+func waitForK3sAgentReady(executor SSHExecutor, retryCfg RetryConfig) error {
+	for i := 0; i < retryCfg.MaxRetries; i++ {
 		result, err := executor.Exec("sudo systemctl is-active k3s-agent")
 		if err == nil && result.ExitCode == 0 && strings.TrimSpace(result.Stdout) == "active" {
 			return nil
@@ -87,10 +87,10 @@ func waitForK3sAgentReady(executor SSHExecutor) error {
 			return nil
 		}
 
-		time.Sleep(RetryDelay)
+		time.Sleep(retryCfg.RetryDelay)
 	}
 
-	return fmt.Errorf("K3s agent did not become ready after %d retries", MaxRetries)
+	return fmt.Errorf("K3s agent did not become ready after %d retries", retryCfg.MaxRetries)
 }
 
 // verifyWorkerNodeJoined verifies that the worker node successfully joined the cluster

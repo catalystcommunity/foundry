@@ -35,11 +35,23 @@ func LoadFromReader(r io.Reader) (*Config, error) {
 		return nil, fmt.Errorf("failed to parse YAML: %w", err)
 	}
 
+	// Apply migrations for backwards compatibility
+	migrateConfig(&config)
+
 	if err := config.Validate(); err != nil {
 		return nil, fmt.Errorf("config validation failed: %w", err)
 	}
 
 	return &config, nil
+}
+
+// migrateConfig applies backwards compatibility migrations to the config
+func migrateConfig(cfg *Config) {
+	// Migration: cluster.domain -> cluster.primary_domain
+	// If domain is set (deprecated) and primary_domain is empty, copy domain to primary_domain
+	if cfg.Cluster.Domain != nil && *cfg.Cluster.Domain != "" && cfg.Cluster.PrimaryDomain == "" {
+		cfg.Cluster.PrimaryDomain = *cfg.Cluster.Domain
+	}
 }
 
 // ConfigFileHeader is the header comment added to saved config files

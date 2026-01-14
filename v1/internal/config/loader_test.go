@@ -125,7 +125,7 @@ func TestLoad_ValidConfigFile(t *testing.T) {
 
 	// Verify some key fields
 	assert.Equal(t, "production", config.Cluster.Name)
-	assert.Equal(t, "example.com", config.Cluster.Domain)
+	assert.Equal(t, "example.com", config.Cluster.PrimaryDomain)
 
 	// Verify hosts (nodes are now in hosts array with cluster-* roles)
 	clusterHosts := config.GetClusterControlPlaneHosts()

@@ -35,7 +35,7 @@ func TestValidateSecretRefs(t *testing.T) {
 			config: &Config{
 				Cluster: ClusterConfig{
 					Name:   "${secret:foundry-core/cluster:name}",
-					Domain: "example.com",
+					PrimaryDomain: "example.com",
 				},
 				Components: ComponentMap{
 					"k3s": ComponentConfig{},
@@ -48,7 +48,7 @@ func TestValidateSecretRefs(t *testing.T) {
 			config: &Config{
 				Cluster: ClusterConfig{
 					Name:   "${secret:invalid}",
-					Domain: "example.com",
+					PrimaryDomain: "example.com",
 				},
 				Components: ComponentMap{
 					"k3s": ComponentConfig{},
@@ -62,7 +62,7 @@ func TestValidateSecretRefs(t *testing.T) {
 			config: &Config{
 				Cluster: ClusterConfig{
 					Name:   "test",
-					Domain: "example.com",
+					PrimaryDomain: "example.com",
 				},
 				Components: ComponentMap{
 					"k3s": ComponentConfig{Version: strPtr("v1.28.5")},
@@ -100,7 +100,7 @@ func TestResolveSecrets(t *testing.T) {
 			config: &Config{
 				Cluster: ClusterConfig{
 					Name:   "${secret:cluster:name}",
-					Domain: "example.com",
+					PrimaryDomain: "example.com",
 				},
 				Components: ComponentMap{
 					"k3s": ComponentConfig{},
@@ -122,7 +122,7 @@ func TestResolveSecrets(t *testing.T) {
 			config: &Config{
 				Cluster: ClusterConfig{
 					Name:   "${secret:cluster:name}",
-					Domain: "${secret:cluster:domain}",
+					PrimaryDomain: "${secret:cluster:primary_domain}",
 				},
 				Components: ComponentMap{
 					"k3s": ComponentConfig{},
@@ -132,13 +132,13 @@ func TestResolveSecrets(t *testing.T) {
 			resolver: &mockSecretResolver{
 				values: map[string]string{
 					"foundry-core/cluster:name":   "resolved-name",
-					"foundry-core/cluster:domain": "resolved.example.com",
+					"foundry-core/cluster:primary_domain": "resolved.example.com",
 				},
 			},
 			wantErr: false,
 			check: func(t *testing.T, cfg *Config) {
 				assert.Equal(t, "resolved-name", cfg.Cluster.Name)
-				assert.Equal(t, "resolved.example.com", cfg.Cluster.Domain)
+				assert.Equal(t, "resolved.example.com", cfg.Cluster.PrimaryDomain)
 			},
 		},
 		{
@@ -146,7 +146,7 @@ func TestResolveSecrets(t *testing.T) {
 			config: &Config{
 				Cluster: ClusterConfig{
 					Name:   "${secret:cluster:name}",
-					Domain: "example.com",
+					PrimaryDomain: "example.com",
 				},
 				Components: ComponentMap{
 					"k3s": ComponentConfig{},
@@ -164,7 +164,7 @@ func TestResolveSecrets(t *testing.T) {
 			config: &Config{
 				Cluster: ClusterConfig{
 					Name:   "test",
-					Domain: "example.com",
+					PrimaryDomain: "example.com",
 				},
 				Components: ComponentMap{
 					"k3s": ComponentConfig{Version: strPtr("v1.28.5")},
@@ -203,7 +203,7 @@ func TestResolveSecrets_NilParameters(t *testing.T) {
 	config := &Config{
 		Cluster: ClusterConfig{
 			Name:   "test",
-			Domain: "example.com",
+			PrimaryDomain: "example.com",
 		},
 		Components: ComponentMap{
 			"k3s": ComponentConfig{},

@@ -131,7 +131,10 @@ func runInstall(ctx context.Context, cmd *cli.Command) error {
 
 	// Load stack configuration (needed for dependency checking)
 	fmt.Println("Loading stack configuration...")
-	configPath := config.DefaultConfigPath()
+	configPath, err := config.FindConfig(cmd.String("config"))
+	if err != nil {
+		return fmt.Errorf("failed to find config: %w", err)
+	}
 	stackConfig, err := config.Load(configPath)
 	if err != nil {
 		return fmt.Errorf("failed to load stack config: %w\n\nHint: Run 'foundry config init' to create a configuration", err)
@@ -307,7 +310,7 @@ func installK8sComponent(ctx context.Context, cmd *cli.Command, name string, sta
 	fmt.Printf("\n✓ Component %s installed successfully\n", name)
 
 	// Update setup state
-	if err := updateSetupState(stackConfig, name, cfg); err != nil {
+	if err := updateSetupState(cmd, stackConfig, name, cfg); err != nil {
 		fmt.Printf("\n⚠ Warning: Failed to update setup state: %v\n", err)
 	}
 
@@ -404,7 +407,7 @@ func installSSHComponent(ctx context.Context, cmd *cli.Command, name string, sta
 
 	// Establish SSH connection to target host
 	fmt.Printf("Connecting to %s...\n", targetHost.Hostname)
-	conn, err := connectToHost(targetHost)
+	conn, err := connectToHost(targetHost, stackConfig)
 	if err != nil {
 		return fmt.Errorf("failed to connect to host: %w", err)
 	}
@@ -453,10 +456,31 @@ func installSSHComponent(ctx context.Context, cmd *cli.Command, name string, sta
 		}
 		cfg["api_key"] = apiKey
 
-		// Pass cluster domain as a local zone for Recursor forwarding
-		// This ensures queries for the cluster domain are forwarded to the Auth server
-		if stackConfig.Cluster.Domain != "" {
-			cfg["local_zones"] = []string{stackConfig.Cluster.Domain}
+		// Pass all zones as local zones for Recursor forwarding
+		// This includes primary_domain + kubernetes_zones + infrastructure_zones (deduplicated)
+		localZones := []string{}
+		seen := make(map[string]bool)
+		if stackConfig.Cluster.PrimaryDomain != "" {
+			localZones = append(localZones, stackConfig.Cluster.PrimaryDomain)
+			seen[stackConfig.Cluster.PrimaryDomain] = true
+		}
+		if stackConfig.DNS != nil {
+			for _, zone := range stackConfig.DNS.KubernetesZones {
+				if !seen[zone.Name] {
+					localZones = append(localZones, zone.Name)
+					seen[zone.Name] = true
+				}
+			}
+			for _, zone := range stackConfig.DNS.InfrastructureZones {
+				if !seen[zone.Name] {
+					localZones = append(localZones, zone.Name)
+					seen[zone.Name] = true
+				}
+			}
+		}
+		if len(localZones) > 0 {
+			cfg["local_zones"] = localZones
+			fmt.Printf("  Local zones for DNS recursor: %v\n", localZones)
 		}
 	}
 
@@ -470,7 +494,7 @@ func installSSHComponent(ctx context.Context, cmd *cli.Command, name string, sta
 	fmt.Printf("\n✓ Component %s installed successfully\n", name)
 
 	// Update setup state and component-specific config
-	if err := updateSetupState(stackConfig, name, cfg); err != nil {
+	if err := updateSetupState(cmd, stackConfig, name, cfg); err != nil {
 		// Don't fail the whole installation if state update fails
 		// Just warn the user
 		fmt.Printf("\n⚠ Warning: Failed to update setup state: %v\n", err)
@@ -493,7 +517,7 @@ func installSSHComponent(ctx context.Context, cmd *cli.Command, name string, sta
 // - If another component is being installed: if DNS exists, self-register
 func handleDNSRegistration(ctx context.Context, componentName string, stackConfig *config.Config) error {
 	// Skip if we don't have network config or cluster domain or setup state
-	if stackConfig == nil || stackConfig.Network == nil || stackConfig.Cluster.Domain == "" || stackConfig.SetupState == nil {
+	if stackConfig == nil || stackConfig.Network == nil || stackConfig.Cluster.PrimaryDomain == "" || stackConfig.SetupState == nil {
 		return nil
 	}
 
@@ -532,7 +556,7 @@ func registerExistingComponents(ctx context.Context, stackConfig *config.Config)
 	}
 
 	// Import dns package types
-	dnsZone := stackConfig.Cluster.Domain
+	dnsZone := stackConfig.Cluster.PrimaryDomain
 
 	// Register each installed component
 	registered := 0
@@ -592,7 +616,7 @@ func registerComponentDNS(ctx context.Context, componentName string, stackConfig
 		return fmt.Errorf("failed to create DNS client: %w", err)
 	}
 
-	dnsZone := stackConfig.Cluster.Domain
+	dnsZone := stackConfig.Cluster.PrimaryDomain
 
 	// Determine IP address for this component
 	var ip string
@@ -737,7 +761,7 @@ func buildSecretResolver(cfg *config.Config) (*secrets.ChainResolver, *secrets.R
 }
 
 // updateSetupState updates the setup_state and component-specific config after successful installation
-func updateSetupState(stackConfig *config.Config, componentName string, componentConfig component.ComponentConfig) error {
+func updateSetupState(cmd *cli.Command, stackConfig *config.Config, componentName string, componentConfig component.ComponentConfig) error {
 	// Map component names to their setup_state fields
 	switch componentName {
 	case "openbao":
@@ -769,7 +793,10 @@ func updateSetupState(stackConfig *config.Config, componentName string, componen
 	}
 
 	// Save the updated config
-	configPath := config.DefaultConfigPath()
+	configPath, err := config.FindConfig(cmd.String("config"))
+	if err != nil {
+		return fmt.Errorf("failed to find config path: %w", err)
+	}
 	if err := config.Save(stackConfig, configPath); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
@@ -813,14 +840,7 @@ func getTargetHostForComponent(componentName string, stackConfig *config.Config)
 }
 
 // connectToHost establishes an SSH connection to the given host
-func connectToHost(h *host.Host) (*ssh.Connection, error) {
-	// Load config to get cluster name
-	configPath := config.DefaultConfigPath()
-	cfg, err := config.Load(configPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load config: %w", err)
-	}
-
+func connectToHost(h *host.Host, cfg *config.Config) (*ssh.Connection, error) {
 	// Get SSH key from storage (prefers OpenBAO, falls back to filesystem)
 	configDir, err := config.GetConfigDir()
 	if err != nil {

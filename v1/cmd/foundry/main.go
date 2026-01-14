@@ -56,6 +56,16 @@ func main() {
 				Sources: cli.EnvVars("FOUNDRY_CONFIG"),
 			},
 		},
+		Before: func(ctx context.Context, cmd *cli.Command) (context.Context, error) {
+			// Re-initialize host registry with the config path from --config flag
+			configFlag := cmd.String("config")
+			if configFlag != "" {
+				if err := registry.InitHostRegistryWithConfig(configFlag); err != nil {
+					return ctx, fmt.Errorf("failed to initialize host registry with config %s: %w", configFlag, err)
+				}
+			}
+			return ctx, nil
+		},
 		Commands: []*cli.Command{
 			backupcmd.Command,
 			clustercmd.Commands(),

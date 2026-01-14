@@ -119,7 +119,7 @@ func runClusterInit(ctx context.Context, cmd *cli.Command) error {
 func printClusterPlan(cfg *config.Config) error {
 	fmt.Println("\nCluster initialization plan:")
 	fmt.Printf("  Cluster name: %s\n", cfg.Cluster.Name)
-	fmt.Printf("  Domain: %s\n", cfg.Cluster.Domain)
+	fmt.Printf("  Domain: %s\n", cfg.Cluster.PrimaryDomain)
 	fmt.Printf("  VIP: %s\n", cfg.Cluster.VIP)
 	fmt.Println("\nHosts:")
 
@@ -281,7 +281,7 @@ func InitializeCluster(ctx context.Context, cfg *config.Config) error {
 		VIP:          cfg.Cluster.VIP,
 		TLSSANs: []string{
 			cfg.Cluster.VIP,
-			fmt.Sprintf("%s.%s", cfg.Cluster.Name, cfg.Cluster.Domain),
+			fmt.Sprintf("%s.%s", cfg.Cluster.Name, cfg.Cluster.PrimaryDomain),
 		},
 		DisableComponents: []string{"traefik", "servicelb"},
 	}

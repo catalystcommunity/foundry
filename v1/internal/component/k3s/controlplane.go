@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 )
 
 // JoinControlPlane joins an additional control plane node to an existing K3s cluster
@@ -56,12 +57,12 @@ func JoinControlPlane(ctx context.Context, executor SSHExecutor, existingServerU
 	}
 
 	// Step 4: Wait for K3s to be ready and join the cluster
-	if err := waitForK3sReady(executor); err != nil {
+	if err := waitForK3sReady(executor, DefaultRetryConfig()); err != nil {
 		return fmt.Errorf("K3s failed to become ready: %w", err)
 	}
 
 	// Step 5: Verify node joined the cluster
-	if err := verifyNodeJoined(executor); err != nil {
+	if err := verifyNodeJoined(executor, DefaultRetryConfig()); err != nil {
 		return fmt.Errorf("node failed to join cluster: %w", err)
 	}
 
@@ -69,7 +70,7 @@ func JoinControlPlane(ctx context.Context, executor SSHExecutor, existingServerU
 }
 
 // verifyNodeJoined verifies that the node successfully joined the cluster
-func verifyNodeJoined(executor SSHExecutor) error {
+func verifyNodeJoined(executor SSHExecutor, retryCfg RetryConfig) error {
 	// Get the node name
 	result, err := executor.Exec("hostname")
 	if err != nil {
@@ -80,23 +81,24 @@ func verifyNodeJoined(executor SSHExecutor) error {
 	}
 	hostname := strings.TrimSpace(result.Stdout)
 
-	// Check if node appears in cluster
-	result, err = executor.Exec(fmt.Sprintf("sudo k3s kubectl get node %s", hostname))
-	if err != nil {
-		return fmt.Errorf("failed to query node status: %w", err)
-	}
-	if result.ExitCode != 0 {
-		return fmt.Errorf("node %s not found in cluster", hostname)
+	// Check if node appears in cluster with retries (node registration can take time)
+	var lastErr error
+	for i := 0; i < retryCfg.MaxRetries; i++ {
+		result, err = executor.Exec(fmt.Sprintf("sudo k3s kubectl get node %s", hostname))
+		if err == nil && result.ExitCode == 0 {
+			// Node found, now verify control-plane role
+			result, err = executor.Exec(fmt.Sprintf("sudo k3s kubectl get node %s -o jsonpath='{.metadata.labels.node-role\\.kubernetes\\.io/control-plane}'", hostname))
+			if err != nil {
+				return fmt.Errorf("failed to check node role: %w", err)
+			}
+			if result.ExitCode != 0 || strings.TrimSpace(result.Stdout) != "true" {
+				return fmt.Errorf("node %s does not have control-plane role", hostname)
+			}
+			return nil
+		}
+		lastErr = fmt.Errorf("node %s not found in cluster (attempt %d/%d)", hostname, i+1, retryCfg.MaxRetries)
+		time.Sleep(retryCfg.RetryDelay)
 	}
 
-	// Verify node has control-plane role
-	result, err = executor.Exec(fmt.Sprintf("sudo k3s kubectl get node %s -o jsonpath='{.metadata.labels.node-role\\.kubernetes\\.io/control-plane}'", hostname))
-	if err != nil {
-		return fmt.Errorf("failed to check node role: %w", err)
-	}
-	if result.ExitCode != 0 || strings.TrimSpace(result.Stdout) != "true" {
-		return fmt.Errorf("node %s does not have control-plane role", hostname)
-	}
-
-	return nil
+	return lastErr
 }

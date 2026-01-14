@@ -50,9 +50,9 @@ func TestNodeRemoveCommand_DryRun(t *testing.T) {
 
 	testConfig := &config.Config{
 		Cluster: config.ClusterConfig{
-			Name:   "test-cluster",
-			Domain: "example.com",
-			VIP:    "192.168.1.100",
+			Name:          "test-cluster",
+			PrimaryDomain: "example.com",
+			VIP:           "192.168.1.100",
 		},
 		Network: &config.NetworkConfig{
 			Gateway: "192.168.1.1",
@@ -143,9 +143,9 @@ func TestNodeRemoveCommand_HostNotFound(t *testing.T) {
 
 	testConfig := &config.Config{
 		Cluster: config.ClusterConfig{
-			Name:   "test",
-			Domain: "example.com",
-			VIP:    "192.168.1.100",
+			Name:          "test",
+			PrimaryDomain: "example.com",
+			VIP:           "192.168.1.100",
 		},
 		Network: &config.NetworkConfig{
 			Gateway: "192.168.1.1",

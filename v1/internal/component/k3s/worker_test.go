@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/catalystcommunity/foundry/v1/internal/ssh"
 	"github.com/stretchr/testify/assert"
@@ -302,6 +303,12 @@ func TestGenerateK3sAgentInstallCommand(t *testing.T) {
 }
 
 func TestWaitForK3sAgentReady(t *testing.T) {
+	// Use fast retry config for tests
+	fastRetryCfg := RetryConfig{
+		MaxRetries: 5,
+		RetryDelay: 10 * time.Millisecond,
+	}
+
 	tests := []struct {
 		name          string
 		exec          func(command string) (*ssh.ExecResult, error)
@@ -336,7 +343,7 @@ func TestWaitForK3sAgentReady(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			executor := &mockWorkerExecutor{execFunc: tt.exec}
-			err := waitForK3sAgentReady(executor)
+			err := waitForK3sAgentReady(executor, fastRetryCfg)
 
 			if tt.expectError {
 				require.Error(t, err)

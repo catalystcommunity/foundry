@@ -187,8 +187,8 @@ func TestConfig_ValidateVIPUniqueness(t *testing.T) {
 					},
 				},
 				Cluster: ClusterConfig{
-					Name:   "test",
-					Domain: "example.com",
+					Name:          "test",
+					PrimaryDomain: "example.com",
 					VIP:    "192.168.1.100",
 				},
 				Components: ComponentMap{"k3s": ComponentConfig{}},
@@ -210,8 +210,8 @@ func TestConfig_ValidateVIPUniqueness(t *testing.T) {
 					},
 				},
 				Cluster: ClusterConfig{
-					Name:   "test",
-					Domain: "example.com",
+					Name:          "test",
+					PrimaryDomain: "example.com",
 					VIP:    "192.168.1.10", // Conflicts with host1
 				},
 				Components: ComponentMap{"k3s": ComponentConfig{}},
@@ -234,8 +234,8 @@ func TestConfig_ValidateVIPUniqueness(t *testing.T) {
 					},
 				},
 				Cluster: ClusterConfig{
-					Name:   "test",
-					Domain: "example.com",
+					Name:          "test",
+					PrimaryDomain: "example.com",
 					VIP:    "192.168.1.20", // Conflicts with node1
 				},
 				Components: ComponentMap{"k3s": ComponentConfig{}},

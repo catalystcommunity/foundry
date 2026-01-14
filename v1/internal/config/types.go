@@ -199,20 +199,8 @@ func (d *DNSConfig) Validate() error {
 		}
 	}
 
-	// Validate zone name uniqueness across both lists
-	zoneNames := make(map[string]bool)
-	for _, zone := range d.InfrastructureZones {
-		if zoneNames[zone.Name] {
-			return fmt.Errorf("duplicate zone name: %q", zone.Name)
-		}
-		zoneNames[zone.Name] = true
-	}
-	for _, zone := range d.KubernetesZones {
-		if zoneNames[zone.Name] {
-			return fmt.Errorf("duplicate zone name: %q", zone.Name)
-		}
-		zoneNames[zone.Name] = true
-	}
+	// Note: Duplicate zone names across infrastructure_zones and kubernetes_zones
+	// are allowed - they will be deduplicated during zone creation in createDNSZones
 
 	// Validate backend
 	if d.Backend == "" {

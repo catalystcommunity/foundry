@@ -175,9 +175,9 @@ func setupTestConfig(t *testing.T) (string, *httptest.Server) {
 			APIKey:     "test-api-key", // Plain value for testing (not a secret ref)
 		},
 		Cluster: config.ClusterConfig{
-			Name:   "test-cluster",
-			Domain: "example.com",
-			VIP:    "192.168.1.100",
+			Name:          "test-cluster",
+			PrimaryDomain: "example.com",
+			VIP:           "192.168.1.100",
 		},
 		Components: config.ComponentMap{
 			"openbao": config.ComponentConfig{},

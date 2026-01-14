@@ -102,9 +102,9 @@ func createTestConfig(t *testing.T) *config.Config {
 			},
 		},
 		Cluster: config.ClusterConfig{
-			Name:   "test-cluster",
-			Domain: "example.com",
-			VIP:    "192.168.1.100",
+			Name:          "test-cluster",
+			PrimaryDomain: "example.com",
+			VIP:           "192.168.1.100",
 		},
 		Components: config.ComponentMap{
 			"openbao": {},
@@ -152,7 +152,7 @@ func TestValidateStackConfig(t *testing.T) {
 				},
 				Cluster: config.ClusterConfig{
 					Name:   "test",
-					Domain: "example.com",
+					PrimaryDomain: "example.com",
 				},
 				Components: config.ComponentMap{
 					"k3s": {},
@@ -176,7 +176,7 @@ func TestValidateStackConfig(t *testing.T) {
 				},
 				Cluster: config.ClusterConfig{
 					Name:   "test",
-					Domain: "example.com",
+					PrimaryDomain: "example.com",
 				},
 				Components: config.ComponentMap{
 					"k3s": {},
@@ -200,7 +200,7 @@ func TestValidateStackConfig(t *testing.T) {
 				},
 				Cluster: config.ClusterConfig{
 					Name:   "test",
-					Domain: "example.com",
+					PrimaryDomain: "example.com",
 				},
 				Hosts: []*host.Host{
 					{Hostname: "openbao1", Address: "192.168.1.10", Roles: []string{host.RoleOpenBAO}},
@@ -227,7 +227,7 @@ func TestValidateStackConfig(t *testing.T) {
 				},
 				Cluster: config.ClusterConfig{
 					Name:   "test",
-					Domain: "example.com",
+					PrimaryDomain: "example.com",
 					// VIP is intentionally missing
 				},
 				Hosts: []*host.Host{
@@ -257,7 +257,7 @@ func TestValidateStackConfig(t *testing.T) {
 				},
 				Cluster: config.ClusterConfig{
 					Name:   "test",
-					Domain: "example.com",
+					PrimaryDomain: "example.com",
 					VIP:    "192.168.1.100",
 				},
 				Hosts: []*host.Host{
@@ -287,7 +287,7 @@ func TestValidateStackConfig(t *testing.T) {
 				},
 				Cluster: config.ClusterConfig{
 					Name:   "test",
-					Domain: "example.com",
+					PrimaryDomain: "example.com",
 					VIP:    "192.168.1.100",
 				},
 				Hosts: []*host.Host{
@@ -316,7 +316,7 @@ func TestValidateStackConfig(t *testing.T) {
 					APIKey:              "test-api-key",
 				},
 				Cluster: config.ClusterConfig{
-					Domain: "example.com",
+					PrimaryDomain: "example.com",
 					VIP:    "192.168.1.100",
 					// Name intentionally missing
 				},
@@ -347,7 +347,7 @@ func TestValidateStackConfig(t *testing.T) {
 				},
 				Cluster: config.ClusterConfig{
 					Name:   "test",
-					Domain: "example.com",
+					PrimaryDomain: "example.com",
 					VIP:    "192.168.1.100",
 				},
 				Hosts: []*host.Host{

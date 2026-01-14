@@ -18,6 +18,7 @@ import (
 	"github.com/catalystcommunity/foundry/v1/internal/component"
 	"github.com/catalystcommunity/foundry/v1/internal/component/certmanager"
 	"github.com/catalystcommunity/foundry/v1/internal/component/contour"
+	"github.com/catalystcommunity/foundry/v1/internal/component/dns"
 	"github.com/catalystcommunity/foundry/v1/internal/component/externaldns"
 	"github.com/catalystcommunity/foundry/v1/internal/component/gatewayapi"
 	"github.com/catalystcommunity/foundry/v1/internal/component/grafana"
@@ -253,7 +254,7 @@ func runStackInstall(ctx context.Context, cmd *cli.Command) error {
 	fmt.Println(strings.Repeat("=", 60))
 	fmt.Println("\nYour infrastructure stack is ready:")
 	fmt.Printf("  Cluster:   %s\n", cfg.Cluster.Name)
-	fmt.Printf("  Domain:    %s\n", cfg.Cluster.Domain)
+	fmt.Printf("  Domain:    %s\n", cfg.Cluster.PrimaryDomain)
 	if cfg.Network != nil && cfg.Cluster.VIP != "" {
 		fmt.Printf("  K8s VIP:   %s\n", cfg.Cluster.VIP)
 	}
@@ -356,9 +357,9 @@ func createConfigFromFlags(clusterName, domain string, hosts []string, vip strin
 
 	cfg := &config.Config{
 		Cluster: config.ClusterConfig{
-			Name:   clusterName,
-			Domain: domain,
-			VIP:    vip,
+			Name:          clusterName,
+			PrimaryDomain: domain,
+			VIP:           vip,
 		},
 		Hosts: hostConfigs,
 		Network: &config.NetworkConfig{
@@ -435,9 +436,9 @@ func createConfigInteractive() (*config.Config, error) {
 
 	cfg := &config.Config{
 		Cluster: config.ClusterConfig{
-			Name:   clusterName,
-			Domain: domain,
-			VIP:    vip,
+			Name:          clusterName,
+			PrimaryDomain: domain,
+			VIP:           vip,
 		},
 		Hosts: []*config.Host{
 			{
@@ -561,6 +562,9 @@ func ensureNetworkPlanned(ctx context.Context, cfg *config.Config, nonInteractiv
 func installComponents(ctx context.Context, cfg *config.Config, configPath string, skipConfirm bool, upgrade bool) error {
 	fmt.Println("\n[3/4] Component Installation")
 	fmt.Println(strings.Repeat("-", 60))
+
+	// Ensure DNS config exists with defaults
+	ensureDefaultDNSConfig(cfg)
 
 	// Helper function to check component status via registry
 	checkComponentStatus := func(name string) bool {
@@ -755,6 +759,16 @@ func installComponents(ctx context.Context, cfg *config.Config, configPath strin
 				fmt.Printf("\n[%d/%d] Upgrading %s...\n", i+1, len(components), comp.name)
 			} else {
 				fmt.Printf("\n[%d/%d] %s: ✓ Already installed (skipping)\n", i+1, len(components), comp.name)
+				// DNS is installed but ensure zones exist (sync config with reality)
+				if comp.name == "dns" {
+					configDir, err := config.GetConfigDir()
+					if err != nil {
+						return fmt.Errorf("failed to get config directory: %w", err)
+					}
+					if err := createDNSZones(ctx, cfg, configDir); err != nil {
+						return fmt.Errorf("failed to ensure DNS zones: %w", err)
+					}
+				}
 				continue
 			}
 		} else {
@@ -764,6 +778,17 @@ func installComponents(ctx context.Context, cfg *config.Config, configPath strin
 		// Install/upgrade the component
 		if err := installSingleComponent(ctx, cfg, comp.name); err != nil {
 			return fmt.Errorf("%s installation failed: %w", comp.name, err)
+		}
+
+		// After DNS is installed, create zones in PowerDNS
+		if comp.name == "dns" {
+			configDir, err := config.GetConfigDir()
+			if err != nil {
+				return fmt.Errorf("failed to get config directory: %w", err)
+			}
+			if err := createDNSZones(ctx, cfg, configDir); err != nil {
+				return fmt.Errorf("failed to create DNS zones: %w", err)
+			}
 		}
 
 		// Update state
@@ -985,6 +1010,32 @@ func buildExternalDNSConfig(ctx context.Context, cfg *config.Config, configDir s
 		}
 	}
 
+	// Build domain filters from primary_domain + kubernetes_zones (deduplicated)
+	domainFilters := []string{}
+	seen := make(map[string]bool)
+
+	// Always include primary_domain first
+	if cfg.Cluster.PrimaryDomain != "" {
+		domainFilters = append(domainFilters, cfg.Cluster.PrimaryDomain)
+		seen[cfg.Cluster.PrimaryDomain] = true
+	}
+
+	// Add zones from kubernetes_zones (skip duplicates)
+	if cfg.DNS != nil {
+		for _, zone := range cfg.DNS.KubernetesZones {
+			if !seen[zone.Name] {
+				domainFilters = append(domainFilters, zone.Name)
+				seen[zone.Name] = true
+			}
+		}
+	}
+
+	// Build domain filters YAML list
+	domainFiltersYAML := ""
+	for _, df := range domainFilters {
+		domainFiltersYAML += fmt.Sprintf("  - %s\n", df)
+	}
+
 	// Default Helm values for external-dns (YAML format for readability)
 	defaultValuesYAML := fmt.Sprintf(`
 provider:
@@ -993,8 +1044,7 @@ pdns:
   apiUrl: %s
   apiKey: %s
 domainFilters:
-  - %s
-sources:
+%ssources:
   - ingress
   - service
 policy: upsert-only
@@ -1004,13 +1054,13 @@ resources:
   requests:
     cpu: 50m
     memory: 64Mi
-`, pdnsAPIURL, pdnsAPIKey, cfg.Cluster.Domain)
+`, pdnsAPIURL, pdnsAPIKey, domainFiltersYAML)
 
 	defaultValues := parseYAMLValues(defaultValuesYAML)
 
 	componentConfig := component.ComponentConfig{
 		"provider":       "pdns",
-		"domain_filters": []string{cfg.Cluster.Domain},
+		"domain_filters": domainFilters,
 		"powerdns":       pdnsConfig,
 	}
 
@@ -1067,7 +1117,7 @@ func getDNSAPIKeyFromOpenBAO(ctx context.Context, cfg *config.Config, configDir 
 func buildStorageConfig(ctx context.Context, cfg *config.Config) component.ComponentConfig {
 	// Calculate optimal replica count based on configured cluster nodes
 	replicaCount := calculateOptimalReplicaCount(cfg)
-	ingressHost := fmt.Sprintf("longhorn.%s", cfg.Cluster.Domain)
+	ingressHost := fmt.Sprintf("longhorn.%s", cfg.Cluster.PrimaryDomain)
 
 	longhornConfig := map[string]interface{}{
 		"replica_count":   replicaCount,
@@ -1201,8 +1251,8 @@ func buildSeaweedFSConfig(cfg *config.Config) component.ComponentConfig {
 	seaweedfsCfg.Config["secret_key"] = secretKey
 	cfg.Components["seaweedfs"] = seaweedfsCfg
 
-	ingressHostFiler := fmt.Sprintf("seaweedfs.%s", cfg.Cluster.Domain)
-	ingressHostS3 := fmt.Sprintf("s3.%s", cfg.Cluster.Domain)
+	ingressHostFiler := fmt.Sprintf("seaweedfs.%s", cfg.Cluster.PrimaryDomain)
+	ingressHostS3 := fmt.Sprintf("s3.%s", cfg.Cluster.PrimaryDomain)
 
 	// Default Helm values for SeaweedFS (YAML format for readability)
 	defaultValuesYAML := fmt.Sprintf(`
@@ -1290,7 +1340,7 @@ func getSeaweedFSCredentials(cfg *config.Config) (accessKey, secretKey string) {
 
 // buildPrometheusConfig creates config for Prometheus component
 func buildPrometheusConfig(cfg *config.Config) component.ComponentConfig {
-	ingressHost := fmt.Sprintf("prometheus.%s", cfg.Cluster.Domain)
+	ingressHost := fmt.Sprintf("prometheus.%s", cfg.Cluster.PrimaryDomain)
 
 	// Default Helm values for kube-prometheus-stack (YAML format for readability)
 	defaultValuesYAML := fmt.Sprintf(`
@@ -1376,7 +1426,7 @@ prometheusOperator:
 // buildLokiConfig creates config for Loki component
 func buildLokiConfig(cfg *config.Config) component.ComponentConfig {
 	accessKey, secretKey := getSeaweedFSCredentials(cfg)
-	ingressHost := fmt.Sprintf("loki.%s", cfg.Cluster.Domain)
+	ingressHost := fmt.Sprintf("loki.%s", cfg.Cluster.PrimaryDomain)
 
 	// Default Helm values for Loki (YAML format for readability)
 	defaultValuesYAML := fmt.Sprintf(`
@@ -1463,7 +1513,7 @@ backend:
 
 // buildGrafanaConfig creates config for Grafana component
 func buildGrafanaConfig(cfg *config.Config) component.ComponentConfig {
-	ingressHost := fmt.Sprintf("grafana.%s", cfg.Cluster.Domain)
+	ingressHost := fmt.Sprintf("grafana.%s", cfg.Cluster.PrimaryDomain)
 	prometheusURL := "http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090"
 	lokiURL := "http://loki-gateway.monitoring.svc.cluster.local:80"
 
@@ -1744,9 +1794,30 @@ func buildComponentConfig(ctx context.Context, cfg *config.Config, componentName
 			compCfg["api_key"] = apiKey
 		}
 
-		// Pass cluster domain as local zone for Recursor forwarding
-		if cfg.Cluster.Domain != "" {
-			compCfg["local_zones"] = []string{cfg.Cluster.Domain}
+		// Pass all zones as local zones for Recursor forwarding
+		// This includes primary_domain + kubernetes_zones + infrastructure_zones (deduplicated)
+		localZones := []string{}
+		seen := make(map[string]bool)
+		if cfg.Cluster.PrimaryDomain != "" {
+			localZones = append(localZones, cfg.Cluster.PrimaryDomain)
+			seen[cfg.Cluster.PrimaryDomain] = true
+		}
+		if cfg.DNS != nil {
+			for _, zone := range cfg.DNS.KubernetesZones {
+				if !seen[zone.Name] {
+					localZones = append(localZones, zone.Name)
+					seen[zone.Name] = true
+				}
+			}
+			for _, zone := range cfg.DNS.InfrastructureZones {
+				if !seen[zone.Name] {
+					localZones = append(localZones, zone.Name)
+					seen[zone.Name] = true
+				}
+			}
+		}
+		if len(localZones) > 0 {
+			compCfg["local_zones"] = localZones
 		}
 
 	case "zot":
@@ -1903,7 +1974,7 @@ func validateStackConfig(cfg *config.Config) error {
 	if cfg.Cluster.Name == "" {
 		return fmt.Errorf("cluster.name is required")
 	}
-	if cfg.Cluster.Domain == "" {
+	if cfg.Cluster.PrimaryDomain == "" {
 		return fmt.Errorf("cluster.domain is required")
 	}
 	if len(cfg.GetClusterHosts()) == 0 {
@@ -1948,7 +2019,7 @@ func printStackPlan(cfg *config.Config, nextStep setup.Step) error {
 
 	fmt.Println("\nConfiguration:")
 	fmt.Printf("  Cluster:   %s\n", cfg.Cluster.Name)
-	fmt.Printf("  Domain:    %s\n", cfg.Cluster.Domain)
+	fmt.Printf("  Domain:    %s\n", cfg.Cluster.PrimaryDomain)
 	fmt.Printf("  Hosts:     %d\n", len(cfg.Hosts))
 	for i, h := range cfg.Hosts {
 		rolesStr := strings.Join(h.Roles, ", ")
@@ -2317,7 +2388,7 @@ func findTemplatePlaceholders(cfg *config.Config) []string {
 
 	// Check cluster config
 	checkValue(cfg.Cluster.Name, "cluster.name")
-	checkValue(cfg.Cluster.Domain, "cluster.domain")
+	checkValue(cfg.Cluster.PrimaryDomain, "cluster.domain")
 	// Node configuration now comes from hosts with cluster roles
 
 	// Check network config
@@ -2767,4 +2838,189 @@ func saveComponentConfig(cfg *config.Config, componentName string, componentConf
 
 	compCfg.Config["installed"] = true
 	cfg.Components[componentName] = compCfg
+}
+
+// ensureDefaultDNSConfig ensures the DNS config exists with sensible defaults.
+// Zone creation is handled by createDNSZones using primary_domain directly.
+func ensureDefaultDNSConfig(cfg *config.Config) {
+	if cfg.DNS == nil {
+		cfg.DNS = &config.DNSConfig{
+			Backend:    "gsqlite3",
+			Forwarders: []string{"8.8.8.8", "1.1.1.1"},
+		}
+	}
+}
+
+// createDNSZones creates all configured zones in PowerDNS and adds initial records.
+// This is called after the DNS component is installed and running.
+//
+// Zone creation logic:
+// 1. primary_domain is always created as the main zone with infrastructure records + wildcard
+// 2. Additional kubernetes_zones get created with wildcard (skip if duplicate of primary_domain)
+// 3. infrastructure_zones (if any) get created with infrastructure records
+func createDNSZones(ctx context.Context, cfg *config.Config, configDir string) error {
+	fmt.Println("  Creating DNS zones in PowerDNS...")
+
+	primaryDomain := cfg.Cluster.PrimaryDomain
+	if primaryDomain == "" {
+		fmt.Println("  No primary_domain configured, skipping zone creation")
+		return nil
+	}
+
+	// Get DNS API client
+	dnsAddr, err := cfg.GetPrimaryDNSAddress()
+	if err != nil {
+		return fmt.Errorf("failed to get DNS address: %w", err)
+	}
+
+	// Get API key from OpenBAO
+	apiKey, err := getDNSAPIKeyFromOpenBAO(ctx, cfg, configDir)
+	if err != nil {
+		return fmt.Errorf("failed to get DNS API key: %w", err)
+	}
+
+	client := dns.NewClient(fmt.Sprintf("http://%s:8081", dnsAddr), apiKey)
+
+	// Get infrastructure host IPs for record creation
+	var openbaoIP, dnsIP, zotIP string
+	if addr, err := cfg.GetPrimaryOpenBAOAddress(); err == nil {
+		openbaoIP = addr
+	}
+	if addr, err := cfg.GetPrimaryDNSAddress(); err == nil {
+		dnsIP = addr
+	}
+	if addr, err := cfg.GetPrimaryZotAddress(); err == nil {
+		zotIP = addr
+	}
+	k8sVIP := cfg.Cluster.VIP
+
+	// Track which zones we've processed to avoid duplicates
+	processedZones := make(map[string]bool)
+
+	// 1. Create primary_domain zone with infrastructure records + wildcard
+	primaryZoneConfig := dns.ZoneConfig{
+		Name:        primaryDomain,
+		Type:        dns.ZoneTypeNative,
+		IsPublic:    false,
+		Nameservers: []string{fmt.Sprintf("ns1.%s", primaryDomain)},
+	}
+	if err := createZoneIfNotExists(client, primaryZoneConfig, "primary"); err != nil {
+		return fmt.Errorf("failed to create primary zone %s: %w", primaryDomain, err)
+	}
+	processedZones[primaryDomain] = true
+
+	// Add infrastructure A records to primary zone
+	infraConfig := dns.InfrastructureRecordConfig{
+		Zone:      primaryDomain,
+		OpenBAOIP: openbaoIP,
+		DNSIP:     dnsIP,
+		ZotIP:     zotIP,
+		K8sVIP:    k8sVIP,
+	}
+	if err := dns.InitializeInfrastructureDNS(client, infraConfig); err != nil {
+		fmt.Printf("  Warning: Failed to add infrastructure records to %s: %v\n", primaryDomain, err)
+	}
+
+	// Add wildcard record to primary zone
+	if k8sVIP != "" {
+		if err := dns.AddWildcardRecord(client, primaryDomain, k8sVIP); err != nil {
+			fmt.Printf("  Warning: Failed to add wildcard record to %s: %v\n", primaryDomain, err)
+		}
+	}
+
+	// 2. Create additional kubernetes_zones (skip if same as primary_domain)
+	if cfg.DNS != nil {
+		for _, zone := range cfg.DNS.KubernetesZones {
+			if processedZones[zone.Name] {
+				continue // Skip duplicates
+			}
+
+			zoneConfig := dns.ZoneConfig{
+				Name:        zone.Name,
+				Type:        dns.ZoneTypeNative,
+				IsPublic:    zone.Public,
+				Nameservers: []string{fmt.Sprintf("ns1.%s", zone.Name)},
+			}
+			if zone.PublicCNAME != nil {
+				zoneConfig.PublicCNAME = *zone.PublicCNAME
+			}
+
+			if err := createZoneIfNotExists(client, zoneConfig, "kubernetes"); err != nil {
+				return fmt.Errorf("failed to create kubernetes zone %s: %w", zone.Name, err)
+			}
+			processedZones[zone.Name] = true
+
+			// Add wildcard record
+			if k8sVIP != "" {
+				if err := dns.AddWildcardRecord(client, zone.Name, k8sVIP); err != nil {
+					fmt.Printf("  Warning: Failed to add wildcard record to %s: %v\n", zone.Name, err)
+				}
+			}
+		}
+
+		// 3. Create infrastructure_zones (if any) with infrastructure records
+		for _, zone := range cfg.DNS.InfrastructureZones {
+			if processedZones[zone.Name] {
+				continue // Skip duplicates
+			}
+
+			zoneConfig := dns.ZoneConfig{
+				Name:        zone.Name,
+				Type:        dns.ZoneTypeNative,
+				IsPublic:    zone.Public,
+				Nameservers: []string{fmt.Sprintf("ns1.%s", zone.Name)},
+			}
+			if zone.PublicCNAME != nil {
+				zoneConfig.PublicCNAME = *zone.PublicCNAME
+			}
+
+			if err := createZoneIfNotExists(client, zoneConfig, "infrastructure"); err != nil {
+				return fmt.Errorf("failed to create infrastructure zone %s: %w", zone.Name, err)
+			}
+			processedZones[zone.Name] = true
+
+			// Add infrastructure A records
+			zoneInfraConfig := dns.InfrastructureRecordConfig{
+				Zone:      zone.Name,
+				OpenBAOIP: openbaoIP,
+				DNSIP:     dnsIP,
+				ZotIP:     zotIP,
+				K8sVIP:    k8sVIP,
+			}
+			if err := dns.InitializeInfrastructureDNS(client, zoneInfraConfig); err != nil {
+				fmt.Printf("  Warning: Failed to add infrastructure records to %s: %v\n", zone.Name, err)
+			}
+		}
+	}
+
+	fmt.Println("  ✓ DNS zones created")
+	return nil
+}
+
+// createZoneIfNotExists creates a zone in PowerDNS if it doesn't already exist
+func createZoneIfNotExists(client *dns.Client, zoneConfig dns.ZoneConfig, zoneType string) error {
+	// Check if zone exists
+	zones, err := client.ListZones()
+	if err != nil {
+		return fmt.Errorf("failed to list zones: %w", err)
+	}
+
+	zoneName := zoneConfig.Name
+	if !strings.HasSuffix(zoneName, ".") {
+		zoneName = zoneName + "."
+	}
+
+	for _, z := range zones {
+		if z.Name == zoneName {
+			fmt.Printf("  Zone %s already exists (skipping)\n", zoneConfig.Name)
+			return nil
+		}
+	}
+
+	// Create zone
+	fmt.Printf("  Creating %s zone: %s\n", zoneType, zoneConfig.Name)
+	if zoneType == "infrastructure" {
+		return dns.CreateInfrastructureZone(client, zoneConfig)
+	}
+	return dns.CreateKubernetesZone(client, zoneConfig)
 }

@@ -24,7 +24,7 @@ func runStackStatus(ctx context.Context, cmd *cli.Command) error {
 		return fmt.Errorf("failed to find config: %w", err)
 	}
 
-	_, err = config.Load(configPath)
+	cfg, err := config.Load(configPath)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
@@ -44,13 +44,13 @@ func runStackStatus(ctx context.Context, cmd *cli.Command) error {
 		// Use the same checking logic as component status command
 		switch compName {
 		case "openbao":
-			status, err = component.CheckOpenBAOStatus(ctx)
+			status, err = component.CheckOpenBAOStatus(ctx, cfg)
 		case "dns":
-			status, err = component.CheckDNSStatus(ctx)
+			status, err = component.CheckDNSStatus(ctx, cfg)
 		case "zot":
-			status, err = component.CheckZotStatus(ctx)
+			status, err = component.CheckZotStatus(ctx, cfg)
 		case "k3s":
-			status, err = component.CheckK3sStatus(ctx)
+			status, err = component.CheckK3sStatus(ctx, cfg)
 		case "contour", "cert-manager":
 			// These components don't have dedicated status checkers yet
 			comp := internalComponent.Get(compName)

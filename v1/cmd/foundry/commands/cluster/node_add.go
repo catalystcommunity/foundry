@@ -266,7 +266,7 @@ func addNodeToCluster(ctx context.Context, hostname string, nodeRole *k3s.Determ
 		VIP:          cfg.Cluster.VIP,
 		TLSSANs: []string{
 			cfg.Cluster.VIP,
-			fmt.Sprintf("%s.%s", cfg.Cluster.Name, cfg.Cluster.Domain),
+			fmt.Sprintf("%s.%s", cfg.Cluster.Name, cfg.Cluster.PrimaryDomain),
 		},
 		DisableComponents: []string{"traefik", "servicelb"},
 	}

@@ -58,7 +58,7 @@ func TestDNSConfig_Validate(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "duplicate zone names",
+			name: "duplicate zone names allowed",
 			config: DNSConfig{
 				InfrastructureZones: []DNSZone{
 					{Name: "example.com", Public: true, PublicCNAME: strPtr("home.example.com")},
@@ -69,8 +69,7 @@ func TestDNSConfig_Validate(t *testing.T) {
 				Backend: "sqlite",
 				APIKey:  "test-key",
 			},
-			wantErr: true,
-			errMsg:  "duplicate zone name",
+			wantErr: false, // Duplicates are allowed and deduplicated during zone creation
 		},
 		{
 			name: "missing backend",
@@ -216,9 +215,9 @@ func TestConfig_WithNetworkAndDNS(t *testing.T) {
 			APIKey:  "${secret:foundry-core/dns:api_key}",
 		},
 		Cluster: ClusterConfig{
-			Name:   "test",
-			Domain: "example.com",
-			VIP:    "192.168.1.100",
+			Name:          "test",
+			PrimaryDomain: "example.com",
+			VIP:           "192.168.1.100",
 		},
 		Components: ComponentMap{
 			"k3s": ComponentConfig{},
