@@ -40,7 +40,8 @@ type DNSZone struct {
 // ClusterConfig represents a structured data type
 type ClusterConfig struct {
 	Name string `json:"name" yaml:"name"`
-	Domain string `json:"domain" yaml:"domain"`
+	Domain *string `json:"domain,omitempty" yaml:"domain,omitempty"`
+	PrimaryDomain string `json:"primary_domain" yaml:"primary_domain"`
 	VIP string `json:"vip" yaml:"vip"`
 }
 

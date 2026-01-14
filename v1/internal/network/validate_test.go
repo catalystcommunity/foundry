@@ -40,8 +40,8 @@ func TestValidateIPs(t *testing.T) {
 					},
 				},
 				Cluster: config.ClusterConfig{
-					Name:   "test",
-					Domain: "example.com",
+					Name:          "test",
+					PrimaryDomain: "example.com",
 					VIP:    "192.168.1.100",
 				},
 				Components: config.ComponentMap{
@@ -65,8 +65,8 @@ func TestValidateIPs(t *testing.T) {
 					},
 				},
 				Cluster: config.ClusterConfig{
-					Name:   "test",
-					Domain: "example.com",
+					Name:          "test",
+					PrimaryDomain: "example.com",
 					VIP:    "192.168.1.100",
 				},
 				Components: config.ComponentMap{
@@ -91,8 +91,8 @@ func TestValidateIPs(t *testing.T) {
 					},
 				},
 				Cluster: config.ClusterConfig{
-					Name:   "test",
-					Domain: "example.com",
+					Name:          "test",
+					PrimaryDomain: "example.com",
 					VIP:    "10.0.0.100", // Completely different network
 				},
 				Components: config.ComponentMap{
@@ -127,8 +127,8 @@ func TestValidateIPs(t *testing.T) {
 					},
 				},
 				Cluster: config.ClusterConfig{
-					Name:   "test",
-					Domain: "example.com",
+					Name:          "test",
+					PrimaryDomain: "example.com",
 					VIP:    "192.168.1.100",
 				},
 				Components: config.ComponentMap{
@@ -157,8 +157,8 @@ func TestValidateIPs(t *testing.T) {
 					},
 				},
 				Cluster: config.ClusterConfig{
-					Name:   "test",
-					Domain: "example.com",
+					Name:          "test",
+					PrimaryDomain: "example.com",
 					VIP:    "192.168.1.100",
 				},
 				Components: config.ComponentMap{
@@ -275,8 +275,8 @@ func TestCheckDHCPConflicts(t *testing.T) {
 					},
 				},
 				Cluster: config.ClusterConfig{
-					Name:   "test",
-					Domain: "example.com",
+					Name:          "test",
+					PrimaryDomain: "example.com",
 					VIP:    "192.168.1.100",
 				},
 				Components: config.ComponentMap{
@@ -314,8 +314,8 @@ func TestCheckDHCPConflicts(t *testing.T) {
 					},
 				},
 				Cluster: config.ClusterConfig{
-					Name:   "test",
-					Domain: "example.com",
+					Name:          "test",
+					PrimaryDomain: "example.com",
 					VIP:    "192.168.1.100",
 				},
 				Components: config.ComponentMap{
@@ -343,8 +343,8 @@ func TestCheckDHCPConflicts(t *testing.T) {
 					},
 				},
 				Cluster: config.ClusterConfig{
-					Name:   "test",
-					Domain: "example.com",
+					Name:          "test",
+					PrimaryDomain: "example.com",
 					VIP:    "192.168.1.75", // Inside DHCP range
 				},
 				Components: config.ComponentMap{
@@ -373,8 +373,8 @@ func TestCheckDHCPConflicts(t *testing.T) {
 					},
 				},
 				Cluster: config.ClusterConfig{
-					Name:   "test",
-					Domain: "example.com",
+					Name:          "test",
+					PrimaryDomain: "example.com",
 					VIP:    "192.168.1.100",
 				},
 				Components: config.ComponentMap{
@@ -413,8 +413,8 @@ func TestCheckDHCPConflicts(t *testing.T) {
 					},
 				},
 				Cluster: config.ClusterConfig{
-					Name:   "test",
-					Domain: "example.com",
+					Name:          "test",
+					PrimaryDomain: "example.com",
 					VIP:    "192.168.1.100",
 				},
 				Components: config.ComponentMap{
@@ -443,8 +443,8 @@ func TestCheckDHCPConflicts(t *testing.T) {
 					},
 				},
 				Cluster: config.ClusterConfig{
-					Name:   "test",
-					Domain: "example.com",
+					Name:          "test",
+					PrimaryDomain: "example.com",
 					VIP:    "192.168.1.100",
 				},
 				Components: config.ComponentMap{
@@ -473,8 +473,8 @@ func TestCheckDHCPConflicts(t *testing.T) {
 					},
 				},
 				Cluster: config.ClusterConfig{
-					Name:   "test",
-					Domain: "example.com",
+					Name:          "test",
+					PrimaryDomain: "example.com",
 					VIP:    "192.168.1.99", // Exactly at end
 				},
 				Components: config.ComponentMap{
@@ -503,8 +503,8 @@ func TestCheckDHCPConflicts(t *testing.T) {
 					},
 				},
 				Cluster: config.ClusterConfig{
-					Name:   "test",
-					Domain: "example.com",
+					Name:          "test",
+					PrimaryDomain: "example.com",
 					VIP:    "192.168.1.100",
 				},
 				Components: config.ComponentMap{

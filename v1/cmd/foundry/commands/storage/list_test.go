@@ -28,9 +28,9 @@ func TestListCommand_EmptyStorage(t *testing.T) {
 
 	cfg := &config.Config{
 		Cluster: config.ClusterConfig{
-			Name:   "test",
-			Domain: "test.local",
-			VIP:    "192.168.1.100",
+			Name:          "test",
+			PrimaryDomain: "test.local",
+			VIP:           "192.168.1.100",
 		},
 		Components: config.ComponentMap{
 			"k3s": config.ComponentConfig{},
@@ -53,9 +53,9 @@ func TestListCommand_WithLonghorn(t *testing.T) {
 
 	cfg := &config.Config{
 		Cluster: config.ClusterConfig{
-			Name:   "test",
-			Domain: "test.local",
-			VIP:    "192.168.1.100",
+			Name:          "test",
+			PrimaryDomain: "test.local",
+			VIP:           "192.168.1.100",
 		},
 		Components: config.ComponentMap{
 			"k3s": config.ComponentConfig{},
@@ -82,9 +82,9 @@ func TestListCommand_WithLocalPath(t *testing.T) {
 
 	cfg := &config.Config{
 		Cluster: config.ClusterConfig{
-			Name:   "test",
-			Domain: "test.local",
-			VIP:    "192.168.1.100",
+			Name:          "test",
+			PrimaryDomain: "test.local",
+			VIP:           "192.168.1.100",
 		},
 		Components: config.ComponentMap{
 			"k3s": config.ComponentConfig{},
@@ -111,9 +111,9 @@ func TestListCommand_WithNFS(t *testing.T) {
 
 	cfg := &config.Config{
 		Cluster: config.ClusterConfig{
-			Name:   "test",
-			Domain: "test.local",
-			VIP:    "192.168.1.100",
+			Name:          "test",
+			PrimaryDomain: "test.local",
+			VIP:           "192.168.1.100",
 		},
 		Components: config.ComponentMap{
 			"k3s": config.ComponentConfig{},
@@ -150,8 +150,8 @@ func TestStorageBackendTypes(t *testing.T) {
 
 			cfg := &config.Config{
 				Cluster: config.ClusterConfig{
-					Name:   "test",
-					Domain: "test.local",
+					Name:          "test",
+					PrimaryDomain: "test.local",
 				},
 				Components: config.ComponentMap{
 					"k3s": config.ComponentConfig{},

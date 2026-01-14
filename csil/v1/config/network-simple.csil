@@ -43,10 +43,12 @@ DNSZone = {
 }
 
 ; Cluster configuration for K3s
+; Note: primary_domain is the preferred field; domain is deprecated but still supported for backwards compatibility
 ClusterConfig = {
     name: text,
-    domain: text,
-    vip: text @go_name("VIP")  ; Kubernetes VIP (Virtual IP for cluster API access)
+    ? domain: text,
+    primary_domain: text @go_name("PrimaryDomain"),
+    vip: text @go_name("VIP")
 }
 
 ; Map of component names to their configurations

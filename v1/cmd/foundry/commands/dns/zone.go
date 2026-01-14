@@ -56,13 +56,17 @@ Zone types:
   - Master: Zone can be transferred to slaves
   - Slave: Zone is replicated from a master
 
+By default, zones are added to kubernetes_zones in the config (for external-dns).
+Use --infrastructure to add to infrastructure_zones instead (for static infra records).
+
 For split-horizon public zones, use --public with --public-cname to specify
 the DDNS hostname for external queries.
 
 Examples:
   foundry dns zone create example.com
   foundry dns zone create example.com --type Master
-  foundry dns zone create infraexample.com --public --public-cname home.example.com`,
+  foundry dns zone create infra.example.com --infrastructure
+  foundry dns zone create example.com --public --public-cname home.example.com`,
 	Flags: []cli.Flag{
 		&cli.StringFlag{
 			Name:  "type",
@@ -77,6 +81,16 @@ Examples:
 		&cli.StringFlag{
 			Name:  "public-cname",
 			Usage: "DDNS hostname for public queries (required if --public)",
+		},
+		&cli.BoolFlag{
+			Name:  "infrastructure",
+			Usage: "Add to infrastructure_zones instead of kubernetes_zones",
+			Value: false,
+		},
+		&cli.BoolFlag{
+			Name:  "no-wildcard",
+			Usage: "Skip adding wildcard record (for kubernetes zones)",
+			Value: false,
 		},
 	},
 	Action: runZoneCreate,
@@ -176,12 +190,18 @@ func runZoneCreate(ctx context.Context, cmd *cli.Command) error {
 		return fmt.Errorf("zone name is required")
 	}
 
-	zoneName := cmd.Args().Get(0)
+	zoneNameArg := cmd.Args().Get(0)
 	zoneType := cmd.String("type")
 	isPublic := cmd.Bool("public")
 	publicCNAME := cmd.String("public-cname")
+	isInfrastructure := cmd.Bool("infrastructure")
+	noWildcard := cmd.Bool("no-wildcard")
 
-	// Validate zone name
+	// Keep original name for config (without trailing dot)
+	zoneNameForConfig := strings.TrimSuffix(zoneNameArg, ".")
+
+	// Add trailing dot for PowerDNS API
+	zoneName := zoneNameArg
 	if !strings.HasSuffix(zoneName, ".") {
 		zoneName = zoneName + "."
 	}
@@ -208,7 +228,10 @@ func runZoneCreate(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	if cfg.DNS == nil {
-		return fmt.Errorf("DNS configuration not found in config file")
+		cfg.DNS = &config.DNSConfig{
+			Backend:    "gsqlite3",
+			Forwarders: []string{"8.8.8.8", "1.1.1.1"},
+		}
 	}
 
 	// Resolve API key from secrets (including OpenBAO)
@@ -221,16 +244,13 @@ func runZoneCreate(ctx context.Context, cmd *cli.Command) error {
 	apiKeyStr := cfg.DNS.APIKey
 	var apiKey string
 	if parsed, err := secrets.ParseSecretRef(apiKeyStr); err == nil && parsed != nil {
-		fmt.Printf("Debug: Parsed secret ref - Path: %s, Key: %s\n", parsed.Path, parsed.Key)
 		apiKey, err = resolver.Resolve(resCtx, *parsed)
 		if err != nil {
 			return fmt.Errorf("failed to resolve DNS API key: %w", err)
 		}
-		fmt.Printf("Debug: Resolved API key (length: %d, value: %s)\n", len(apiKey), apiKey)
 	} else {
 		// Not a secret reference, use as-is
 		apiKey = apiKeyStr
-		fmt.Printf("Debug: Using literal API key from config (length: %d)\n", len(apiKey))
 	}
 
 	// Get DNS host from network config
@@ -243,13 +263,113 @@ func runZoneCreate(ctx context.Context, cmd *cli.Command) error {
 	// Create PowerDNS client
 	client := dns.NewClient(fmt.Sprintf("http://%s:8081", dnsHost), apiKey)
 
-	// Create zone
-	fmt.Printf("Creating zone %s (type: %s)...\n", zoneName, zoneType)
-	if err := client.CreateZone(zoneName, zoneType); err != nil {
-		return fmt.Errorf("failed to create zone: %w", err)
+	// Check if zone already exists in PowerDNS
+	zones, err := client.ListZones()
+	if err != nil {
+		return fmt.Errorf("failed to list zones: %w", err)
 	}
 
-	fmt.Printf("✓ Zone %s created successfully\n", zoneName)
+	zoneExists := false
+	for _, z := range zones {
+		if z.Name == zoneName {
+			zoneExists = true
+			break
+		}
+	}
+
+	// Create zone in PowerDNS if it doesn't exist
+	if !zoneExists {
+		fmt.Printf("Creating zone %s (type: %s)...\n", zoneName, zoneType)
+		if err := client.CreateZone(zoneName, zoneType); err != nil {
+			return fmt.Errorf("failed to create zone: %w", err)
+		}
+		fmt.Printf("✓ Zone %s created in PowerDNS\n", zoneName)
+	} else {
+		fmt.Printf("Zone %s already exists in PowerDNS\n", zoneName)
+	}
+
+	// Add zone to config if not already present
+	newZone := config.DNSZone{
+		Name:   zoneNameForConfig,
+		Public: isPublic,
+	}
+	if isPublic && publicCNAME != "" {
+		newZone.PublicCNAME = &publicCNAME
+	}
+
+	configUpdated := false
+	if isInfrastructure {
+		// Add to infrastructure_zones
+		found := false
+		for _, z := range cfg.DNS.InfrastructureZones {
+			if z.Name == zoneNameForConfig {
+				found = true
+				break
+			}
+		}
+		if !found {
+			cfg.DNS.InfrastructureZones = append(cfg.DNS.InfrastructureZones, newZone)
+			configUpdated = true
+			fmt.Printf("✓ Added %s to infrastructure_zones\n", zoneNameForConfig)
+		}
+
+		// Add infrastructure records
+		var openbaoIP, dnsIP, zotIP string
+		if addr, err := cfg.GetPrimaryOpenBAOAddress(); err == nil {
+			openbaoIP = addr
+		}
+		if addr, err := cfg.GetPrimaryDNSAddress(); err == nil {
+			dnsIP = addr
+		}
+		if addr, err := cfg.GetPrimaryZotAddress(); err == nil {
+			zotIP = addr
+		}
+		k8sVIP := cfg.Cluster.VIP
+
+		infraConfig := dns.InfrastructureRecordConfig{
+			Zone:      zoneNameForConfig,
+			OpenBAOIP: openbaoIP,
+			DNSIP:     dnsIP,
+			ZotIP:     zotIP,
+			K8sVIP:    k8sVIP,
+		}
+		if err := dns.InitializeInfrastructureDNS(client, infraConfig); err != nil {
+			fmt.Printf("  Warning: Failed to add infrastructure records: %v\n", err)
+		} else {
+			fmt.Println("✓ Infrastructure records added")
+		}
+	} else {
+		// Add to kubernetes_zones
+		found := false
+		for _, z := range cfg.DNS.KubernetesZones {
+			if z.Name == zoneNameForConfig {
+				found = true
+				break
+			}
+		}
+		if !found {
+			cfg.DNS.KubernetesZones = append(cfg.DNS.KubernetesZones, newZone)
+			configUpdated = true
+			fmt.Printf("✓ Added %s to kubernetes_zones\n", zoneNameForConfig)
+		}
+
+		// Add wildcard record pointing to k8s VIP
+		if !noWildcard && cfg.Cluster.VIP != "" {
+			if err := dns.AddWildcardRecord(client, zoneNameForConfig, cfg.Cluster.VIP); err != nil {
+				fmt.Printf("  Warning: Failed to add wildcard record: %v\n", err)
+			} else {
+				fmt.Printf("✓ Wildcard record added (*.%s -> %s)\n", zoneNameForConfig, cfg.Cluster.VIP)
+			}
+		}
+	}
+
+	// Save config if updated
+	if configUpdated {
+		if err := config.Save(cfg, configPath); err != nil {
+			return fmt.Errorf("failed to save config: %w", err)
+		}
+		fmt.Println("✓ Config updated")
+	}
 
 	if isPublic {
 		fmt.Printf("  Public access: enabled (CNAME: %s)\n", publicCNAME)
@@ -258,11 +378,7 @@ func runZoneCreate(ctx context.Context, cmd *cli.Command) error {
 
 	// Update setup state to mark DNS zones as created
 	if err := updateDNSZonesState(configPath); err != nil {
-		// Don't fail the command if state update fails, just warn
-		fmt.Printf("\n⚠ Warning: Failed to update setup state: %v\n", err)
-		fmt.Println("The zone was created successfully, but state tracking may be incorrect.")
-	} else {
-		fmt.Println("✓ Setup state updated")
+		fmt.Printf("⚠ Warning: Failed to update setup state: %v\n", err)
 	}
 
 	return nil

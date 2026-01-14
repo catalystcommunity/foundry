@@ -59,8 +59,8 @@ func TestRunConfigure_NoSSHKey(t *testing.T) {
 	// Create a test config file
 	testConfig := &config.Config{
 		Cluster: config.ClusterConfig{
-			Name:   "test-cluster",
-			Domain: "example.com",
+			Name:          "test-cluster",
+			PrimaryDomain: "example.com",
 		},
 		Network: &config.NetworkConfig{
 			Gateway: "192.168.1.1",

@@ -20,8 +20,8 @@ func TestConfig_Validate(t *testing.T) {
 			name: "valid minimal config",
 			config: Config{
 				Cluster: ClusterConfig{
-					Name:   "test",
-					Domain: "example.com",
+					Name:          "test",
+					PrimaryDomain: "example.com",
 				},
 				Components: ComponentMap{
 					"k3s": ComponentConfig{},
@@ -33,8 +33,8 @@ func TestConfig_Validate(t *testing.T) {
 			name: "no components",
 			config: Config{
 				Cluster: ClusterConfig{
-					Name:   "test",
-					Domain: "example.com",
+					Name:          "test",
+					PrimaryDomain: "example.com",
 				},
 				Components: ComponentMap{},
 			},
@@ -127,7 +127,7 @@ func TestConfig_UnmarshalYAML(t *testing.T) {
 version: "1.0"
 cluster:
   name: test-cluster
-  domain: test.com
+  primary_domain: test.com
   vip: 192.168.1.100
 
 network:
@@ -171,7 +171,7 @@ storage:
 	require.NoError(t, err)
 
 	assert.Equal(t, "test-cluster", config.Cluster.Name)
-	assert.Equal(t, "test.com", config.Cluster.Domain)
+	assert.Equal(t, "test.com", config.Cluster.PrimaryDomain)
 	assert.Equal(t, "192.168.1.100", config.Cluster.VIP)
 
 	// Verify hosts

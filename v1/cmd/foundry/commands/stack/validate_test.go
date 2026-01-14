@@ -47,8 +47,8 @@ func TestValidateConfigStructure(t *testing.T) {
 					APIKey:              "test-key",
 				},
 				Cluster: config.ClusterConfig{
-					Name:   "test-cluster",
-					Domain: "example.com",
+					Name:          "test-cluster",
+					PrimaryDomain: "example.com",
 				},
 				Components: config.ComponentMap{
 					"openbao": {},
@@ -70,8 +70,8 @@ func TestValidateConfigStructure(t *testing.T) {
 					APIKey:              "test-key",
 				},
 				Cluster: config.ClusterConfig{
-					Name:   "test-cluster",
-					Domain: "example.com",
+					Name:          "test-cluster",
+					PrimaryDomain: "example.com",
 				},
 				Components: config.ComponentMap{
 					"openbao": {},
@@ -94,9 +94,9 @@ func TestValidateConfigStructure(t *testing.T) {
 					APIKey:              "test-key",
 				},
 				Cluster: config.ClusterConfig{
-					Name:   "test-cluster",
-					Domain: "example.com",
-					VIP:    "192.168.1.10", // Same as host below
+					Name:          "test-cluster",
+					PrimaryDomain: "example.com",
+					VIP:           "192.168.1.10", // Same as host below
 				},
 				Hosts: []*host.Host{
 					{
@@ -127,9 +127,9 @@ func TestValidateConfigStructure(t *testing.T) {
 					APIKey:              "test-key",
 				},
 				Cluster: config.ClusterConfig{
-					Name:   "test-cluster",
-					Domain: "example.com",
-					},
+					Name:          "test-cluster",
+					PrimaryDomain: "example.com",
+				},
 				Components: config.ComponentMap{}, // Empty!
 			},
 			wantErr: true,
@@ -174,8 +174,8 @@ func TestValidateSecretReferences(t *testing.T) {
 					APIKey:              "${secret:foundry-core/dns:api_key}",
 				},
 				Cluster: config.ClusterConfig{
-					Name:   "test-cluster",
-					Domain: "example.com",
+					Name:          "test-cluster",
+					PrimaryDomain: "example.com",
 				},
 				Components: config.ComponentMap{
 					"openbao": {},
@@ -197,8 +197,8 @@ func TestValidateSecretReferences(t *testing.T) {
 					APIKey:              "${secret:invalid-format}", // Missing :key part
 				},
 				Cluster: config.ClusterConfig{
-					Name:   "test-cluster",
-					Domain: "example.com",
+					Name:          "test-cluster",
+					PrimaryDomain: "example.com",
 				},
 				Components: config.ComponentMap{
 					"openbao": {},
@@ -221,8 +221,8 @@ func TestValidateSecretReferences(t *testing.T) {
 					APIKey:              "plain-text-key",
 				},
 				Cluster: config.ClusterConfig{
-					Name:   "test-cluster",
-					Domain: "example.com",
+					Name:          "test-cluster",
+					PrimaryDomain: "example.com",
 				},
 				Components: config.ComponentMap{
 					"openbao": {},
@@ -506,8 +506,8 @@ func TestValidateClusterConfig(t *testing.T) {
 			name: "valid cluster config",
 			cfg: &config.Config{
 				Cluster: config.ClusterConfig{
-					Name:   "test-cluster",
-					Domain: "example.com",
+					Name:          "test-cluster",
+					PrimaryDomain: "example.com",
 				},
 				Hosts: []*host.Host{
 					{
@@ -523,8 +523,8 @@ func TestValidateClusterConfig(t *testing.T) {
 			name: "no nodes",
 			cfg: &config.Config{
 				Cluster: config.ClusterConfig{
-					Name:   "test-cluster",
-					Domain: "example.com",
+					Name:          "test-cluster",
+					PrimaryDomain: "example.com",
 				},
 			},
 			wantErr: true,
@@ -534,8 +534,8 @@ func TestValidateClusterConfig(t *testing.T) {
 			name: "multiple nodes",
 			cfg: &config.Config{
 				Cluster: config.ClusterConfig{
-					Name:   "test-cluster",
-					Domain: "example.com",
+					Name:          "test-cluster",
+					PrimaryDomain: "example.com",
 				},
 				Hosts: []*host.Host{
 					{
@@ -644,9 +644,9 @@ func TestRunStackValidate_Integration(t *testing.T) {
 			APIKey:              "test-key",
 		},
 		Cluster: config.ClusterConfig{
-			Name:   "test-cluster",
-			Domain: "example.com",
-			VIP:    "192.168.1.100",
+			Name:          "test-cluster",
+			PrimaryDomain: "example.com",
+			VIP:           "192.168.1.100",
 		},
 		Hosts: []*host.Host{
 			{
@@ -690,9 +690,9 @@ func TestRunStackValidate_Integration(t *testing.T) {
 				APIKey:              "test-key",
 			},
 			Cluster: config.ClusterConfig{
-				Name:   "test-cluster",
-				Domain: "example.com",
-				VIP:    "10.0.0.100", // IP not on same network as 192.168.1.0/24
+				Name:          "test-cluster",
+				PrimaryDomain: "example.com",
+				VIP:           "10.0.0.100", // IP not on same network as 192.168.1.0/24
 			},
 			Hosts: []*host.Host{
 				{Hostname: "test-host", Address: "192.168.1.10", Roles: []string{host.RoleOpenBAO}},

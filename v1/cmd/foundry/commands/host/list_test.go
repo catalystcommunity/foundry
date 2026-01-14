@@ -25,9 +25,9 @@ func setupTestConfigWithHosts(t *testing.T, hosts []*host.Host) string {
 
 	cfg := &config.Config{
 		Cluster: config.ClusterConfig{
-			Name:   "test-cluster",
-			Domain: "test.local",
-			VIP:    "192.168.1.100",
+			Name:          "test-cluster",
+			PrimaryDomain: "test.local",
+			VIP:           "192.168.1.100",
 		},
 		Components: config.ComponentMap{
 			"openbao": config.ComponentConfig{},

@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/catalystcommunity/foundry/v1/internal/ssh"
 	"github.com/stretchr/testify/assert"
@@ -333,6 +334,12 @@ func TestCreateRegistriesConfig(t *testing.T) {
 }
 
 func TestWaitForK3sReady(t *testing.T) {
+	// Use fast retry config for tests
+	fastRetryCfg := RetryConfig{
+		MaxRetries: 5,
+		RetryDelay: 10 * time.Millisecond,
+	}
+
 	tests := []struct {
 		name    string
 		exec    func(command string) (*ssh.ExecResult, error)
@@ -370,7 +377,7 @@ func TestWaitForK3sReady(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			executor := &mockInstallSSHExecutor{execFunc: tt.exec}
-			err := waitForK3sReady(executor)
+			err := waitForK3sReady(executor, fastRetryCfg)
 
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -435,6 +442,12 @@ func TestSetupKubeVIP(t *testing.T) {
 }
 
 func TestWaitForKubeVIPReady(t *testing.T) {
+	// Use fast retry config for tests
+	fastRetryCfg := RetryConfig{
+		MaxRetries: 5,
+		RetryDelay: 10 * time.Millisecond,
+	}
+
 	tests := []struct {
 		name    string
 		vip     string
@@ -475,7 +488,7 @@ func TestWaitForKubeVIPReady(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			executor := &mockInstallSSHExecutor{execFunc: tt.exec}
-			err := waitForKubeVIPReady(executor, tt.vip)
+			err := waitForKubeVIPReady(executor, tt.vip, fastRetryCfg)
 
 			if tt.wantErr {
 				assert.Error(t, err)

@@ -9,13 +9,19 @@ import (
 	"github.com/catalystcommunity/foundry/v1/internal/network"
 )
 
-const (
-	// MaxRetries is the maximum number of retries for waiting operations
-	MaxRetries = 30
+// RetryConfig holds configuration for retry operations
+type RetryConfig struct {
+	MaxRetries int
+	RetryDelay time.Duration
+}
 
-	// RetryDelay is the delay between retries
-	RetryDelay = 10 * time.Second
-)
+// DefaultRetryConfig returns the default retry configuration
+func DefaultRetryConfig() RetryConfig {
+	return RetryConfig{
+		MaxRetries: 30,
+		RetryDelay: 10 * time.Second,
+	}
+}
 
 // IsK3sInstalled checks if K3s is already installed and running on a node
 func IsK3sInstalled(executor SSHExecutor) (bool, error) {
@@ -122,7 +128,7 @@ func InstallControlPlane(ctx context.Context, executor SSHExecutor, cfg *Config)
 	}
 
 	// Step 4: Wait for K3s to be ready
-	if err := waitForK3sReady(executor); err != nil {
+	if err := waitForK3sReady(executor, DefaultRetryConfig()); err != nil {
 		return fmt.Errorf("K3s failed to become ready: %w", err)
 	}
 
@@ -132,7 +138,7 @@ func InstallControlPlane(ctx context.Context, executor SSHExecutor, cfg *Config)
 	}
 
 	// Step 6: Wait for kube-vip to be ready
-	if err := waitForKubeVIPReady(executor, cfg.VIP); err != nil {
+	if err := waitForKubeVIPReady(executor, cfg.VIP, DefaultRetryConfig()); err != nil {
 		return fmt.Errorf("kube-vip failed to become ready: %w", err)
 	}
 
@@ -216,17 +222,17 @@ func createRegistriesConfig(executor SSHExecutor, registryConfigContent string) 
 }
 
 // waitForK3sReady waits for K3s to be ready
-func waitForK3sReady(executor SSHExecutor) error {
-	for i := 0; i < MaxRetries; i++ {
+func waitForK3sReady(executor SSHExecutor, retryCfg RetryConfig) error {
+	for i := 0; i < retryCfg.MaxRetries; i++ {
 		result, err := executor.Exec("sudo k3s kubectl get nodes")
 		if err == nil && result.ExitCode == 0 {
 			return nil
 		}
 
-		time.Sleep(RetryDelay)
+		time.Sleep(retryCfg.RetryDelay)
 	}
 
-	return fmt.Errorf("K3s did not become ready after %d retries", MaxRetries)
+	return fmt.Errorf("K3s did not become ready after %d retries", retryCfg.MaxRetries)
 }
 
 // setupKubeVIP sets up kube-vip on the control plane node
@@ -267,16 +273,16 @@ func setupKubeVIP(ctx context.Context, executor SSHExecutor, cfg *Config) error 
 }
 
 // waitForKubeVIPReady waits for kube-vip to configure the VIP
-func waitForKubeVIPReady(executor SSHExecutor, vip string) error {
-	for i := 0; i < MaxRetries; i++ {
+func waitForKubeVIPReady(executor SSHExecutor, vip string, retryCfg RetryConfig) error {
+	for i := 0; i < retryCfg.MaxRetries; i++ {
 		// Check if VIP is assigned to the interface
 		result, err := executor.Exec(fmt.Sprintf("ip addr show | grep %s", vip))
 		if err == nil && result.ExitCode == 0 && strings.Contains(result.Stdout, vip) {
 			return nil
 		}
 
-		time.Sleep(RetryDelay)
+		time.Sleep(retryCfg.RetryDelay)
 	}
 
-	return fmt.Errorf("kube-vip did not configure VIP after %d retries", MaxRetries)
+	return fmt.Errorf("kube-vip did not configure VIP after %d retries", retryCfg.MaxRetries)
 }

@@ -72,7 +72,7 @@ func TestConfigSaveLoad(t *testing.T) {
 			},
 			Cluster: config.ClusterConfig{
 				Name:   "test-cluster",
-				Domain: "example.com",
+				PrimaryDomain: "example.com",
 				VIP:    "192.168.1.100",
 			},
 			Components: config.ComponentMap{
@@ -126,7 +126,7 @@ func TestConfigSaveLoad(t *testing.T) {
 			},
 			Cluster: config.ClusterConfig{
 				Name:   "test",
-				Domain: "example.com",
+				PrimaryDomain: "example.com",
 				VIP:    "192.168.1.100",
 			},
 			Components: config.ComponentMap{

@@ -47,9 +47,9 @@ func TestPrintClusterPlan(t *testing.T) {
 			name: "single node cluster",
 			config: &config.Config{
 				Cluster: config.ClusterConfig{
-					Name:   "test-cluster",
-					Domain: "example.com",
-					VIP:    "192.168.1.100",
+					Name:          "test-cluster",
+					PrimaryDomain: "example.com",
+					VIP:           "192.168.1.100",
 				},
 				Network: &config.NetworkConfig{
 				},
@@ -66,9 +66,9 @@ func TestPrintClusterPlan(t *testing.T) {
 			name: "multi-node cluster",
 			config: &config.Config{
 				Cluster: config.ClusterConfig{
-					Name:   "prod-cluster",
-					Domain: "example.com",
-					VIP:    "192.168.1.100",
+					Name:          "prod-cluster",
+					PrimaryDomain: "example.com",
+					VIP:           "192.168.1.100",
 				},
 				Network: &config.NetworkConfig{
 				},
@@ -90,9 +90,9 @@ func TestPrintClusterPlan(t *testing.T) {
 			name: "cluster with explicit roles",
 			config: &config.Config{
 				Cluster: config.ClusterConfig{
-					Name:   "test-cluster",
-					Domain: "example.com",
-					VIP:    "192.168.1.100",
+					Name:          "test-cluster",
+					PrimaryDomain: "example.com",
+					VIP:           "192.168.1.100",
 				},
 				Network: &config.NetworkConfig{
 				},
@@ -153,9 +153,9 @@ func TestRunClusterInit_DryRun(t *testing.T) {
 
 	testConfig := &config.Config{
 		Cluster: config.ClusterConfig{
-			Name:   "test-cluster",
-			Domain: "example.com",
-			VIP:    "192.168.1.100",
+			Name:          "test-cluster",
+			PrimaryDomain: "example.com",
+			VIP:           "192.168.1.100",
 		},
 		Network: &config.NetworkConfig{
 			Gateway: "192.168.1.1",
@@ -252,8 +252,8 @@ func TestRunClusterInit_NoNodes(t *testing.T) {
 
 	testConfig := &config.Config{
 		Cluster: config.ClusterConfig{
-			Name:   "test-cluster",
-			Domain: "example.com",
+			Name:          "test-cluster",
+			PrimaryDomain: "example.com",
 		},
 		Network: &config.NetworkConfig{
 			Gateway:      "192.168.1.1",
@@ -299,9 +299,9 @@ func TestRunClusterInit_SingleNodeFlag(t *testing.T) {
 
 	testConfig := &config.Config{
 		Cluster: config.ClusterConfig{
-			Name:   "test-cluster",
-			Domain: "example.com",
-			VIP:    "192.168.1.100",
+			Name:          "test-cluster",
+			PrimaryDomain: "example.com",
+			VIP:           "192.168.1.100",
 		},
 		Network: &config.NetworkConfig{
 			Gateway: "192.168.1.1",
@@ -353,9 +353,9 @@ func TestInitializeCluster_HostNotFound(t *testing.T) {
 
 	cfg := &config.Config{
 		Cluster: config.ClusterConfig{
-			Name:   "test-cluster",
-			Domain: "example.com",
-			},
+			Name:          "test-cluster",
+			PrimaryDomain: "example.com",
+		},
 		Network: &config.NetworkConfig{
 			Gateway:      "192.168.1.1",
 			Netmask:      "255.255.255.0",

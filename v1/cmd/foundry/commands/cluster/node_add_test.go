@@ -50,9 +50,9 @@ func TestNodeAddCommand_DryRun(t *testing.T) {
 
 	testConfig := &config.Config{
 		Cluster: config.ClusterConfig{
-			Name:   "test-cluster",
-			Domain: "example.com",
-			VIP:    "192.168.1.100",
+			Name:          "test-cluster",
+			PrimaryDomain: "example.com",
+			VIP:           "192.168.1.100",
 		},
 		Network: &config.NetworkConfig{
 			Gateway: "192.168.1.1",
@@ -144,9 +144,9 @@ func TestNodeAddCommand_HostNotFound(t *testing.T) {
 
 	testConfig := &config.Config{
 		Cluster: config.ClusterConfig{
-			Name:   "test",
-			Domain: "example.com",
-			VIP:    "192.168.1.100",
+			Name:          "test",
+			PrimaryDomain: "example.com",
+			VIP:           "192.168.1.100",
 		},
 		Network: &config.NetworkConfig{
 			Gateway: "192.168.1.1",
@@ -187,8 +187,8 @@ func TestNodeAddCommand_HostNotFound(t *testing.T) {
 func TestDetermineNodeRole_ExplicitControlPlane(t *testing.T) {
 	cfg := &config.Config{
 		Cluster: config.ClusterConfig{
-			Name:   "test-cluster",
-			Domain: "example.com",
+			Name:          "test-cluster",
+			PrimaryDomain: "example.com",
 		},
 		Hosts: []*host.Host{
 			{
@@ -207,8 +207,8 @@ func TestDetermineNodeRole_ExplicitControlPlane(t *testing.T) {
 func TestDetermineNodeRole_ExplicitWorker(t *testing.T) {
 	cfg := &config.Config{
 		Cluster: config.ClusterConfig{
-			Name:   "test-cluster",
-			Domain: "example.com",
+			Name:          "test-cluster",
+			PrimaryDomain: "example.com",
 		},
 		Hosts: []*host.Host{
 			{
@@ -227,8 +227,8 @@ func TestDetermineNodeRole_ExplicitWorker(t *testing.T) {
 func TestDetermineNodeRole_ExplicitBoth(t *testing.T) {
 	cfg := &config.Config{
 		Cluster: config.ClusterConfig{
-			Name:   "test-cluster",
-			Domain: "example.com",
+			Name:          "test-cluster",
+			PrimaryDomain: "example.com",
 		},
 		Hosts: []*host.Host{
 			{
@@ -247,8 +247,8 @@ func TestDetermineNodeRole_ExplicitBoth(t *testing.T) {
 func TestDetermineNodeRole_InvalidRole(t *testing.T) {
 	cfg := &config.Config{
 		Cluster: config.ClusterConfig{
-			Name:   "test-cluster",
-			Domain: "example.com",
+			Name:          "test-cluster",
+			PrimaryDomain: "example.com",
 		},
 		Hosts: []*host.Host{
 			{
@@ -332,8 +332,8 @@ func TestDetermineNodeRole_AutoLessThan3ControlPlanes(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := &config.Config{
 				Cluster: config.ClusterConfig{
-					Name:   "test-cluster",
-					Domain: "example.com",
+					Name:          "test-cluster",
+					PrimaryDomain: "example.com",
 				},
 				Hosts: tt.existingHosts,
 			}
@@ -350,8 +350,8 @@ func TestDetermineNodeRole_AutoCountsControlPlaneRole(t *testing.T) {
 	// Hosts with cluster-control-plane role should count toward control plane count
 	cfg := &config.Config{
 		Cluster: config.ClusterConfig{
-			Name:   "test-cluster",
-			Domain: "example.com",
+			Name:          "test-cluster",
+			PrimaryDomain: "example.com",
 		},
 		Hosts: []*host.Host{
 			{

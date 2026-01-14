@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/catalystcommunity/foundry/v1/internal/ssh"
 	"github.com/stretchr/testify/assert"
@@ -203,6 +204,12 @@ func TestJoinControlPlane(t *testing.T) {
 }
 
 func TestVerifyNodeJoined(t *testing.T) {
+	// Use fast retry config for tests
+	fastRetryCfg := RetryConfig{
+		MaxRetries: 2,
+		RetryDelay: 10 * time.Millisecond,
+	}
+
 	tests := []struct {
 		name          string
 		exec          func(command string) (*ssh.ExecResult, error)
@@ -272,7 +279,7 @@ func TestVerifyNodeJoined(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			executor := &mockControlPlaneExecutor{execFunc: tt.exec}
-			err := verifyNodeJoined(executor)
+			err := verifyNodeJoined(executor, fastRetryCfg)
 
 			if tt.expectError {
 				require.Error(t, err)

@@ -44,7 +44,7 @@ func runValidate(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	fmt.Printf("✓ Configuration is valid: %s\n", configPath)
-	fmt.Printf("  Cluster: %s (%s)\n", cfg.Cluster.Name, cfg.Cluster.Domain)
+	fmt.Printf("  Cluster: %s (%s)\n", cfg.Cluster.Name, cfg.Cluster.PrimaryDomain)
 	fmt.Printf("  Hosts: %d\n", len(cfg.Hosts))
 	fmt.Printf("  Components: %d\n", len(cfg.Components))
 

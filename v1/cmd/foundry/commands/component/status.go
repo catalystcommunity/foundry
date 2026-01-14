@@ -42,21 +42,31 @@ func runStatus(ctx context.Context, cmd *cli.Command) error {
 		return component.ErrComponentNotFound(name)
 	}
 
+	// Load config using --config flag
+	configPath, err := config.FindConfig(cmd.String("config"))
+	if err != nil {
+		return fmt.Errorf("failed to find config: %w", err)
+	}
+
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+
 	fmt.Printf("Checking status of component: %s\n\n", name)
 
 	// Check status based on component name
 	var status *component.ComponentStatus
-	var err error
 
 	switch name {
 	case "openbao":
-		status, err = CheckOpenBAOStatus(ctx)
+		status, err = CheckOpenBAOStatus(ctx, cfg)
 	case "dns", "powerdns":
-		status, err = CheckDNSStatus(ctx)
+		status, err = CheckDNSStatus(ctx, cfg)
 	case "zot":
-		status, err = CheckZotStatus(ctx)
+		status, err = CheckZotStatus(ctx, cfg)
 	case "k3s", "kubernetes":
-		status, err = CheckK3sStatus(ctx)
+		status, err = CheckK3sStatus(ctx, cfg)
 	default:
 		return fmt.Errorf("status checking not implemented for component: %s", name)
 	}
@@ -85,17 +95,7 @@ func runStatus(ctx context.Context, cmd *cli.Command) error {
 }
 
 // CheckOpenBAOStatus checks the OpenBAO component status
-func CheckOpenBAOStatus(ctx context.Context) (*component.ComponentStatus, error) {
-	// Load config
-	cfg, err := config.Load(config.DefaultConfigPath())
-	if err != nil {
-		return &component.ComponentStatus{
-			Installed: false,
-			Healthy:   false,
-			Message:   fmt.Sprintf("failed to load config: %v", err),
-		}, nil
-	}
-
+func CheckOpenBAOStatus(ctx context.Context, cfg *config.Config) (*component.ComponentStatus, error) {
 	// Get OpenBAO host
 	h, err := cfg.GetPrimaryOpenBAOHost()
 	if err != nil {
@@ -196,17 +196,7 @@ func CheckOpenBAOStatus(ctx context.Context) (*component.ComponentStatus, error)
 }
 
 // CheckDNSStatus checks the DNS component status
-func CheckDNSStatus(ctx context.Context) (*component.ComponentStatus, error) {
-	// Load config
-	cfg, err := config.Load(config.DefaultConfigPath())
-	if err != nil {
-		return &component.ComponentStatus{
-			Installed: false,
-			Healthy:   false,
-			Message:   fmt.Sprintf("failed to load config: %v", err),
-		}, nil
-	}
-
+func CheckDNSStatus(ctx context.Context, cfg *config.Config) (*component.ComponentStatus, error) {
 	// Get DNS host
 	h, err := cfg.GetPrimaryDNSHost()
 	if err != nil {
@@ -312,17 +302,7 @@ func CheckDNSStatus(ctx context.Context) (*component.ComponentStatus, error) {
 }
 
 // CheckZotStatus checks the Zot component status
-func CheckZotStatus(ctx context.Context) (*component.ComponentStatus, error) {
-	// Load config
-	cfg, err := config.Load(config.DefaultConfigPath())
-	if err != nil {
-		return &component.ComponentStatus{
-			Installed: false,
-			Healthy:   false,
-			Message:   fmt.Sprintf("failed to load config: %v", err),
-		}, nil
-	}
-
+func CheckZotStatus(ctx context.Context, cfg *config.Config) (*component.ComponentStatus, error) {
 	// Get Zot host
 	h, err := cfg.GetPrimaryZotHost()
 	if err != nil {
@@ -406,17 +386,7 @@ func CheckZotStatus(ctx context.Context) (*component.ComponentStatus, error) {
 }
 
 // CheckK3sStatus checks the K3s component status
-func CheckK3sStatus(ctx context.Context) (*component.ComponentStatus, error) {
-	// Load config
-	cfg, err := config.Load(config.DefaultConfigPath())
-	if err != nil {
-		return &component.ComponentStatus{
-			Installed: false,
-			Healthy:   false,
-			Message:   fmt.Sprintf("failed to load config: %v", err),
-		}, nil
-	}
-
+func CheckK3sStatus(ctx context.Context, cfg *config.Config) (*component.ComponentStatus, error) {
 	// Get first cluster host
 	clusterHosts := cfg.GetClusterHosts()
 	if len(clusterHosts) == 0 {

@@ -71,7 +71,7 @@ func runList(ctx context.Context, cmd *cli.Command) error {
 
 		// Display config info
 		fmt.Printf("  %s %s\n", marker, name)
-		fmt.Printf("      Cluster: %s (%s)\n", cfg.Cluster.Name, cfg.Cluster.Domain)
+		fmt.Printf("      Cluster: %s (%s)\n", cfg.Cluster.Name, cfg.Cluster.PrimaryDomain)
 		fmt.Printf("      Hosts: %d, Components: %d\n", len(cfg.Hosts), len(cfg.Components))
 	}
 
