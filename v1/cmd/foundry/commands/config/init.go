@@ -32,7 +32,31 @@ var InitCommand = &cli.Command{
 		},
 		&cli.BoolFlag{
 			Name:  "non-interactive",
-			Usage: "use defaults without prompting",
+			Usage: "use defaults without prompting (uses template with placeholders)",
+		},
+		&cli.StringFlag{
+			Name:  "cluster-name",
+			Usage: "cluster name (e.g., my-cluster)",
+		},
+		&cli.StringFlag{
+			Name:  "primary-domain",
+			Usage: "primary domain for the cluster (e.g., catalyst.local)",
+		},
+		&cli.StringSliceFlag{
+			Name:  "kubernetes-zones",
+			Usage: "additional kubernetes DNS zones (can be specified multiple times)",
+		},
+		&cli.StringFlag{
+			Name:  "vip",
+			Usage: "virtual IP for K3s API (e.g., 192.168.1.100)",
+		},
+		&cli.StringFlag{
+			Name:  "gateway",
+			Usage: "network gateway (e.g., 192.168.1.1)",
+		},
+		&cli.StringFlag{
+			Name:  "netmask",
+			Usage: "network netmask (e.g., 255.255.255.0)",
 		},
 	},
 	Action: runInit,
@@ -78,8 +102,8 @@ func runInit(ctx context.Context, cmd *cli.Command) error {
 		// Use template with placeholders
 		content = configTemplate
 	} else {
-		// Prompt for configuration values
-		content, err = promptForConfigValues()
+		// Prompt for configuration values (flags override prompts)
+		content, err = promptForConfigValues(cmd)
 		if err != nil {
 			return err
 		}
@@ -104,35 +128,82 @@ func runInit(ctx context.Context, cmd *cli.Command) error {
 	return nil
 }
 
-func promptForConfigValues() (string, error) {
-	fmt.Println("Creating a new Foundry stack configuration")
-	fmt.Println("(Press Enter to accept defaults)")
-	fmt.Println()
+func promptForConfigValues(cmd *cli.Command) (string, error) {
+	// Check if all required flags are provided (fully non-interactive)
+	allFlagsProvided := cmd.String("cluster-name") != "" &&
+		cmd.String("primary-domain") != "" &&
+		cmd.String("vip") != "" &&
+		cmd.String("gateway") != "" &&
+		cmd.String("netmask") != ""
 
-	clusterName, err := prompt("Cluster name", "my-cluster")
+	if !allFlagsProvided {
+		fmt.Println("Creating a new Foundry stack configuration")
+		fmt.Println("(Press Enter to accept defaults)")
+		fmt.Println()
+	}
+
+	clusterName, err := promptOrFlag(cmd, "cluster-name", "Cluster name", "my-cluster")
 	if err != nil {
 		return "", err
 	}
 
-	domain, err := prompt("Domain", "catalyst.local")
+	primaryDomain, err := promptOrFlag(cmd, "primary-domain", "Primary domain", "catalyst.local")
 	if err != nil {
 		return "", err
 	}
 
-	vip, err := prompt("VIP (Virtual IP for K3s API)", "192.168.1.100")
+	// Collect kubernetes zones - primary domain is always first
+	kubernetesZones := []string{primaryDomain}
+
+	// Add any zones from flags
+	flagZones := cmd.StringSlice("kubernetes-zones")
+	if len(flagZones) > 0 {
+		kubernetesZones = append(kubernetesZones, flagZones...)
+	} else if !allFlagsProvided {
+		// Only prompt for additional zones if not all flags were provided
+		fmt.Println()
+		fmt.Println("You can add additional domains for Kubernetes services.")
+		fmt.Println("These will be configured as DNS zones where external-dns can create records.")
+		fmt.Println()
+
+		for {
+			addMore, err := prompt("Add another Kubernetes domain? (y/n)", "n")
+			if err != nil {
+				return "", err
+			}
+			if strings.ToLower(addMore) != "y" && strings.ToLower(addMore) != "yes" {
+				break
+			}
+
+			additionalDomain, err := prompt("Additional domain", "")
+			if err != nil {
+				return "", err
+			}
+			if additionalDomain != "" {
+				kubernetesZones = append(kubernetesZones, additionalDomain)
+				fmt.Printf("  Added: %s\n", additionalDomain)
+			}
+		}
+	}
+
+	vip, err := promptOrFlag(cmd, "vip", "VIP (Virtual IP for K3s API)", "192.168.1.100")
 	if err != nil {
 		return "", err
 	}
 
-	gateway, err := prompt("Network gateway", "192.168.1.1")
+	gateway, err := promptOrFlag(cmd, "gateway", "Network gateway", "192.168.1.1")
 	if err != nil {
 		return "", err
 	}
 
-	netmask, err := prompt("Network netmask", "255.255.255.0")
+	netmask, err := promptOrFlag(cmd, "netmask", "Network netmask", "255.255.255.0")
 	if err != nil {
 		return "", err
 	}
+
+	// Format zones as YAML arrays with proper structure
+	infrastructureZonesYAML := formatYAMLZoneArray([]string{primaryDomain})
+	kubernetesZonesYAML := formatYAMLZoneArray(kubernetesZones)
 
 	// Generate YAML with user-provided values
 	config := fmt.Sprintf(`# Foundry Stack Configuration
@@ -140,12 +211,25 @@ func promptForConfigValues() (string, error) {
 
 cluster:
   name: %s
-  domain: %s
+  primary_domain: %s
   vip: %s
 
 network:
   gateway: %s
   netmask: %s
+
+dns:
+  backend: sqlite
+  api_key: ${secret:foundry-core/dns:api_key}
+  forwarders:
+    - 1.1.1.1
+    - 8.8.8.8
+  # Infrastructure zones get A records for openbao, dns, zot, k8s
+  infrastructure_zones:
+%s
+  # Kubernetes zones get wildcard records and are managed by external-dns
+  kubernetes_zones:
+%s
 
 # Add your infrastructure hosts below
 # Each host needs roles assigned from:
@@ -202,9 +286,18 @@ setup_state:
   zot_installed: false
   k8s_installed: false
   stack_complete: false
-`, clusterName, domain, vip, gateway, netmask, domain)
+`, clusterName, primaryDomain, vip, gateway, netmask, infrastructureZonesYAML, kubernetesZonesYAML, primaryDomain)
 
 	return config, nil
+}
+
+// formatYAMLZoneArray formats a slice of zone names as indented YAML zone objects
+func formatYAMLZoneArray(zones []string) string {
+	var lines []string
+	for _, zone := range zones {
+		lines = append(lines, fmt.Sprintf("    - name: %s\n      public: false", zone))
+	}
+	return strings.Join(lines, "\n")
 }
 
 func prompt(question, defaultValue string) (string, error) {
@@ -222,4 +315,12 @@ func prompt(question, defaultValue string) (string, error) {
 	}
 
 	return input, nil
+}
+
+// promptOrFlag returns the flag value if set, otherwise prompts the user
+func promptOrFlag(cmd *cli.Command, flagName, question, defaultValue string) (string, error) {
+	if value := cmd.String(flagName); value != "" {
+		return value, nil
+	}
+	return prompt(question, defaultValue)
 }

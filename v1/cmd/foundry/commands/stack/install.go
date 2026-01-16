@@ -484,6 +484,10 @@ func ensureHostsConfigured(ctx context.Context, cfg *config.Config, nonInteracti
 
 	keysDir := filepath.Join(configDir, "keys")
 
+	// Cache root password across hosts - if they share the same password,
+	// we only need to prompt once
+	var cachedRootPassword string
+
 	// Process each host
 	for i, h := range cfg.Hosts {
 		fmt.Printf("\n[%d/%d] Configuring host: %s (%s)\n", i+1, len(cfg.Hosts), h.Hostname, h.Address)
@@ -514,7 +518,7 @@ func ensureHostsConfigured(ctx context.Context, cfg *config.Config, nonInteracti
 		}
 
 		// Step 3: Run host configuration
-		if err := configureHost(conn, h, nonInteractive); err != nil {
+		if err := configureHost(conn, h, nonInteractive, &cachedRootPassword); err != nil {
 			conn.Close()
 			return fmt.Errorf("failed to configure %s: %w", h.Hostname, err)
 		}
@@ -2534,7 +2538,9 @@ func connectToHostForSetup(h *config.Host, keysDir string) (*ssh.Connection, err
 }
 
 // configureHost runs host configuration steps
-func configureHost(conn *ssh.Connection, h *config.Host, nonInteractive bool) error {
+// cachedRootPassword is used to avoid prompting for root password on every host
+// if hosts share the same root password
+func configureHost(conn *ssh.Connection, h *config.Host, nonInteractive bool, cachedRootPassword *string) error {
 	fmt.Println("  Configuring host...")
 
 	// Step 1: Check and setup sudo
@@ -2557,16 +2563,8 @@ func configureHost(conn *ssh.Connection, h *config.Host, nonInteractive bool) er
 		fmt.Println("    Foundry requires passwordless sudo for automated operations")
 		fmt.Println()
 		fmt.Println("    To configure passwordless sudo, we need to run commands as root.")
-		fmt.Print("    Enter root password: ")
-		passwordBytes, err := term.ReadPassword(int(os.Stdin.Fd()))
-		fmt.Println()
+		_, err := getRootPasswordWithCache(adaptToSudoExec(conn), h.User, cachedRootPassword, "    Enter root password: ")
 		if err != nil {
-			return fmt.Errorf("failed to read root password: %w", err)
-		}
-		rootPassword := string(passwordBytes)
-
-		fmt.Println("    Configuring passwordless sudo...")
-		if err := sudo.SetupSudo(adaptToSudoExec(conn), h.User, rootPassword); err != nil {
 			return fmt.Errorf("failed to setup sudo: %w", err)
 		}
 		fmt.Println("    ✓ Passwordless sudo configured")
@@ -2580,16 +2578,8 @@ func configureHost(conn *ssh.Connection, h *config.Host, nonInteractive bool) er
 		fmt.Println("    Foundry requires passwordless sudo for automated operations")
 		fmt.Println()
 		fmt.Println("    To add user to sudoers, we need to run commands as root.")
-		fmt.Print("    Enter root password: ")
-		passwordBytes, err := term.ReadPassword(int(os.Stdin.Fd()))
-		fmt.Println()
+		_, err := getRootPasswordWithCache(adaptToSudoExec(conn), h.User, cachedRootPassword, "    Enter root password: ")
 		if err != nil {
-			return fmt.Errorf("failed to read root password: %w", err)
-		}
-		rootPassword := string(passwordBytes)
-
-		fmt.Println("    Adding user to sudoers with passwordless access...")
-		if err := sudo.SetupSudo(adaptToSudoExec(conn), h.User, rootPassword); err != nil {
 			return fmt.Errorf("failed to setup sudo: %w", err)
 		}
 		fmt.Println("    ✓ Passwordless sudo configured")
@@ -2603,16 +2593,8 @@ func configureHost(conn *ssh.Connection, h *config.Host, nonInteractive bool) er
 		fmt.Println("    Foundry requires passwordless sudo for automated operations")
 		fmt.Println()
 		fmt.Println("    To install sudo and configure access, we need to run commands as root.")
-		fmt.Print("    Enter root password: ")
-		passwordBytes, err := term.ReadPassword(int(os.Stdin.Fd()))
-		fmt.Println()
+		_, err := getRootPasswordWithCache(adaptToSudoExec(conn), h.User, cachedRootPassword, "    Enter root password: ")
 		if err != nil {
-			return fmt.Errorf("failed to read root password: %w", err)
-		}
-		rootPassword := string(passwordBytes)
-
-		fmt.Println("    Installing sudo and configuring passwordless access...")
-		if err := sudo.SetupSudo(adaptToSudoExec(conn), h.User, rootPassword); err != nil {
 			return fmt.Errorf("failed to setup sudo: %w", err)
 		}
 		fmt.Println("    ✓ sudo installed and passwordless access configured")
@@ -2748,6 +2730,42 @@ type containerExecFunc func(cmd string) (*container.ExecResult, error)
 
 func (f containerExecFunc) Exec(cmd string) (*container.ExecResult, error) {
 	return f(cmd)
+}
+
+// getRootPasswordWithCache attempts to use a cached root password first,
+// prompting only if the cache is empty or the cached password fails.
+// On success, the password is cached for subsequent hosts.
+func getRootPasswordWithCache(executor sudo.CommandExecutor, user string, cachedPassword *string, promptMessage string) (string, error) {
+	// Try cached password first if available
+	if cachedPassword != nil && *cachedPassword != "" {
+		fmt.Println("    Trying cached root password...")
+		err := sudo.SetupSudo(executor, user, *cachedPassword)
+		if err == nil {
+			return *cachedPassword, nil
+		}
+		fmt.Println("    Cached password didn't work, prompting for password...")
+	}
+
+	// Prompt for password
+	fmt.Print(promptMessage)
+	passwordBytes, err := term.ReadPassword(int(os.Stdin.Fd()))
+	fmt.Println()
+	if err != nil {
+		return "", fmt.Errorf("failed to read root password: %w", err)
+	}
+	password := string(passwordBytes)
+
+	// Try the new password
+	if err := sudo.SetupSudo(executor, user, password); err != nil {
+		return "", err
+	}
+
+	// Cache the successful password
+	if cachedPassword != nil {
+		*cachedPassword = password
+	}
+
+	return password, nil
 }
 
 // parseYAMLValues parses a YAML string into a map for Helm values
