@@ -2899,6 +2899,23 @@ func createDNSZones(ctx context.Context, cfg *config.Config, configDir string) e
 
 	client := dns.NewClient(fmt.Sprintf("http://%s:8081", dnsAddr), apiKey)
 
+	// Wait for DNS API to become ready
+	fmt.Printf("  Waiting for PowerDNS API to become ready")
+	maxAttempts := 30
+	for i := 0; i < maxAttempts; i++ {
+		_, err := client.ListZones()
+		if err == nil {
+			fmt.Printf(" ✓\n")
+			break
+		}
+		if i == maxAttempts-1 {
+			fmt.Printf(" ✗\n")
+			return fmt.Errorf("PowerDNS API not ready after %d attempts: %w", maxAttempts, err)
+		}
+		fmt.Printf(".")
+		time.Sleep(1 * time.Second)
+	}
+
 	// Get infrastructure host IPs for record creation
 	var openbaoIP, dnsIP, zotIP string
 	if addr, err := cfg.GetPrimaryOpenBAOAddress(); err == nil {
