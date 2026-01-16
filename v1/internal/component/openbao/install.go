@@ -287,9 +287,17 @@ func initializeAndUnseal(ctx context.Context, apiURL string, keysDir string, clu
 	}
 	fmt.Printf(" ✓\n")
 
-	// Check if already initialized
-	if KeyMaterialExists(keysDir, clusterName) {
-		// Keys already exist, load and unseal
+	// Check initialization status first
+	initialized, err := client.VerifyInitialized(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to check initialization status: %w", err)
+	}
+
+	// Check if we have saved keys
+	keysExist := KeyMaterialExists(keysDir, clusterName)
+
+	if initialized && keysExist {
+		// Best case: OpenBAO is initialized and we have keys - just unseal
 		material, err := LoadKeyMaterial(keysDir, clusterName)
 		if err != nil {
 			return fmt.Errorf("failed to load existing keys: %w", err)
@@ -303,15 +311,21 @@ func initializeAndUnseal(ctx context.Context, apiURL string, keysDir string, clu
 		return nil
 	}
 
-	// Check if already initialized (but keys not saved)
-	initialized, err := client.VerifyInitialized(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to check initialization status: %w", err)
-	}
-
-	if initialized {
+	if initialized && !keysExist {
+		// OpenBAO is initialized but we don't have keys - can't proceed
 		return fmt.Errorf("OpenBAO is already initialized but keys not found - manual recovery required")
 	}
+
+	if !initialized && keysExist {
+		// Keys exist but OpenBAO isn't initialized - stale keys from previous install
+		fmt.Printf("⚠ Found stale keys from previous installation, OpenBAO was reset\n")
+		fmt.Printf("  Removing old keys and re-initializing...\n")
+		if err := DeleteKeyMaterial(keysDir, clusterName); err != nil {
+			return fmt.Errorf("failed to remove stale keys: %w", err)
+		}
+	}
+
+	// Not initialized (and no keys, or stale keys removed) - proceed with initialization
 
 	// Initialize with 5 shares, threshold 3
 	const (

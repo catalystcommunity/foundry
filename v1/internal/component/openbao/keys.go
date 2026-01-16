@@ -62,3 +62,13 @@ func KeyMaterialExists(keysDir string, clusterName string) bool {
 	_, err := os.Stat(keysPath)
 	return err == nil
 }
+
+// DeleteKeyMaterial removes key material for a cluster
+// This is used when OpenBAO was reset and old keys are stale
+func DeleteKeyMaterial(keysDir string, clusterName string) error {
+	clusterKeysDir := filepath.Join(keysDir, clusterName)
+	if err := os.RemoveAll(clusterKeysDir); err != nil {
+		return fmt.Errorf("failed to remove keys directory: %w", err)
+	}
+	return nil
+}
