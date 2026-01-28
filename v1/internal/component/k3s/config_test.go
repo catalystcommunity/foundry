@@ -23,7 +23,7 @@ func TestGenerateRegistriesYAML(t *testing.T) {
 				"docker.io:",
 				"ghcr.io:",
 				"endpoint:",
-				"- \"http://zot.infraexample.com:5000\"",
+				"http://zot.infraexample.com:5000",
 			},
 		},
 		{
@@ -35,7 +35,7 @@ func TestGenerateRegistriesYAML(t *testing.T) {
 				"docker.io:",
 				"ghcr.io:",
 				"endpoint:",
-				"- \"http://zot.infraexample.com:5000\"",
+				"http://zot.infraexample.com:5000",
 				"configs:",
 				"tls:",
 				"insecure_skip_verify: true",
@@ -45,7 +45,7 @@ func TestGenerateRegistriesYAML(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := GenerateRegistriesYAML(tt.zotURL, tt.insecure)
+			got := GenerateRegistriesYAML(tt.zotURL, tt.insecure, nil)
 
 			for _, want := range tt.want {
 				assert.Contains(t, got, want, "expected config to contain: %s", want)
@@ -68,9 +68,9 @@ func TestGenerateRegistriesConfig(t *testing.T) {
 				"docker.io:",
 				"ghcr.io:",
 				"endpoint:",
-				"- \"http://zot.infraexample.com:5000\"",
+				"http://zot.infraexample.com:5000",
 				"configs:",
-				"\"http://zot.infraexample.com:5000\":",
+				"http://zot.infraexample.com:5000",
 				"tls:",
 				"insecure_skip_verify: true",
 			},
@@ -83,9 +83,9 @@ func TestGenerateRegistriesConfig(t *testing.T) {
 				"docker.io:",
 				"ghcr.io:",
 				"endpoint:",
-				"- \"http://192.168.1.50:5000\"",
+				"http://192.168.1.50:5000",
 				"configs:",
-				"\"http://192.168.1.50:5000\":",
+				"http://192.168.1.50:5000",
 				"tls:",
 				"insecure_skip_verify: true",
 			},
@@ -94,7 +94,7 @@ func TestGenerateRegistriesConfig(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := GenerateRegistriesConfig(tt.zotAddr)
+			got := GenerateRegistriesConfig(tt.zotAddr, nil)
 
 			// Verify all expected strings are present
 			for _, want := range tt.want {
@@ -105,6 +105,193 @@ func TestGenerateRegistriesConfig(t *testing.T) {
 			assert.True(t, strings.Contains(got, "mirrors:"), "should have mirrors section")
 			assert.True(t, strings.Contains(got, "configs:"), "should have configs section")
 			assert.True(t, strings.Contains(got, "insecure_skip_verify: true"), "should be insecure")
+		})
+	}
+}
+
+func strPtr(s string) *string { return &s }
+func boolPtr(b bool) *bool   { return &b }
+
+func TestGenerateRegistriesYAML_AdditionalRegistries(t *testing.T) {
+	tests := []struct {
+		name       string
+		additional []AdditionalRegistry
+		want       []string
+		notWant    []string
+	}{
+		{
+			name:       "empty additional registries produces same as before",
+			additional: nil,
+			want: []string{
+				"docker.io:",
+				"ghcr.io:",
+				"insecure_skip_verify: true",
+			},
+		},
+		{
+			name: "http registry",
+			additional: []AdditionalRegistry{
+				{Name: "10.16.0.40:5000", HTTP: boolPtr(true)},
+			},
+			want: []string{
+				"10.16.0.40:5000:",
+				"http://10.16.0.40:5000",
+			},
+		},
+		{
+			name: "insecure registry (self-signed HTTPS)",
+			additional: []AdditionalRegistry{
+				{Name: "selfsigned.corp:5000", Insecure: boolPtr(true)},
+			},
+			want: []string{
+				"selfsigned.corp:5000:",
+				"insecure_skip_verify: true",
+			},
+		},
+		{
+			name: "registry with credentials",
+			additional: []AdditionalRegistry{
+				{Name: "registry.example.com", Username: strPtr("deploy"), Password: strPtr("s3cret")},
+			},
+			want: []string{
+				"registry.example.com:",
+				"username: deploy",
+				"password: s3cret",
+			},
+		},
+		{
+			name: "credentials and insecure combined",
+			additional: []AdditionalRegistry{
+				{
+					Name:     "internal.corp:5000",
+					Insecure: boolPtr(true),
+					Username: strPtr("ci"),
+					Password: strPtr("token123"),
+				},
+			},
+			want: []string{
+				"internal.corp:5000:",
+				"username: ci",
+				"password: token123",
+				"insecure_skip_verify: true",
+			},
+		},
+		{
+			name: "custom endpoint",
+			additional: []AdditionalRegistry{
+				{Name: "custom.registry.io", Endpoint: strPtr("http://mirror.local:5000")},
+			},
+			want: []string{
+				"custom.registry.io:",
+				"http://mirror.local:5000",
+			},
+		},
+		{
+			name: "name only (no optional fields)",
+			additional: []AdditionalRegistry{
+				{Name: "plain.registry.io"},
+			},
+			want: []string{
+				"plain.registry.io:",
+			},
+		},
+		{
+			name: "multiple additional registries",
+			additional: []AdditionalRegistry{
+				{Name: "10.16.0.40:5000", HTTP: boolPtr(true)},
+				{Name: "registry.example.com", Username: strPtr("user"), Password: strPtr("pass")},
+			},
+			want: []string{
+				"10.16.0.40:5000:",
+				"http://10.16.0.40:5000",
+				"registry.example.com:",
+				"username: user",
+				"password: pass",
+			},
+		},
+	}
+
+	zotURL := "http://zot.example.com:5000"
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := GenerateRegistriesYAML(zotURL, true, tt.additional)
+
+			// Always check zot mirrors are present
+			assert.Contains(t, got, "docker.io:")
+			assert.Contains(t, got, "ghcr.io:")
+
+			for _, want := range tt.want {
+				assert.Contains(t, got, want, "expected config to contain: %s", want)
+			}
+			for _, nw := range tt.notWant {
+				assert.NotContains(t, got, nw, "expected config to NOT contain: %s", nw)
+			}
+		})
+	}
+}
+
+func TestParseAdditionalRegistries(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  map[string]any
+		want []AdditionalRegistry
+	}{
+		{
+			name: "nil map",
+			raw:  nil,
+			want: nil,
+		},
+		{
+			name: "no additional_registries key",
+			raw:  map[string]any{"version": "latest"},
+			want: nil,
+		},
+		{
+			name: "full entry",
+			raw: map[string]any{
+				"additional_registries": []interface{}{
+					map[string]interface{}{
+						"name":     "10.16.0.40:5000",
+						"http":     true,
+						"insecure": false,
+						"username": "user",
+						"password": "pass",
+					},
+				},
+			},
+			want: []AdditionalRegistry{
+				{
+					Name:     "10.16.0.40:5000",
+					HTTP:     boolPtr(true),
+					Insecure: boolPtr(false),
+					Username: strPtr("user"),
+					Password: strPtr("pass"),
+				},
+			},
+		},
+		{
+			name: "name only",
+			raw: map[string]any{
+				"additional_registries": []interface{}{
+					map[string]interface{}{
+						"name": "plain.registry.io",
+					},
+				},
+			},
+			want: []AdditionalRegistry{
+				{Name: "plain.registry.io"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ParseAdditionalRegistries(tt.raw)
+			if tt.want == nil {
+				assert.Nil(t, got)
+			} else {
+				assert.Equal(t, tt.want, got)
+			}
 		})
 	}
 }

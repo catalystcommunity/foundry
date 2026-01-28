@@ -56,6 +56,14 @@ components:
   k3s:
     version: latest
     ha: false  # Set to true for multi-control-plane
+    # additional_registries:
+    #   - name: "10.16.0.40:5000"       # Internal HTTP registry
+    #     http: true
+    #   - name: "registry.example.com"   # Private HTTPS registry
+    #     username: "user"
+    #     password: "pass"
+    #   - name: "selfsigned.corp:5000"   # Self-signed HTTPS registry
+    #     insecure: true
 
   zot:
     version: latest

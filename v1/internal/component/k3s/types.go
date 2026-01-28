@@ -109,7 +109,78 @@ func ParseConfig(cfg component.ComponentConfig) (*Config, error) {
 		config.DNSServers = dnsServers
 	}
 
+	// Additional registries
+	if raw, ok := cfg.Get("additional_registries"); ok {
+		if registries, ok := raw.([]interface{}); ok {
+			for _, entry := range registries {
+				if m, ok := entry.(map[string]interface{}); ok {
+					reg := AdditionalRegistry{}
+					if name, ok := m["name"].(string); ok {
+						reg.Name = name
+					}
+					if endpoint, ok := m["endpoint"].(string); ok {
+						reg.Endpoint = &endpoint
+					}
+					if httpVal, ok := m["http"].(bool); ok {
+						reg.HTTP = &httpVal
+					}
+					if insecure, ok := m["insecure"].(bool); ok {
+						reg.Insecure = &insecure
+					}
+					if username, ok := m["username"].(string); ok {
+						reg.Username = &username
+					}
+					if password, ok := m["password"].(string); ok {
+						reg.Password = &password
+					}
+					config.AdditionalRegistries = append(config.AdditionalRegistries, reg)
+				}
+			}
+		}
+	}
+
 	return config, nil
+}
+
+// ParseAdditionalRegistries parses additional registry entries from a raw config map.
+// This is used by callers that have a map[string]any rather than a component.ComponentConfig.
+func ParseAdditionalRegistries(raw map[string]any) []AdditionalRegistry {
+	val, ok := raw["additional_registries"]
+	if !ok {
+		return nil
+	}
+	registries, ok := val.([]interface{})
+	if !ok {
+		return nil
+	}
+	var result []AdditionalRegistry
+	for _, entry := range registries {
+		m, ok := entry.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		reg := AdditionalRegistry{}
+		if name, ok := m["name"].(string); ok {
+			reg.Name = name
+		}
+		if endpoint, ok := m["endpoint"].(string); ok {
+			reg.Endpoint = &endpoint
+		}
+		if httpVal, ok := m["http"].(bool); ok {
+			reg.HTTP = &httpVal
+		}
+		if insecure, ok := m["insecure"].(bool); ok {
+			reg.Insecure = &insecure
+		}
+		if username, ok := m["username"].(string); ok {
+			reg.Username = &username
+		}
+		if password, ok := m["password"].(string); ok {
+			reg.Password = &password
+		}
+		result = append(result, reg)
+	}
+	return result
 }
 
 // Validate validates the K3s configuration

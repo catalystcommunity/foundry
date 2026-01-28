@@ -3,6 +3,8 @@ package k3s
 import (
 	"fmt"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -19,40 +21,78 @@ const (
 // Registry types (RegistryConfig, RegistryMirror, RegistryAuth, etc.) are generated from CSIL in types.gen.go
 
 // GenerateRegistriesYAML generates the registries.yaml content for K3s
-// This configures K3s to use Zot as a pull-through cache for container registries
-func GenerateRegistriesYAML(zotURL string, insecure bool) string {
-	template := `mirrors:
-  docker.io:
-    endpoint:
-      - "%s"
-  ghcr.io:
-    endpoint:
-      - "%s"
-`
-
-	config := fmt.Sprintf(template, zotURL, zotURL)
-
-	// Add TLS configuration if needed
-	if insecure {
-		tlsConfig := `
-configs:
-  "%s":
-    tls:
-      insecure_skip_verify: true
-`
-		config += fmt.Sprintf(tlsConfig, zotURL)
+// This configures K3s to use Zot as a pull-through cache for container registries,
+// and merges any additional user-defined registry entries.
+func GenerateRegistriesYAML(zotURL string, insecure bool, additional []AdditionalRegistry) string {
+	rc := RegistryConfig{
+		Mirrors: RegistryMirrorMap{
+			"docker.io": RegistryMirror{Endpoint: []string{zotURL}},
+			"ghcr.io":   RegistryMirror{Endpoint: []string{zotURL}},
+		},
+		Configs: RegistryAuthMap{},
 	}
 
-	return config
+	// Add zot TLS config
+	if insecure {
+		insecureTrue := true
+		rc.Configs[zotURL] = RegistryAuth{
+			Tls: &RegistryTLSConfig{InsecureSkipVerify: &insecureTrue},
+		}
+	}
+
+	// Merge additional registries
+	for _, reg := range additional {
+		endpoint := reg.Name
+		if reg.Endpoint != nil {
+			endpoint = *reg.Endpoint
+		}
+
+		// Apply http:// scheme if requested
+		if reg.HTTP != nil && *reg.HTTP && !strings.HasPrefix(endpoint, "http") {
+			endpoint = "http://" + endpoint
+		}
+
+		// Add mirror entry: registry name -> endpoint
+		rc.Mirrors[reg.Name] = RegistryMirror{
+			Endpoint: []string{endpoint},
+		}
+
+		// Build config entry for the endpoint.
+		// Auth and TLS are independent — a registry can have both credentials
+		// and insecure_skip_verify at the same time.
+		auth := RegistryAuth{}
+		needsConfig := false
+
+		if reg.Insecure != nil && *reg.Insecure {
+			insecureTrue := true
+			auth.Tls = &RegistryTLSConfig{InsecureSkipVerify: &insecureTrue}
+			needsConfig = true
+		}
+
+		if reg.Username != nil && reg.Password != nil {
+			auth.Auth = &RegistryAuthConfig{
+				Username: reg.Username,
+				Password: reg.Password,
+			}
+			needsConfig = true
+		}
+
+		if needsConfig {
+			rc.Configs[endpoint] = auth
+		}
+	}
+
+	out, _ := yaml.Marshal(rc)
+	return string(out)
 }
 
 // GenerateRegistriesConfig generates registries.yaml content for Zot registry
 // This is a convenience wrapper around GenerateRegistriesYAML that assumes
 // insecure connections (common for local development)
-func GenerateRegistriesConfig(zotAddr string) string {
+func GenerateRegistriesConfig(zotAddr string, additional []AdditionalRegistry) string {
 	// Format the Zot address as a URL with port
 	zotURL := fmt.Sprintf("http://%s:5000", zotAddr)
-	return GenerateRegistriesYAML(zotURL, true)
+	return GenerateRegistriesYAML(zotURL, true, additional)
 }
 
 // GenerateK3sServerFlags generates the command-line flags for K3s server installation

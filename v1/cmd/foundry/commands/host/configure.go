@@ -310,6 +310,27 @@ func runConfigure(ctx context.Context, cmd *cli.Command) error {
 		} else {
 			fmt.Println("  ✓ AppArmor configured for containers")
 		}
+
+		// Ensure CNI configuration exists (needed for bridge networking with port mapping)
+		fmt.Println("  Checking CNI configuration...")
+		cniCreated, err := container.EnsureCNIConfig(executor)
+		if err != nil {
+			return fmt.Errorf("failed to ensure CNI configuration: %w", err)
+		}
+
+		if cniCreated {
+			fmt.Println("  ✓ CNI configuration created")
+			fmt.Println("  Restarting services that use bridge networking...")
+			sshAdapter := &sshExecutorAdapter{conn: conn}
+			if err := container.RestartBridgeNetworkingServices(sshAdapter); err != nil {
+				// Don't fail - services may not exist yet
+				fmt.Printf("  ⚠ Warning: %v\n", err)
+			} else {
+				fmt.Println("  ✓ Services restarted")
+			}
+		} else {
+			fmt.Println("  ✓ CNI configuration already present")
+		}
 	}
 
 	fmt.Printf("\n✓ Configuration complete for %s\n", hostname)
@@ -362,6 +383,20 @@ func (e *sudoCommandExecutor) Exec(cmd string) (*sudo.ExecResult, error) {
 // sshExecutor is an interface for executing commands over SSH
 type sshExecutor interface {
 	Exec(command string) (*ssh.ExecResult, error)
+}
+
+// sshExecutorAdapter adapts ssh.Connection to container.SSHExecutor interface
+// This adapter converts from Exec(*ExecResult, error) to Execute(string, error)
+type sshExecutorAdapter struct {
+	conn *ssh.Connection
+}
+
+func (e *sshExecutorAdapter) Execute(cmd string) (string, error) {
+	result, err := e.conn.Exec(cmd)
+	if err != nil {
+		return "", err
+	}
+	return result.Stdout, nil
 }
 
 // fixAppArmorForContainers fixes the AppArmor profile to allow container signal handling

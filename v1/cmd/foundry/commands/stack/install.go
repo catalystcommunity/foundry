@@ -773,6 +773,13 @@ func installComponents(ctx context.Context, cfg *config.Config, configPath strin
 						return fmt.Errorf("failed to ensure DNS zones: %w", err)
 					}
 				}
+				// K3s is installed but ensure registries.yaml is up to date
+				if comp.name == "k3s" {
+					fmt.Println("  Syncing K3s registry configuration...")
+					if err := installK3sCluster(ctx, cfg); err != nil {
+						return fmt.Errorf("failed to sync K3s registries: %w", err)
+					}
+				}
 				continue
 			}
 		} else {
