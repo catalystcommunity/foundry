@@ -3,6 +3,8 @@ package container
 import (
 	"fmt"
 	"strings"
+
+	"github.com/catalystcommunity/foundry/v1/internal/systemd"
 )
 
 // CommandExecutor is an interface for executing remote commands.
@@ -27,6 +29,40 @@ const (
 	RuntimeNerdctl
 	RuntimeNerdctlIncomplete
 )
+
+// CNI configuration paths
+const (
+	CNIConfigPath = "/etc/cni/net.d/10-containerd-net.conflist"
+	CNIConfigDir  = "/etc/cni/net.d"
+)
+
+// BridgeNetworkingServices lists services that use bridge networking with port mapping
+// These services need to be restarted when CNI configuration is added
+var BridgeNetworkingServices = []string{"openbao", "foundry-zot"}
+
+// CNIConfigContent is the standard CNI configuration for containerd/nerdctl
+// Uses bridge networking with portmap, firewall, and tuning plugins
+const CNIConfigContent = `{
+  "cniVersion": "1.0.0",
+  "name": "containerd-net",
+  "plugins": [
+    {
+      "type": "bridge",
+      "bridge": "cni0",
+      "isGateway": true,
+      "ipMasq": true,
+      "promiscMode": true,
+      "ipam": {
+        "type": "host-local",
+        "ranges": [[{"subnet": "10.88.0.0/16"}]],
+        "routes": [{"dst": "0.0.0.0/0"}]
+      }
+    },
+    {"type": "portmap", "capabilities": {"portMappings": true}},
+    {"type": "firewall"},
+    {"type": "tuning"}
+  ]
+}`
 
 // InstallRuntime installs a container runtime if not already present.
 // Strategy:
@@ -104,10 +140,16 @@ func DetectRuntimeInstallation(executor CommandExecutor) RuntimeType {
 		// It's nerdctl, but is it complete?
 		// Check if CNI plugins are installed
 		cniResult, err := executor.Exec("test -f /opt/cni/bin/bridge && echo 'ok'")
-		if err == nil && cniResult.ExitCode == 0 && strings.TrimSpace(cniResult.Stdout) == "ok" {
-			return RuntimeNerdctl
+		if err != nil || cniResult.ExitCode != 0 || strings.TrimSpace(cniResult.Stdout) != "ok" {
+			return RuntimeNerdctlIncomplete
 		}
-		return RuntimeNerdctlIncomplete
+
+		// Also check if CNI config exists
+		if !isCNIConfigValid(executor) {
+			return RuntimeNerdctlIncomplete
+		}
+
+		return RuntimeNerdctl
 	}
 
 	// docker command exists but we can't identify it
@@ -121,7 +163,7 @@ func IsDockerAvailable(executor CommandExecutor) bool {
 	return runtimeType == RuntimeDocker || runtimeType == RuntimeNerdctl
 }
 
-// installCNIPlugins installs only the CNI plugins (for incomplete nerdctl installations)
+// installCNIPlugins installs only the CNI plugins and config (for incomplete nerdctl installations)
 func installCNIPlugins(executor CommandExecutor) error {
 	commands := []string{
 		// Download and install CNI plugins
@@ -145,6 +187,11 @@ func installCNIPlugins(executor CommandExecutor) error {
 		}
 	}
 
+	// Also install CNI config if missing
+	if err := installCNIConfig(executor); err != nil {
+		return fmt.Errorf("failed to install CNI config: %w", err)
+	}
+
 	return nil
 }
 
@@ -163,9 +210,30 @@ func installContainerdAndNerdctl(executor CommandExecutor, user string) error {
 		// - Easy migration path to pure nftables mode later (K3s --kube-proxy-arg=proxy-mode=nftables)
 		"sudo apt-get install -y -qq containerd iptables",
 
-		// Enable and start containerd
+		// Create containerd group (GID 996 matches docker group convention) for socket access
+		// This allows non-root users in the containerd group to access the socket
+		"sudo groupadd -g 996 containerd 2>/dev/null || true",
+
+		// Add the current user to the containerd group for CLI access
+		fmt.Sprintf("sudo usermod -aG containerd %s 2>/dev/null || true", user),
+
+		// Create containerd config directory
+		"sudo mkdir -p /etc/containerd",
+
+		// Configure containerd socket permissions via config.toml
+		// Setting gid=996 allows containerd group members to access the socket
+		`sudo tee /etc/containerd/config.toml > /dev/null << 'CONTAINERD_CONFIG'
+version = 2
+
+[grpc]
+address = "/run/containerd/containerd.sock"
+uid = 0
+gid = 996
+CONTAINERD_CONFIG`,
+
+		// Enable and start containerd (will pick up the new config)
 		"sudo systemctl enable containerd",
-		"sudo systemctl start containerd",
+		"sudo systemctl restart containerd",
 
 		// Download and install CNI plugins (required by nerdctl for networking)
 		"curl -fsSL https://github.com/containernetworking/plugins/releases/download/v1.4.0/cni-plugins-linux-amd64-v1.4.0.tgz -o /tmp/cni-plugins.tgz",
@@ -180,9 +248,6 @@ func installContainerdAndNerdctl(executor CommandExecutor, user string) error {
 
 		// Create symlink: docker -> nerdctl (for CLI compatibility)
 		"sudo ln -sf /usr/local/bin/nerdctl /usr/local/bin/docker",
-
-		// Create containerd config directory for nerdctl
-		"sudo mkdir -p /etc/containerd",
 	}
 
 	for i, cmd := range commands {
@@ -198,6 +263,11 @@ func installContainerdAndNerdctl(executor CommandExecutor, user string) error {
 			}
 			return fmt.Errorf("command %d exited with code %d: %s", i+1, result.ExitCode, strings.TrimSpace(errMsg))
 		}
+	}
+
+	// Install CNI configuration for bridge networking with port mapping
+	if err := installCNIConfig(executor); err != nil {
+		return fmt.Errorf("failed to install CNI config: %w", err)
 	}
 
 	return nil
@@ -224,6 +294,97 @@ func VerifyRuntimeInstalled(executor CommandExecutor) error {
 
 	if result.ExitCode != 0 {
 		return fmt.Errorf("container test failed: %s", strings.TrimSpace(result.Stderr))
+	}
+
+	return nil
+}
+
+// isCNIConfigValid checks if the CNI config file exists and contains expected content
+func isCNIConfigValid(executor CommandExecutor) bool {
+	// Check if the config file exists
+	result, err := executor.Exec(fmt.Sprintf("test -f %s && echo 'ok'", CNIConfigPath))
+	if err != nil || result.ExitCode != 0 || strings.TrimSpace(result.Stdout) != "ok" {
+		return false
+	}
+
+	// Check if it contains our expected content (bridge plugin with portmap)
+	result, err = executor.Exec(fmt.Sprintf("grep -q 'containerd-net' %s && grep -q 'portmap' %s && echo 'ok'", CNIConfigPath, CNIConfigPath))
+	if err != nil || result.ExitCode != 0 || strings.TrimSpace(result.Stdout) != "ok" {
+		return false
+	}
+
+	return true
+}
+
+// installCNIConfig creates the CNI configuration file
+func installCNIConfig(executor CommandExecutor) error {
+	// Create the CNI config directory if it doesn't exist
+	result, err := executor.Exec(fmt.Sprintf("sudo mkdir -p %s", CNIConfigDir))
+	if err != nil {
+		return fmt.Errorf("failed to create CNI config directory: %w", err)
+	}
+	if result.ExitCode != 0 {
+		return fmt.Errorf("failed to create CNI config directory: %s", strings.TrimSpace(result.Stderr))
+	}
+
+	// Write the CNI config file using heredoc
+	writeCmd := fmt.Sprintf("sudo tee %s > /dev/null << 'FOUNDRY_CNI_EOF'\n%s\nFOUNDRY_CNI_EOF", CNIConfigPath, CNIConfigContent)
+	result, err = executor.Exec(writeCmd)
+	if err != nil {
+		return fmt.Errorf("failed to write CNI config: %w", err)
+	}
+	if result.ExitCode != 0 {
+		return fmt.Errorf("failed to write CNI config: %s", strings.TrimSpace(result.Stderr))
+	}
+
+	return nil
+}
+
+// EnsureCNIConfig ensures CNI configuration exists, creating it if missing.
+// Returns (created, error) where created indicates if the config was newly created.
+// This function is idempotent - safe to call multiple times.
+func EnsureCNIConfig(executor CommandExecutor) (bool, error) {
+	// Check if valid CNI config already exists
+	if isCNIConfigValid(executor) {
+		return false, nil
+	}
+
+	// Create the CNI configuration
+	if err := installCNIConfig(executor); err != nil {
+		return false, fmt.Errorf("failed to install CNI config: %w", err)
+	}
+
+	return true, nil
+}
+
+// RestartBridgeNetworkingServices restarts services that use bridge networking.
+// Only restarts services that are currently running.
+// Errors are collected but don't stop processing of other services.
+// The conn parameter should implement systemd.SSHExecutor (Execute(cmd) (string, error))
+func RestartBridgeNetworkingServices(conn SSHExecutor) error {
+	var errors []string
+
+	for _, service := range BridgeNetworkingServices {
+		// Check if service is running
+		running, err := systemd.IsServiceRunning(conn, service)
+		if err != nil {
+			// Service may not exist yet, skip it
+			continue
+		}
+
+		if !running {
+			// Service exists but not running, skip it
+			continue
+		}
+
+		// Restart the running service
+		if err := systemd.RestartService(conn, service); err != nil {
+			errors = append(errors, fmt.Sprintf("%s: %v", service, err))
+		}
+	}
+
+	if len(errors) > 0 {
+		return fmt.Errorf("failed to restart some services: %s", strings.Join(errors, "; "))
 	}
 
 	return nil

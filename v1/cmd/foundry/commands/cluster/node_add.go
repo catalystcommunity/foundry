@@ -271,9 +271,14 @@ func addNodeToCluster(ctx context.Context, hostname string, nodeRole *k3s.Determ
 		DisableComponents: []string{"traefik", "servicelb"},
 	}
 
+	// Parse additional registries from component config
+	if k3sCompCfg, exists := cfg.Components["k3s"]; exists {
+		k3sConfig.AdditionalRegistries = k3s.ParseAdditionalRegistries(k3sCompCfg.Config)
+	}
+
 	// Add registry config if Zot is configured
 	if zotAddr, err := cfg.GetPrimaryZotAddress(); err == nil {
-		k3sConfig.RegistryConfig = k3s.GenerateRegistriesConfig(zotAddr)
+		k3sConfig.RegistryConfig = k3s.GenerateRegistriesConfig(zotAddr, k3sConfig.AdditionalRegistries)
 	}
 
 	// Step 5: Join node based on role

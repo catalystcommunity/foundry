@@ -27,6 +27,36 @@ func JoinWorker(ctx context.Context, executor SSHExecutor, serverURL string, tok
 		}
 	}
 
+	// Check if K3s agent is already installed (idempotency)
+	isInstalled, err := IsK3sAgentInstalled(executor)
+	if err != nil {
+		return fmt.Errorf("failed to check if K3s agent is installed: %w", err)
+	}
+
+	if isInstalled {
+		// K3s agent is already installed - apply updates idempotently
+		fmt.Println("   K3s agent already installed, applying updates...")
+
+		// Update registries.yaml if configured (idempotent)
+		if cfg.RegistryConfig != "" {
+			fmt.Println("   Updating registries.yaml...")
+			if err := createRegistriesConfig(executor, cfg.RegistryConfig); err != nil {
+				return fmt.Errorf("failed to update registries config: %w", err)
+			}
+			// Restart k3s-agent to pick up registry changes
+			if _, err := executor.Exec("sudo systemctl restart k3s-agent"); err != nil {
+				return fmt.Errorf("failed to restart k3s-agent: %w", err)
+			}
+			// Wait for k3s-agent to be ready after restart
+			if err := waitForK3sAgentReady(executor, DefaultRetryConfig()); err != nil {
+				return fmt.Errorf("k3s-agent failed to become ready after restart: %w", err)
+			}
+		}
+
+		fmt.Println("   ✓ Updates applied successfully")
+		return nil
+	}
+
 	// Step 1: Configure DNS (if DNS servers provided)
 	if len(cfg.DNSServers) > 0 {
 		if err := configureDNS(executor, cfg.DNSServers); err != nil {

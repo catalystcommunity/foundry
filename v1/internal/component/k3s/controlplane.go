@@ -31,6 +31,36 @@ func JoinControlPlane(ctx context.Context, executor SSHExecutor, existingServerU
 		return fmt.Errorf("config validation failed: %w", err)
 	}
 
+	// Check if K3s is already installed (idempotency)
+	isInstalled, err := IsK3sInstalled(executor)
+	if err != nil {
+		return fmt.Errorf("failed to check if K3s is installed: %w", err)
+	}
+
+	if isInstalled {
+		// K3s is already installed - apply updates idempotently
+		fmt.Println("   K3s already installed, applying updates...")
+
+		// Update registries.yaml if configured (idempotent)
+		if cfg.RegistryConfig != "" {
+			fmt.Println("   Updating registries.yaml...")
+			if err := createRegistriesConfig(executor, cfg.RegistryConfig); err != nil {
+				return fmt.Errorf("failed to update registries config: %w", err)
+			}
+			// Restart k3s to pick up registry changes
+			if _, err := executor.Exec("sudo systemctl restart k3s"); err != nil {
+				return fmt.Errorf("failed to restart k3s: %w", err)
+			}
+			// Wait for k3s to be ready after restart
+			if err := waitForK3sReady(executor, DefaultRetryConfig()); err != nil {
+				return fmt.Errorf("k3s failed to become ready after restart: %w", err)
+			}
+		}
+
+		fmt.Println("   ✓ Updates applied successfully")
+		return nil
+	}
+
 	// Step 1: Configure DNS (if DNS servers provided)
 	if len(cfg.DNSServers) > 0 {
 		if err := configureDNS(executor, cfg.DNSServers); err != nil {

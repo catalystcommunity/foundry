@@ -16,6 +16,17 @@ type Config struct {
 	ClusterInit bool `json:"cluster_init" yaml:"cluster_init"`
 	ServerURL string `json:"server_url" yaml:"server_url"`
 	DNSServers []string `json:"dns_servers" yaml:"dns_servers"`
+	AdditionalRegistries []AdditionalRegistry `json:"additional_registries,omitempty" yaml:"additional_registries,omitempty"`
+}
+
+// AdditionalRegistry represents a structured data type
+type AdditionalRegistry struct {
+	Name string `json:"name" yaml:"name"`
+	Endpoint *string `json:"endpoint,omitempty" yaml:"endpoint,omitempty"`
+	HTTP *bool `json:"http,omitempty" yaml:"http,omitempty"`
+	Insecure *bool `json:"insecure,omitempty" yaml:"insecure,omitempty"`
+	Username *string `json:"username,omitempty" yaml:"username,omitempty"`
+	Password *string `json:"password,omitempty" yaml:"password,omitempty"`
 }
 
 // RegistryConfig represents a structured data type

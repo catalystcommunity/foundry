@@ -31,7 +31,10 @@ func runUnseal(ctx context.Context, cmd *cli.Command) error {
 		return fmt.Errorf("failed to get home directory: %w", err)
 	}
 
-	configPath := config.DefaultConfigPath()
+	configPath, err := config.FindConfig(cmd.String("config"))
+	if err != nil {
+		return fmt.Errorf("failed to find config: %w", err)
+	}
 	stackConfig, err := config.Load(configPath)
 	if err != nil {
 		return fmt.Errorf("failed to load stack config: %w", err)

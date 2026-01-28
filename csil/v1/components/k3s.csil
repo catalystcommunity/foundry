@@ -21,6 +21,18 @@ Config = {
     cluster_init: bool @go_name("ClusterInit"),
     server_url: text @go_name("ServerURL"),
     dns_servers: [* text] @go_name("DNSServers"),
+    ? additional_registries: [* AdditionalRegistry] @go_name("AdditionalRegistries"),
+}
+
+; Additional registry configuration for user-defined registries
+; beyond the auto-generated zot mirrors
+AdditionalRegistry = {
+    name: text @go_name("Name"),
+    ? endpoint: text @go_name("Endpoint"),
+    ? http: bool @go_name("HTTP"),
+    ? insecure: bool @go_name("Insecure"),
+    ? username: text @go_name("Username"),
+    ? password: text @go_name("Password"),
 }
 
 ; K3s registry configuration (registries.yaml format)

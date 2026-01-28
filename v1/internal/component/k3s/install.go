@@ -34,6 +34,17 @@ func IsK3sInstalled(executor SSHExecutor) (bool, error) {
 	return result.ExitCode == 0 && strings.TrimSpace(result.Stdout) == "active", nil
 }
 
+// IsK3sAgentInstalled checks if K3s agent is already installed and running on a node
+func IsK3sAgentInstalled(executor SSHExecutor) (bool, error) {
+	result, err := executor.Exec("systemctl is-active k3s-agent 2>/dev/null")
+	if err != nil {
+		return false, fmt.Errorf("failed to check K3s agent status: %w", err)
+	}
+
+	// If exit code is 0 and output is "active", K3s agent is installed and running
+	return result.ExitCode == 0 && strings.TrimSpace(result.Stdout) == "active", nil
+}
+
 // IsKubeVIPInstalled checks if kube-vip is already deployed in the cluster
 func IsKubeVIPInstalled(executor SSHExecutor) (bool, error) {
 	// Check if kube-vip daemonset exists
@@ -62,6 +73,22 @@ func InstallControlPlane(ctx context.Context, executor SSHExecutor, cfg *Config)
 	if isInstalled {
 		// K3s is already installed - apply updates idempotently
 		fmt.Println("   K3s already installed, applying updates...")
+
+		// Update registries.yaml if configured (idempotent)
+		if cfg.RegistryConfig != "" {
+			fmt.Println("   Updating registries.yaml...")
+			if err := createRegistriesConfig(executor, cfg.RegistryConfig); err != nil {
+				return fmt.Errorf("failed to update registries config: %w", err)
+			}
+			// Restart k3s to pick up registry changes
+			if _, err := executor.Exec("sudo systemctl restart k3s"); err != nil {
+				return fmt.Errorf("failed to restart k3s: %w", err)
+			}
+			// Wait for k3s to be ready after restart
+			if err := waitForK3sReady(executor, DefaultRetryConfig()); err != nil {
+				return fmt.Errorf("k3s failed to become ready after restart: %w", err)
+			}
+		}
 
 		// Detect network interface for kube-vip if not provided
 		if cfg.Interface == "" {
