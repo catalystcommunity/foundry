@@ -109,6 +109,11 @@ func ParseConfig(cfg component.ComponentConfig) (*Config, error) {
 		config.DNSServers = dnsServers
 	}
 
+	// Etcd args (for tuning etcd performance in virtualized environments)
+	if etcdArgs, ok := cfg.GetStringSlice("etcd_args"); ok {
+		config.EtcdArgs = etcdArgs
+	}
+
 	// Additional registries
 	if raw, ok := cfg.Get("additional_registries"); ok {
 		if registries, ok := raw.([]interface{}); ok {

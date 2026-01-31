@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"helm.sh/helm/v3/pkg/action"
 	"helm.sh/helm/v3/pkg/chart/loader"
@@ -14,6 +16,37 @@ import (
 	"helm.sh/helm/v3/pkg/release"
 	"sigs.k8s.io/yaml"
 )
+
+// Retry configuration for transient errors
+const (
+	maxRetries    = 3
+	retryDelay    = 2 * time.Second
+	retryBackoff  = 2 // Multiplier for exponential backoff
+)
+
+// isTransientError checks if an error is a transient network error that should be retried
+func isTransientError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errStr := err.Error()
+	transientPatterns := []string{
+		"connection reset by peer",
+		"connection refused",
+		"i/o timeout",
+		"unexpected EOF",
+		"TLS handshake timeout",
+		"context deadline exceeded",
+		"no such host",
+		"temporary failure",
+	}
+	for _, pattern := range transientPatterns {
+		if strings.Contains(strings.ToLower(errStr), strings.ToLower(pattern)) {
+			return true
+		}
+	}
+	return false
+}
 
 // Client wraps Helm SDK operations
 type Client struct {
@@ -165,7 +198,7 @@ func (c *Client) AddRepo(ctx context.Context, opts RepoAddOptions) error {
 	return nil
 }
 
-// Install installs a Helm chart
+// Install installs a Helm chart with retry logic for transient errors
 func (c *Client) Install(ctx context.Context, opts InstallOptions) error {
 	if opts.ReleaseName == "" {
 		return fmt.Errorf("release name cannot be empty")
@@ -179,6 +212,32 @@ func (c *Client) Install(ctx context.Context, opts InstallOptions) error {
 		namespace = c.namespace
 	}
 
+	var lastErr error
+	delay := retryDelay
+
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			fmt.Printf("  Retrying install (attempt %d/%d) after transient error...\n", attempt+1, maxRetries+1)
+			time.Sleep(delay)
+			delay *= retryBackoff
+		}
+
+		err := c.doInstall(ctx, opts, namespace)
+		if err == nil {
+			return nil
+		}
+
+		lastErr = err
+		if !isTransientError(err) {
+			return err
+		}
+	}
+
+	return fmt.Errorf("install failed after %d retries: %w", maxRetries+1, lastErr)
+}
+
+// doInstall performs the actual Helm install operation
+func (c *Client) doInstall(ctx context.Context, opts InstallOptions, namespace string) error {
 	actionConfig, err := c.getActionConfig(namespace)
 	if err != nil {
 		return err
@@ -217,7 +276,7 @@ func (c *Client) Install(ctx context.Context, opts InstallOptions) error {
 	return nil
 }
 
-// Upgrade upgrades a Helm release
+// Upgrade upgrades a Helm release with retry logic for transient errors
 func (c *Client) Upgrade(ctx context.Context, opts UpgradeOptions) error {
 	if opts.ReleaseName == "" {
 		return fmt.Errorf("release name cannot be empty")
@@ -231,6 +290,32 @@ func (c *Client) Upgrade(ctx context.Context, opts UpgradeOptions) error {
 		namespace = c.namespace
 	}
 
+	var lastErr error
+	delay := retryDelay
+
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			fmt.Printf("  Retrying upgrade (attempt %d/%d) after transient error...\n", attempt+1, maxRetries+1)
+			time.Sleep(delay)
+			delay *= retryBackoff
+		}
+
+		err := c.doUpgrade(ctx, opts, namespace)
+		if err == nil {
+			return nil
+		}
+
+		lastErr = err
+		if !isTransientError(err) {
+			return err
+		}
+	}
+
+	return fmt.Errorf("upgrade failed after %d retries: %w", maxRetries+1, lastErr)
+}
+
+// doUpgrade performs the actual Helm upgrade operation
+func (c *Client) doUpgrade(ctx context.Context, opts UpgradeOptions, namespace string) error {
 	actionConfig, err := c.getActionConfig(namespace)
 	if err != nil {
 		return err
@@ -303,12 +388,38 @@ func (c *Client) Uninstall(ctx context.Context, opts UninstallOptions) error {
 	return nil
 }
 
-// List lists Helm releases in a namespace
+// List lists Helm releases in a namespace with retry logic for transient errors
 func (c *Client) List(ctx context.Context, namespace string) ([]Release, error) {
 	if namespace == "" {
 		namespace = c.namespace
 	}
 
+	var lastErr error
+	delay := retryDelay
+
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			fmt.Printf("  Retrying list (attempt %d/%d) after transient error...\n", attempt+1, maxRetries+1)
+			time.Sleep(delay)
+			delay *= retryBackoff
+		}
+
+		result, err := c.doList(ctx, namespace)
+		if err == nil {
+			return result, nil
+		}
+
+		lastErr = err
+		if !isTransientError(err) {
+			return nil, err
+		}
+	}
+
+	return nil, fmt.Errorf("list failed after %d retries: %w", maxRetries+1, lastErr)
+}
+
+// doList performs the actual Helm list operation
+func (c *Client) doList(ctx context.Context, namespace string) ([]Release, error) {
 	actionConfig, err := c.getActionConfig(namespace)
 	if err != nil {
 		return nil, err

@@ -19,5 +19,7 @@ Config = {
     default_ingress_class: bool @go_name("DefaultIngressClass"),        ; Set Contour as default IngressClass, default: true
     gateway_api_version: text @go_name("GatewayAPIVersion"),    ; Gateway API version, default: "v1.3.0"
     service_monitor_enabled: bool @go_name("ServiceMonitorEnabled"),  ; Enable ServiceMonitor for Prometheus, default: true (requires CRD)
+    create_gateway: bool @go_name("CreateGateway"),             ; Create GatewayClass and Gateway resources, default: true
+    create_gateway_certificate: bool @go_name("CreateGatewayCertificate"), ; Create TLS Certificate for HTTPS listener, default: true
     values: {* text => any},            ; Additional Helm values to pass to the chart
 }

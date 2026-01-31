@@ -37,19 +37,29 @@ func JoinWorker(ctx context.Context, executor SSHExecutor, serverURL string, tok
 		// K3s agent is already installed - apply updates idempotently
 		fmt.Println("   K3s agent already installed, applying updates...")
 
-		// Update registries.yaml if configured (idempotent)
+		// Update registries.yaml if configured (idempotent - only restart if changed)
 		if cfg.RegistryConfig != "" {
 			fmt.Println("   Updating registries.yaml...")
-			if err := createRegistriesConfig(executor, cfg.RegistryConfig); err != nil {
-				return fmt.Errorf("failed to update registries config: %w", err)
+			// Check if config actually changed before restarting
+			existingResult, _ := executor.Exec("cat /etc/rancher/k3s/registries.yaml 2>/dev/null")
+			existingConfig := ""
+			if existingResult != nil {
+				existingConfig = existingResult.Stdout
 			}
-			// Restart k3s-agent to pick up registry changes
-			if _, err := executor.Exec("sudo systemctl restart k3s-agent"); err != nil {
-				return fmt.Errorf("failed to restart k3s-agent: %w", err)
-			}
-			// Wait for k3s-agent to be ready after restart
-			if err := waitForK3sAgentReady(executor, DefaultRetryConfig()); err != nil {
-				return fmt.Errorf("k3s-agent failed to become ready after restart: %w", err)
+			if strings.TrimSpace(existingConfig) != strings.TrimSpace(cfg.RegistryConfig) {
+				if err := createRegistriesConfig(executor, cfg.RegistryConfig); err != nil {
+					return fmt.Errorf("failed to update registries config: %w", err)
+				}
+				// Restart k3s-agent to pick up registry changes
+				if _, err := executor.Exec("sudo systemctl restart k3s-agent"); err != nil {
+					return fmt.Errorf("failed to restart k3s-agent: %w", err)
+				}
+				// Wait for k3s-agent to be ready after restart
+				if err := waitForK3sAgentReady(executor, DefaultRetryConfig()); err != nil {
+					return fmt.Errorf("k3s-agent failed to become ready after restart: %w", err)
+				}
+			} else {
+				fmt.Println("   ✓ registries.yaml unchanged, skipping restart")
 			}
 		}
 

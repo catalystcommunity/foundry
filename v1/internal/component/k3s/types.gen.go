@@ -17,6 +17,9 @@ type Config struct {
 	ServerURL string `json:"server_url" yaml:"server_url"`
 	DNSServers []string `json:"dns_servers" yaml:"dns_servers"`
 	AdditionalRegistries []AdditionalRegistry `json:"additional_registries,omitempty" yaml:"additional_registries,omitempty"`
+	// EtcdArgs are additional arguments passed to the embedded etcd server
+	// Example: ["heartbeat-interval=500", "election-timeout=5000"]
+	EtcdArgs []string `json:"etcd_args,omitempty" yaml:"etcd_args,omitempty"`
 }
 
 // AdditionalRegistry represents a structured data type

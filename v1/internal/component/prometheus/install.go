@@ -3,6 +3,7 @@ package prometheus
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/catalystcommunity/foundry/v1/internal/helm"
@@ -87,7 +88,24 @@ func Install(ctx context.Context, helmClient HelmClient, k8sClient K8sClient, cf
 			Wait:            true,
 			Timeout:         15 * time.Minute, // Prometheus stack can take a while
 		}); err != nil {
-			return fmt.Errorf("failed to install prometheus stack: %w", err)
+			// If install fails because release already exists (helm list may have failed
+			// due to transient network issues), fall back to upgrade
+			if strings.Contains(err.Error(), "cannot re-use a name") {
+				fmt.Println("  Release already exists - attempting upgrade instead...")
+				if upgradeErr := helmClient.Upgrade(ctx, helm.UpgradeOptions{
+					ReleaseName: releaseName,
+					Namespace:   cfg.Namespace,
+					Chart:       prometheusChart,
+					Version:     cfg.Version,
+					Values:      values,
+					Wait:        true,
+					Timeout:     15 * time.Minute,
+				}); upgradeErr != nil {
+					return fmt.Errorf("failed to upgrade prometheus stack: %w", upgradeErr)
+				}
+			} else {
+				return fmt.Errorf("failed to install prometheus stack: %w", err)
+			}
 		}
 	}
 

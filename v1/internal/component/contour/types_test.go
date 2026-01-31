@@ -20,6 +20,8 @@ func TestDefaultConfig(t *testing.T) {
 	assert.Equal(t, uint64(2), config.EnvoyReplicaCount)
 	assert.True(t, config.UseKubeVIP)
 	assert.True(t, config.DefaultIngressClass)
+	assert.True(t, config.CreateGateway)
+	assert.True(t, config.CreateGatewayCertificate)
 	assert.NotNil(t, config.Values)
 }
 
@@ -35,16 +37,20 @@ func TestParseConfig_Defaults(t *testing.T) {
 	assert.Equal(t, uint64(2), config.EnvoyReplicaCount)
 	assert.True(t, config.UseKubeVIP)
 	assert.True(t, config.DefaultIngressClass)
+	assert.True(t, config.CreateGateway)
+	assert.True(t, config.CreateGatewayCertificate)
 }
 
 func TestParseConfig_CustomValues(t *testing.T) {
 	cfg := component.ComponentConfig{
-		"version":               "1.28.0",
-		"namespace":             "custom-contour",
-		"replica_count":         3,
-		"envoy_replica_count":   4,
-		"use_kubevip":           false,
-		"default_ingress_class": false,
+		"version":                    "1.28.0",
+		"namespace":                  "custom-contour",
+		"replica_count":              3,
+		"envoy_replica_count":        4,
+		"use_kubevip":                false,
+		"default_ingress_class":      false,
+		"create_gateway":             false,
+		"create_gateway_certificate": false,
 	}
 
 	config, err := ParseConfig(cfg)
@@ -56,6 +62,23 @@ func TestParseConfig_CustomValues(t *testing.T) {
 	assert.Equal(t, uint64(4), config.EnvoyReplicaCount)
 	assert.False(t, config.UseKubeVIP)
 	assert.False(t, config.DefaultIngressClass)
+	assert.False(t, config.CreateGateway)
+	assert.False(t, config.CreateGatewayCertificate)
+}
+
+func TestParseConfig_GatewayDomain(t *testing.T) {
+	// Clean up any previous domain override
+	SetGatewayDomain("")
+	defer SetGatewayDomain("")
+
+	cfg := component.ComponentConfig{
+		"gateway_domain": "catalyst.local",
+	}
+
+	_, err := ParseConfig(cfg)
+	require.NoError(t, err)
+
+	assert.Equal(t, "catalyst.local", GetGatewayDomain())
 }
 
 func TestParseConfig_WithCustomValues(t *testing.T) {

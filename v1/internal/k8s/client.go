@@ -243,22 +243,23 @@ func (c *Client) applySingleManifest(ctx context.Context, manifest string) error
 // isClusterScopedResource returns true if the resource kind is cluster-scoped
 func isClusterScopedResource(kind string) bool {
 	clusterScoped := map[string]bool{
-		"ClusterIssuer":             true,
-		"ClusterRole":               true,
-		"ClusterRoleBinding":        true,
-		"Namespace":                 true,
-		"Node":                      true,
-		"PersistentVolume":          true,
-		"StorageClass":              true,
-		"CustomResourceDefinition":  true,
-		"PriorityClass":             true,
-		"IngressClass":              true,
-		"RuntimeClass":              true,
-		"VolumeSnapshotClass":       true,
-		"CSIDriver":                 true,
-		"CSINode":                   true,
-		"ValidatingWebhookConfiguration": true,
-		"MutatingWebhookConfiguration":   true,
+		"ClusterIssuer":                   true,
+		"ClusterRole":                     true,
+		"ClusterRoleBinding":              true,
+		"Namespace":                       true,
+		"Node":                            true,
+		"PersistentVolume":                true,
+		"StorageClass":                    true,
+		"CustomResourceDefinition":        true,
+		"PriorityClass":                   true,
+		"IngressClass":                    true,
+		"RuntimeClass":                    true,
+		"VolumeSnapshotClass":             true,
+		"CSIDriver":                       true,
+		"CSINode":                         true,
+		"ValidatingWebhookConfiguration":  true,
+		"MutatingWebhookConfiguration":    true,
+		"GatewayClass":                    true, // Gateway API cluster-scoped resource
 	}
 	return clusterScoped[kind]
 }
@@ -272,6 +273,8 @@ func pluralizeKind(kind string) string {
 		return "endpoints"
 	case "Ingress":
 		return "ingresses"
+	case "GatewayClass":
+		return "gatewayclasses"
 	default:
 		// Most resources just add 's' and lowercase
 		return strings.ToLower(kind) + "s"
@@ -556,4 +559,50 @@ func (c *Client) CRDExists(ctx context.Context, crdName string) (bool, error) {
 // ServiceMonitorCRDExists checks if the ServiceMonitor CRD from Prometheus Operator is installed
 func (c *Client) ServiceMonitorCRDExists(ctx context.Context) (bool, error) {
 	return c.CRDExists(ctx, "servicemonitors.monitoring.coreos.com")
+}
+
+// PatchDeploymentArgs replaces an argument in a deployment's container args
+// This is useful for modifying command-line arguments that can't be changed via Helm values
+func (c *Client) PatchDeploymentArgs(ctx context.Context, namespace, name string, oldArg, newArg string) error {
+	// Get the deployment
+	deploy, err := c.clientset.AppsV1().Deployments(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to get deployment %s/%s: %w", namespace, name, err)
+	}
+
+	// Find and replace the argument in the first container
+	if len(deploy.Spec.Template.Spec.Containers) == 0 {
+		return fmt.Errorf("deployment %s/%s has no containers", namespace, name)
+	}
+
+	container := &deploy.Spec.Template.Spec.Containers[0]
+	found := false
+	newArgs := make([]string, 0, len(container.Args))
+	for _, arg := range container.Args {
+		if strings.HasPrefix(arg, oldArg) || arg == oldArg {
+			// Replace with new argument (only if newArg is not empty)
+			if newArg != "" {
+				newArgs = append(newArgs, newArg)
+			}
+			found = true
+		} else {
+			newArgs = append(newArgs, arg)
+		}
+	}
+
+	if !found {
+		// Argument not found - nothing to replace
+		return nil
+	}
+
+	// Update the container args
+	container.Args = newArgs
+
+	// Update the deployment
+	_, err = c.clientset.AppsV1().Deployments(namespace).Update(ctx, deploy, metav1.UpdateOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to update deployment %s/%s: %w", namespace, name, err)
+	}
+
+	return nil
 }

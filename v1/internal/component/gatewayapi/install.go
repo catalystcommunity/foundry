@@ -22,8 +22,10 @@ const (
 	// GatewayAPIReleaseURL is the base URL for Gateway API releases
 	GatewayAPIReleaseURL = "https://github.com/kubernetes-sigs/gateway-api/releases/download"
 
-	// StandardInstallFile is the filename for the standard CRD installation
-	StandardInstallFile = "standard-install.yaml"
+	// ExperimentalInstallFile is the filename for the experimental CRD installation
+	// We use experimental instead of standard because Contour requires BackendTLSPolicy
+	// and other experimental CRDs for full Gateway API support
+	ExperimentalInstallFile = "experimental-install.yaml"
 )
 
 // crdGVR is the GroupVersionResource for CRDs
@@ -33,12 +35,14 @@ var crdGVR = schema.GroupVersionResource{
 	Resource: "customresourcedefinitions",
 }
 
-// gatewayCRDs are the core Gateway API CRD names
+// gatewayCRDs are the Gateway API CRD names (including experimental ones needed by Contour)
 var gatewayCRDs = []string{
 	"gatewayclasses.gateway.networking.k8s.io",
 	"gateways.gateway.networking.k8s.io",
 	"httproutes.gateway.networking.k8s.io",
 	"referencegrants.gateway.networking.k8s.io",
+	"grpcroutes.gateway.networking.k8s.io",
+	"backendtlspolicies.gateway.networking.k8s.io", // Required by Contour
 }
 
 // Install installs the Gateway API CRDs
@@ -64,8 +68,8 @@ func Install(ctx context.Context, k8sClient *k8s.Client, cfg *Config) error {
 		// Different version - will upgrade
 	}
 
-	// Download the Gateway API CRDs manifest
-	manifestURL := fmt.Sprintf("%s/%s/%s", GatewayAPIReleaseURL, cfg.Version, StandardInstallFile)
+	// Download the Gateway API CRDs manifest (experimental for Contour compatibility)
+	manifestURL := fmt.Sprintf("%s/%s/%s", GatewayAPIReleaseURL, cfg.Version, ExperimentalInstallFile)
 	manifest, err := downloadManifest(ctx, manifestURL)
 	if err != nil {
 		return fmt.Errorf("failed to download Gateway API manifest: %w", err)
@@ -190,20 +194,33 @@ func applyResource(ctx context.Context, dynamicClient dynamic.Interface, obj *un
 	}
 
 	namespace := obj.GetNamespace()
+	name := obj.GetName()
 
 	var err error
 	if namespace == "" {
 		// Cluster-scoped resource
 		_, err = dynamicClient.Resource(gvr).Create(ctx, obj, metav1.CreateOptions{})
 		if err != nil {
-			// Try update if already exists
+			// Resource might already exist - get it to fetch resourceVersion for update
+			existing, getErr := dynamicClient.Resource(gvr).Get(ctx, name, metav1.GetOptions{})
+			if getErr != nil {
+				return err // Return original create error
+			}
+			// Copy resourceVersion from existing for update
+			obj.SetResourceVersion(existing.GetResourceVersion())
 			_, err = dynamicClient.Resource(gvr).Update(ctx, obj, metav1.UpdateOptions{})
 		}
 	} else {
 		// Namespace-scoped resource
 		_, err = dynamicClient.Resource(gvr).Namespace(namespace).Create(ctx, obj, metav1.CreateOptions{})
 		if err != nil {
-			// Try update if already exists
+			// Resource might already exist - get it to fetch resourceVersion for update
+			existing, getErr := dynamicClient.Resource(gvr).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
+			if getErr != nil {
+				return err // Return original create error
+			}
+			// Copy resourceVersion from existing for update
+			obj.SetResourceVersion(existing.GetResourceVersion())
 			_, err = dynamicClient.Resource(gvr).Namespace(namespace).Update(ctx, obj, metav1.UpdateOptions{})
 		}
 	}
