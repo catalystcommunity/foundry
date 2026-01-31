@@ -22,6 +22,9 @@ type HelmClient interface {
 type K8sClient interface {
 	GetPods(ctx context.Context, namespace string) ([]*k8s.Pod, error)
 	ServiceMonitorCRDExists(ctx context.Context) (bool, error)
+	ApplyManifest(ctx context.Context, manifest string) error
+	CRDExists(ctx context.Context, crdName string) (bool, error)
+	PatchDeploymentArgs(ctx context.Context, namespace, name string, oldArg, newArg string) error
 }
 
 // Component implements the component.Component interface for Contour ingress controller
@@ -142,9 +145,13 @@ func (c *Component) Dependencies() []string {
 // Config type is generated from CSIL in types.gen.go
 // This file extends the generated type with methods
 
-// ClusterVIP stores the cluster VIP for LoadBalancer annotation (not in generated Config)
-// This is passed at runtime from the stack config, not persisted in component config
-var clusterVIPOverride string
+// Runtime overrides (passed from stack config, not persisted in component config)
+var (
+	// clusterVIPOverride stores the cluster VIP for LoadBalancer annotation
+	clusterVIPOverride string
+	// gatewayDomainOverride stores the domain for Gateway TLS certificate
+	gatewayDomainOverride string
+)
 
 // SetClusterVIP sets the cluster VIP for the next installation
 func SetClusterVIP(vip string) {
@@ -156,18 +163,30 @@ func GetClusterVIP() string {
 	return clusterVIPOverride
 }
 
+// SetGatewayDomain sets the domain for Gateway TLS certificate
+func SetGatewayDomain(domain string) {
+	gatewayDomainOverride = domain
+}
+
+// GetGatewayDomain returns the gateway domain if set
+func GetGatewayDomain() string {
+	return gatewayDomainOverride
+}
+
 // DefaultConfig returns a Config with sensible defaults
 func DefaultConfig() *Config {
 	return &Config{
-		Version:               "0.1.0",   // Official Project Contour chart version (app version 1.32.0)
-		Namespace:             "projectcontour",
-		ReplicaCount:          2,
-		EnvoyReplicaCount:     2,
-		UseKubeVIP:            true,  // Enable for bare metal
-		DefaultIngressClass:   true,  // Set as default
-		GatewayAPIVersion:     "v1.3.0", // Gateway API version
-		ServiceMonitorEnabled: true,  // Enable ServiceMonitor for Prometheus (requires CRD)
-		Values:                make(map[string]interface{}),
+		Version:                  "0.1.0", // Official Project Contour chart version (app version 1.32.0)
+		Namespace:                "projectcontour",
+		ReplicaCount:             2,
+		EnvoyReplicaCount:        2,
+		UseKubeVIP:               true,  // Enable for bare metal
+		DefaultIngressClass:      true,  // Set as default
+		GatewayAPIVersion:        "v1.3.0", // Gateway API version
+		ServiceMonitorEnabled:    true,  // Enable ServiceMonitor for Prometheus (requires CRD)
+		CreateGateway:            true,  // Create GatewayClass and Gateway resources
+		CreateGatewayCertificate: true,  // Create TLS Certificate for HTTPS listener
+		Values:                   make(map[string]interface{}),
 	}
 }
 
@@ -207,6 +226,14 @@ func ParseConfig(cfg component.ComponentConfig) (*Config, error) {
 		config.ServiceMonitorEnabled = serviceMonitorEnabled
 	}
 
+	if createGateway, ok := cfg.GetBool("create_gateway"); ok {
+		config.CreateGateway = createGateway
+	}
+
+	if createGatewayCertificate, ok := cfg.GetBool("create_gateway_certificate"); ok {
+		config.CreateGatewayCertificate = createGatewayCertificate
+	}
+
 	if values, ok := cfg.GetMap("values"); ok {
 		config.Values = values
 	}
@@ -214,6 +241,11 @@ func ParseConfig(cfg component.ComponentConfig) (*Config, error) {
 	// Store cluster VIP in the override (used by buildHelmValues)
 	if clusterVIP, ok := cfg.GetString("cluster_vip"); ok {
 		SetClusterVIP(clusterVIP)
+	}
+
+	// Store gateway domain in the override (used by createGatewayResources)
+	if gatewayDomain, ok := cfg.GetString("gateway_domain"); ok {
+		SetGatewayDomain(gatewayDomain)
 	}
 
 	return config, nil

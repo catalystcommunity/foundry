@@ -52,42 +52,83 @@ func Install(ctx context.Context, helmClient HelmClient, k8sClient K8sClient, cf
 	values := buildHelmValues(cfg)
 
 	// Check if release already exists
+	var existingRelease *helm.Release
 	releases, err := helmClient.List(ctx, cfg.Namespace)
 	if err == nil {
-		for _, rel := range releases {
+		for i, rel := range releases {
 			if rel.Name == "contour" {
-				// Release exists - check status
-				if rel.Status == "deployed" {
-					// Already deployed successfully, just verify pods are running
-					return verifyInstallation(ctx, k8sClient, cfg.Namespace)
-				}
-				// Release exists but not deployed (failed, pending, etc.)
-				// Uninstall the failed release so we can reinstall cleanly
-				fmt.Printf("  Removing failed release (status: %s)...\n", rel.Status)
-				if err := helmClient.Uninstall(ctx, helm.UninstallOptions{
-					ReleaseName: "contour",
-					Namespace:   cfg.Namespace,
-				}); err != nil {
-					return fmt.Errorf("failed to uninstall existing release: %w", err)
-				}
-				fmt.Println("  ✓ Failed release removed")
-				break // Continue with fresh install
+				existingRelease = &releases[i]
+				break
 			}
 		}
 	}
 
-	// Install Contour via Helm
-	if err := helmClient.Install(ctx, helm.InstallOptions{
-		ReleaseName:     "contour",
-		Namespace:       cfg.Namespace,
-		Chart:           contourChart,
-		Version:         cfg.Version,
-		Values:          values,
-		CreateNamespace: true,
-		Wait:            true,
-		Timeout:         5 * time.Minute,
-	}); err != nil {
-		return fmt.Errorf("failed to install contour: %w", err)
+	if existingRelease != nil {
+		if existingRelease.Status == "deployed" {
+			// Already deployed - upgrade to ensure latest configuration
+			// This is important for applying Gateway API configuration changes
+			fmt.Println("  Upgrading existing Contour deployment...")
+			if err := helmClient.Upgrade(ctx, helm.UpgradeOptions{
+				ReleaseName: "contour",
+				Namespace:   cfg.Namespace,
+				Chart:       contourChart,
+				Version:     cfg.Version,
+				Values:      values,
+				Wait:        true,
+				Timeout:     5 * time.Minute,
+			}); err != nil {
+				return fmt.Errorf("failed to upgrade contour: %w", err)
+			}
+		} else {
+			// Release exists but not deployed (failed, pending, etc.)
+			// Uninstall the failed release so we can reinstall cleanly
+			fmt.Printf("  Removing failed release (status: %s)...\n", existingRelease.Status)
+			if err := helmClient.Uninstall(ctx, helm.UninstallOptions{
+				ReleaseName: "contour",
+				Namespace:   cfg.Namespace,
+			}); err != nil {
+				return fmt.Errorf("failed to uninstall existing release: %w", err)
+			}
+			fmt.Println("  ✓ Failed release removed")
+
+			// Fresh install after removing failed release
+			if err := helmClient.Install(ctx, helm.InstallOptions{
+				ReleaseName:     "contour",
+				Namespace:       cfg.Namespace,
+				Chart:           contourChart,
+				Version:         cfg.Version,
+				Values:          values,
+				CreateNamespace: true,
+				Wait:            true,
+				Timeout:         5 * time.Minute,
+			}); err != nil {
+				return fmt.Errorf("failed to install contour: %w", err)
+			}
+		}
+	} else {
+		// Fresh install
+		if err := helmClient.Install(ctx, helm.InstallOptions{
+			ReleaseName:     "contour",
+			Namespace:       cfg.Namespace,
+			Chart:           contourChart,
+			Version:         cfg.Version,
+			Values:          values,
+			CreateNamespace: true,
+			Wait:            true,
+			Timeout:         5 * time.Minute,
+		}); err != nil {
+			return fmt.Errorf("failed to install contour: %w", err)
+		}
+	}
+
+	// If Gateway API is enabled, patch the deployment to use ContourConfiguration mode
+	// The Helm chart adds --config-path by default which conflicts with --contour-config-name
+	if cfg.CreateGateway {
+		fmt.Println("  Configuring Contour for Gateway API support...")
+		if err := patchContourForGatewayAPI(ctx, k8sClient, cfg.Namespace); err != nil {
+			// Log warning but don't fail - the pod might already be configured correctly
+			fmt.Printf("  ⚠ Could not patch Contour deployment: %v\n", err)
+		}
 	}
 
 	// Verify installation by checking for running pods
@@ -95,6 +136,28 @@ func Install(ctx context.Context, helmClient HelmClient, k8sClient K8sClient, cf
 		return fmt.Errorf("installation verification failed: %w", err)
 	}
 
+	// Create Gateway API resources if configured (idempotent - safe to run on existing installs)
+	if cfg.CreateGateway {
+		if err := createGatewayResources(ctx, k8sClient, cfg); err != nil {
+			return fmt.Errorf("failed to create Gateway API resources: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// patchContourForGatewayAPI patches the Contour deployment to use ContourConfiguration CRD
+// instead of the ConfigMap-based configuration. This is necessary because:
+// 1. The Helm chart adds --config-path by default
+// 2. We need --contour-config-name to use ContourConfiguration for Gateway API
+// 3. These two flags conflict - Contour rejects having both
+func patchContourForGatewayAPI(ctx context.Context, k8sClient K8sClient, namespace string) error {
+	// Replace --config-path with --contour-config-name
+	// The oldArg prefix matches "--config-path=/config/contour.yaml" or similar
+	if err := k8sClient.PatchDeploymentArgs(ctx, namespace, "contour-contour",
+		"--config-path", "--contour-config-name=contour"); err != nil {
+		return fmt.Errorf("failed to patch deployment args: %w", err)
+	}
 	return nil
 }
 
@@ -116,13 +179,11 @@ func buildHelmValues(cfg *Config) map[string]interface{} {
 			"create":  true,
 			"default": cfg.DefaultIngressClass,
 		},
-		// Gateway API controller configuration
-		"configInline": map[string]interface{}{
-			"gateway": map[string]interface{}{
-				"controllerName": "projectcontour.io/gateway-controller",
-			},
-		},
 	}
+
+	// Note: Gateway API configuration is handled via ContourConfiguration CRD
+	// The deployment is patched after Helm install to use --contour-config-name
+	// instead of --config-path (see patchContourForGatewayAPI)
 	values["contour"] = contourConfig
 
 	// Configure Envoy
@@ -135,21 +196,22 @@ func buildHelmValues(cfg *Config) map[string]interface{} {
 
 	// Configure for bare metal with kube-vip
 	if cfg.UseKubeVIP {
-		serviceConfig := map[string]interface{}{
-			"type": "LoadBalancer",
-		}
-
-		// If we have a cluster VIP, set it explicitly to share with K3s API
-		// (K3s API uses port 6443, Contour uses 80/443 - no conflict)
-		// If no VIP is set, don't add annotation - let kube-vip-cloud-provider auto-assign
-		if vip := GetClusterVIP(); vip != "" {
-			serviceConfig["annotations"] = map[string]interface{}{
-				"kube-vip.io/loadbalancerIPs": vip,
+		vip := GetClusterVIP()
+		if vip != "" {
+			// When sharing the control plane VIP, use externalIPs instead of LoadBalancer
+			// with kube-vip annotation. This avoids kube-vip creating a separate leader
+			// election for the service, which causes split-brain where both the CP leader
+			// and service leader advertise the same IP on different nodes.
+			// See: https://github.com/kube-vip/kube-vip/issues/665
+			//
+			// With externalIPs, Kubernetes routes traffic to the VIP (ports 80/443) directly
+			// to envoy pods via kube-proxy, while kube-vip manages only the CP VIP (port 6443).
+			envoyConfig["service"] = map[string]interface{}{
+				"type":        "ClusterIP",
+				"externalIPs": []string{vip},
 			}
 		}
-		// Note: "auto" is NOT a valid value for kube-vip - it tries to resolve it as a hostname
-
-		envoyConfig["service"] = serviceConfig
+		// If no VIP is set, keep default LoadBalancer type for kube-vip to auto-assign
 	}
 	values["envoy"] = envoyConfig
 
@@ -214,4 +276,141 @@ func verifyInstallation(ctx context.Context, k8sClient K8sClient, namespace stri
 			}
 		}
 	}
+}
+
+// createGatewayResources creates GatewayClass, ContourConfiguration, and Gateway resources for Contour
+func createGatewayResources(ctx context.Context, k8sClient K8sClient, cfg *Config) error {
+	// Create GatewayClass
+	gatewayClassManifest := generateGatewayClassManifest()
+	if err := k8sClient.ApplyManifest(ctx, gatewayClassManifest); err != nil {
+		return fmt.Errorf("failed to create GatewayClass: %w", err)
+	}
+	fmt.Println("  ✓ GatewayClass 'contour' created")
+
+	// Create ContourConfiguration CRD to configure Gateway API support
+	contourConfigManifest := generateContourConfigurationManifest(cfg.Namespace)
+	if err := k8sClient.ApplyManifest(ctx, contourConfigManifest); err != nil {
+		return fmt.Errorf("failed to create ContourConfiguration: %w", err)
+	}
+	fmt.Println("  ✓ ContourConfiguration 'contour' created")
+
+	// Check if cert-manager is installed before trying to create Certificate
+	domain := GetGatewayDomain()
+	certManagerInstalled := false
+	if cfg.CreateGatewayCertificate && domain != "" {
+		var err error
+		certManagerInstalled, err = k8sClient.CRDExists(ctx, "certificates.cert-manager.io")
+		if err != nil {
+			// Log warning but continue - we'll just skip TLS
+			fmt.Printf("  ⚠ Could not check for cert-manager CRD: %v\n", err)
+		}
+	}
+
+	// Create TLS Certificate if cert-manager is available
+	createTLS := cfg.CreateGatewayCertificate && domain != "" && certManagerInstalled
+	if createTLS {
+		certManifest := generateGatewayCertificateManifest(cfg.Namespace, domain)
+		if err := k8sClient.ApplyManifest(ctx, certManifest); err != nil {
+			return fmt.Errorf("failed to create Gateway TLS Certificate: %w", err)
+		}
+		fmt.Printf("  ✓ Gateway TLS Certificate for '*.%s' created\n", domain)
+	} else if cfg.CreateGatewayCertificate && domain != "" && !certManagerInstalled {
+		fmt.Println("  ℹ Skipping TLS Certificate (cert-manager not yet installed)")
+		fmt.Println("    Re-run 'foundry stack install' after cert-manager is installed to add HTTPS support")
+	}
+
+	// Create Gateway (with HTTPS only if certificate was created)
+	gatewayManifest := generateGatewayManifest(cfg.Namespace, domain, createTLS)
+	if err := k8sClient.ApplyManifest(ctx, gatewayManifest); err != nil {
+		return fmt.Errorf("failed to create Gateway: %w", err)
+	}
+	fmt.Println("  ✓ Gateway 'contour' created")
+
+	return nil
+}
+
+// generateGatewayClassManifest generates the GatewayClass manifest for Contour
+func generateGatewayClassManifest() string {
+	return `apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: contour
+spec:
+  controllerName: projectcontour.io/gateway-controller
+`
+}
+
+// generateContourConfigurationManifest generates a ContourConfiguration CRD
+// to configure Contour for Gateway API support (static provisioning)
+func generateContourConfigurationManifest(namespace string) string {
+	return fmt.Sprintf(`apiVersion: projectcontour.io/v1alpha1
+kind: ContourConfiguration
+metadata:
+  name: contour
+  namespace: %s
+spec:
+  gateway:
+    gatewayRef:
+      name: contour
+      namespace: %s
+`, namespace, namespace)
+}
+
+// generateGatewayCertificateManifest generates a Certificate resource for the Gateway's wildcard TLS
+func generateGatewayCertificateManifest(namespace, domain string) string {
+	return fmt.Sprintf(`apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: gateway-wildcard-tls
+  namespace: %s
+spec:
+  secretName: gateway-wildcard-tls
+  dnsNames:
+    - "*.%s"
+    - "%s"
+  issuerRef:
+    name: foundry-ca-issuer
+    kind: ClusterIssuer
+    group: cert-manager.io
+  duration: 8760h
+  renewBefore: 720h
+`, namespace, domain, domain)
+}
+
+// generateGatewayManifest generates the Gateway manifest with HTTP and HTTPS listeners
+func generateGatewayManifest(namespace, domain string, withTLS bool) string {
+	// Base Gateway with HTTP listener
+	manifest := fmt.Sprintf(`apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: contour
+  namespace: %s
+spec:
+  gatewayClassName: contour
+  listeners:
+  - name: http
+    port: 80
+    protocol: HTTP
+    allowedRoutes:
+      namespaces:
+        from: All
+`, namespace)
+
+	// Add HTTPS listener if TLS is configured
+	if withTLS && domain != "" {
+		manifest += fmt.Sprintf(`  - name: https
+    port: 443
+    protocol: HTTPS
+    hostname: "*.%s"
+    tls:
+      mode: Terminate
+      certificateRefs:
+      - name: gateway-wildcard-tls
+    allowedRoutes:
+      namespaces:
+        from: All
+`, domain)
+	}
+
+	return manifest
 }

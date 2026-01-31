@@ -13,6 +13,8 @@ type Config struct {
 	DefaultIngressClass bool `json:"default_ingress_class" yaml:"default_ingress_class"`
 	GatewayAPIVersion string `json:"gateway_api_version" yaml:"gateway_api_version"`
 	ServiceMonitorEnabled bool `json:"service_monitor_enabled" yaml:"service_monitor_enabled"`
+	CreateGateway bool `json:"create_gateway" yaml:"create_gateway"`
+	CreateGatewayCertificate bool `json:"create_gateway_certificate" yaml:"create_gateway_certificate"`
 	Values map[string]any `json:"values" yaml:",inline"`
 }
 

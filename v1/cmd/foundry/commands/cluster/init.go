@@ -286,9 +286,20 @@ func InitializeCluster(ctx context.Context, cfg *config.Config) error {
 		DisableComponents: []string{"traefik", "servicelb"},
 	}
 
-	// Parse additional registries from component config
+	// Parse additional registries and etcd args from component config
 	if k3sCompCfg, exists := cfg.Components["k3s"]; exists {
 		k3sConfig.AdditionalRegistries = k3s.ParseAdditionalRegistries(k3sCompCfg.Config)
+
+		// Parse etcd_args for tuning (especially important for virtualized environments)
+		if etcdArgsRaw, ok := k3sCompCfg.Config["etcd_args"]; ok {
+			if etcdArgs, ok := etcdArgsRaw.([]interface{}); ok {
+				for _, arg := range etcdArgs {
+					if argStr, ok := arg.(string); ok {
+						k3sConfig.EtcdArgs = append(k3sConfig.EtcdArgs, argStr)
+					}
+				}
+			}
+		}
 	}
 
 	// Add registry config if Zot is configured
@@ -333,6 +344,7 @@ func InitializeCluster(ctx context.Context, cfg *config.Config) error {
 			TLSSANs:           k3sConfig.TLSSANs,
 			DisableComponents: k3sConfig.DisableComponents,
 			RegistryConfig:    k3sConfig.RegistryConfig,
+			EtcdArgs:          k3sConfig.EtcdArgs,
 		}
 
 		// Join control plane

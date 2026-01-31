@@ -41,13 +41,46 @@ func JoinControlPlane(ctx context.Context, executor SSHExecutor, existingServerU
 		// K3s is already installed - apply updates idempotently
 		fmt.Println("   K3s already installed, applying updates...")
 
-		// Update registries.yaml if configured (idempotent)
+		// Track if we need to restart K3s
+		needsRestart := false
+
+		// Update etcd config if configured (for virtualized environments)
+		if len(cfg.EtcdArgs) > 0 {
+			changed, err := updateEtcdConfig(executor, cfg.EtcdArgs)
+			if err != nil {
+				return fmt.Errorf("failed to update etcd config: %w", err)
+			}
+			if changed {
+				fmt.Println("   etcd config updated")
+				needsRestart = true
+			} else {
+				fmt.Println("   ✓ etcd config unchanged")
+			}
+		}
+
+		// Update registries.yaml if configured (idempotent - only restart if changed)
 		if cfg.RegistryConfig != "" {
 			fmt.Println("   Updating registries.yaml...")
-			if err := createRegistriesConfig(executor, cfg.RegistryConfig); err != nil {
-				return fmt.Errorf("failed to update registries config: %w", err)
+			// Check if config actually changed before restarting
+			existingResult, _ := executor.Exec("cat /etc/rancher/k3s/registries.yaml 2>/dev/null")
+			existingConfig := ""
+			if existingResult != nil {
+				existingConfig = existingResult.Stdout
 			}
-			// Restart k3s to pick up registry changes
+			if strings.TrimSpace(existingConfig) != strings.TrimSpace(cfg.RegistryConfig) {
+				if err := createRegistriesConfig(executor, cfg.RegistryConfig); err != nil {
+					return fmt.Errorf("failed to update registries config: %w", err)
+				}
+				fmt.Println("   registries.yaml updated")
+				needsRestart = true
+			} else {
+				fmt.Println("   ✓ registries.yaml unchanged")
+			}
+		}
+
+		// Restart K3s if any config changed
+		if needsRestart {
+			fmt.Println("   Restarting k3s to apply config changes...")
 			if _, err := executor.Exec("sudo systemctl restart k3s"); err != nil {
 				return fmt.Errorf("failed to restart k3s: %w", err)
 			}
@@ -55,6 +88,8 @@ func JoinControlPlane(ctx context.Context, executor SSHExecutor, existingServerU
 			if err := waitForK3sReady(executor, DefaultRetryConfig()); err != nil {
 				return fmt.Errorf("k3s failed to become ready after restart: %w", err)
 			}
+		} else {
+			fmt.Println("   ✓ No config changes, skipping restart")
 		}
 
 		fmt.Println("   ✓ Updates applied successfully")

@@ -136,6 +136,14 @@ func GenerateK3sServerFlags(cfg *Config) []string {
 		}
 	}
 
+	// Etcd args (for tuning etcd performance in virtualized environments)
+	// These are passed as --etcd-arg=<arg> to K3s
+	if len(cfg.EtcdArgs) > 0 {
+		for _, arg := range cfg.EtcdArgs {
+			flags = append(flags, fmt.Sprintf("--etcd-arg=%s", arg))
+		}
+	}
+
 	return flags
 }
 

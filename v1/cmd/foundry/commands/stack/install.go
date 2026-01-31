@@ -891,9 +891,14 @@ func installK8sComponent(ctx context.Context, cfg *config.Config, componentName 
 		componentConfig["k8s_client"] = k8sClient
 	}
 
-	// Pass cluster VIP to Contour for LoadBalancer annotation sharing
-	if componentName == "contour" && cfg.Cluster.VIP != "" {
-		componentConfig["cluster_vip"] = cfg.Cluster.VIP
+	// Pass cluster VIP and domain to Contour for LoadBalancer and Gateway configuration
+	if componentName == "contour" {
+		if cfg.Cluster.VIP != "" {
+			componentConfig["cluster_vip"] = cfg.Cluster.VIP
+		}
+		if cfg.Cluster.PrimaryDomain != "" {
+			componentConfig["gateway_domain"] = cfg.Cluster.PrimaryDomain
+		}
 	}
 
 	// Pass DNS provider config to external-dns
@@ -2847,11 +2852,12 @@ func saveComponentConfig(cfg *config.Config, componentName string, componentConf
 
 	// Fields to exclude from saving (internal/runtime only)
 	internalFields := map[string]bool{
-		"helm_client": true,
-		"k8s_client":  true,
-		"host":        true,
-		"ssh_conn":    true,
-		"cluster_vip": true, // Runtime derived from cluster config
+		"helm_client":    true,
+		"k8s_client":     true,
+		"host":           true,
+		"ssh_conn":       true,
+		"cluster_vip":    true, // Runtime derived from cluster config
+		"gateway_domain": true, // Runtime derived from cluster config
 	}
 
 	// Copy component config settings

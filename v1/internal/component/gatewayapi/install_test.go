@@ -96,8 +96,8 @@ func TestPluralizeKind(t *testing.T) {
 
 func TestGatewayAPIReleaseURL(t *testing.T) {
 	cfg := DefaultConfig()
-	expectedURL := "https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.3.0/standard-install.yaml"
-	actualURL := GatewayAPIReleaseURL + "/" + cfg.Version + "/" + StandardInstallFile
+	expectedURL := "https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.3.0/experimental-install.yaml"
+	actualURL := GatewayAPIReleaseURL + "/" + cfg.Version + "/" + ExperimentalInstallFile
 
 	assert.Equal(t, expectedURL, actualURL)
 }

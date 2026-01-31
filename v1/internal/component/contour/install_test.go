@@ -49,10 +49,14 @@ func (m *mockHelmClient) Close() error {
 
 // mockK8sClient is a mock implementation of k8s.Client for testing
 type mockK8sClient struct {
-	pods                      []*k8s.Pod
-	podsErr                   error
-	serviceMonitorCRDExists   bool
+	pods                       []*k8s.Pod
+	podsErr                    error
+	serviceMonitorCRDExists    bool
 	serviceMonitorCRDExistsErr error
+	applyManifestErr           error
+	appliedManifests           []string
+	crdExists                  map[string]bool
+	crdExistsErr               error
 }
 
 func (m *mockK8sClient) GetPods(ctx context.Context, namespace string) ([]*k8s.Pod, error) {
@@ -61,6 +65,25 @@ func (m *mockK8sClient) GetPods(ctx context.Context, namespace string) ([]*k8s.P
 
 func (m *mockK8sClient) ServiceMonitorCRDExists(ctx context.Context) (bool, error) {
 	return m.serviceMonitorCRDExists, m.serviceMonitorCRDExistsErr
+}
+
+func (m *mockK8sClient) ApplyManifest(ctx context.Context, manifest string) error {
+	m.appliedManifests = append(m.appliedManifests, manifest)
+	return m.applyManifestErr
+}
+
+func (m *mockK8sClient) CRDExists(ctx context.Context, crdName string) (bool, error) {
+	if m.crdExistsErr != nil {
+		return false, m.crdExistsErr
+	}
+	if m.crdExists == nil {
+		return false, nil
+	}
+	return m.crdExists[crdName], nil
+}
+
+func (m *mockK8sClient) PatchDeploymentArgs(ctx context.Context, namespace, name string, oldArg, newArg string) error {
+	return nil // Mock always succeeds
 }
 
 func TestBuildHelmValues_Defaults(t *testing.T) {
@@ -226,6 +249,73 @@ func TestInstall_Success(t *testing.T) {
 	assert.Equal(t, 5*time.Minute, helmClient.chartsInstalled[0].Timeout)
 }
 
+func TestInstall_AlreadyDeployed_CreatesGatewayResources(t *testing.T) {
+	// Backwards compatibility test: Gateway resources should be created
+	// even when Contour is already deployed (for existing installations)
+	SetGatewayDomain("catalyst.local")
+	defer SetGatewayDomain("")
+
+	helmClient := &mockHelmClient{
+		listReleases: []helm.Release{
+			{Name: "contour", Namespace: "projectcontour", Status: "deployed"},
+		},
+	}
+	k8sClient := &mockK8sClient{
+		pods: []*k8s.Pod{
+			{Name: "contour-1", Namespace: "projectcontour", Status: "Running"},
+			{Name: "envoy-1", Namespace: "projectcontour", Status: "Running"},
+		},
+		serviceMonitorCRDExists: true,
+		crdExists: map[string]bool{
+			"certificates.cert-manager.io": true, // cert-manager is installed
+		},
+	}
+
+	cfg := DefaultConfig()
+	err := Install(context.Background(), helmClient, k8sClient, cfg)
+	require.NoError(t, err)
+
+	// Verify Helm install was NOT called (already deployed)
+	assert.Empty(t, helmClient.chartsInstalled, "should not reinstall already deployed release")
+
+	// Verify Gateway resources WERE created (backwards compatibility)
+	assert.Len(t, k8sClient.appliedManifests, 4, "should create GatewayClass, ContourConfiguration, Certificate, and Gateway")
+	assert.Contains(t, k8sClient.appliedManifests[0], "kind: GatewayClass")
+	assert.Contains(t, k8sClient.appliedManifests[1], "kind: ContourConfiguration")
+	assert.Contains(t, k8sClient.appliedManifests[2], "kind: Certificate")
+	assert.Contains(t, k8sClient.appliedManifests[3], "kind: Gateway")
+}
+
+func TestInstall_AlreadyDeployed_NoCertManager(t *testing.T) {
+	// Test that Gateway is created without TLS when cert-manager is not installed
+	SetGatewayDomain("catalyst.local")
+	defer SetGatewayDomain("")
+
+	helmClient := &mockHelmClient{
+		listReleases: []helm.Release{
+			{Name: "contour", Namespace: "projectcontour", Status: "deployed"},
+		},
+	}
+	k8sClient := &mockK8sClient{
+		pods: []*k8s.Pod{
+			{Name: "contour-1", Namespace: "projectcontour", Status: "Running"},
+		},
+		serviceMonitorCRDExists: true,
+		crdExists:               map[string]bool{}, // cert-manager NOT installed
+	}
+
+	cfg := DefaultConfig()
+	err := Install(context.Background(), helmClient, k8sClient, cfg)
+	require.NoError(t, err)
+
+	// Should have 3 manifests: GatewayClass, ContourConfiguration, and Gateway (no Certificate)
+	assert.Len(t, k8sClient.appliedManifests, 3, "should create GatewayClass, ContourConfiguration, and Gateway only")
+	assert.Contains(t, k8sClient.appliedManifests[0], "kind: GatewayClass")
+	assert.Contains(t, k8sClient.appliedManifests[1], "kind: ContourConfiguration")
+	assert.Contains(t, k8sClient.appliedManifests[2], "kind: Gateway")
+	assert.NotContains(t, k8sClient.appliedManifests[2], "protocol: HTTPS", "should not have HTTPS without cert-manager")
+}
+
 func TestInstall_NilHelmClient(t *testing.T) {
 	err := Install(context.Background(), nil, &mockK8sClient{}, DefaultConfig())
 	assert.Error(t, err)
@@ -336,4 +426,154 @@ func TestVerifyInstallation_ContextCanceled(t *testing.T) {
 	err := verifyInstallation(ctx, k8sClient, "projectcontour")
 	assert.Error(t, err)
 	assert.Equal(t, context.Canceled, err)
+}
+
+func TestCreateGatewayResources_Success(t *testing.T) {
+	// Clear any domain override from previous tests
+	SetGatewayDomain("")
+
+	k8sClient := &mockK8sClient{}
+	cfg := &Config{
+		Namespace:                "projectcontour",
+		CreateGateway:            true,
+		CreateGatewayCertificate: true,
+	}
+
+	err := createGatewayResources(context.Background(), k8sClient, cfg)
+	require.NoError(t, err)
+
+	// Should have 3 manifests: GatewayClass, ContourConfiguration, and Gateway (no certificate without domain)
+	assert.Len(t, k8sClient.appliedManifests, 3)
+
+	// Check GatewayClass manifest
+	assert.Contains(t, k8sClient.appliedManifests[0], "kind: GatewayClass")
+	assert.Contains(t, k8sClient.appliedManifests[0], "name: contour")
+	assert.Contains(t, k8sClient.appliedManifests[0], "projectcontour.io/gateway-controller")
+
+	// Check ContourConfiguration manifest
+	assert.Contains(t, k8sClient.appliedManifests[1], "kind: ContourConfiguration")
+	assert.Contains(t, k8sClient.appliedManifests[1], "namespace: projectcontour")
+
+	// Check Gateway manifest
+	assert.Contains(t, k8sClient.appliedManifests[2], "kind: Gateway")
+	assert.Contains(t, k8sClient.appliedManifests[2], "namespace: projectcontour")
+}
+
+func TestCreateGatewayResources_WithDomain(t *testing.T) {
+	// Set domain for TLS certificate
+	SetGatewayDomain("catalyst.local")
+	defer SetGatewayDomain("") // Clean up
+
+	k8sClient := &mockK8sClient{
+		crdExists: map[string]bool{
+			"certificates.cert-manager.io": true, // cert-manager is installed
+		},
+	}
+	cfg := &Config{
+		Namespace:                "projectcontour",
+		CreateGateway:            true,
+		CreateGatewayCertificate: true,
+	}
+
+	err := createGatewayResources(context.Background(), k8sClient, cfg)
+	require.NoError(t, err)
+
+	// Should have 4 manifests: GatewayClass, ContourConfiguration, Certificate, and Gateway
+	assert.Len(t, k8sClient.appliedManifests, 4)
+
+	// Check ContourConfiguration manifest
+	assert.Contains(t, k8sClient.appliedManifests[1], "kind: ContourConfiguration")
+
+	// Check Certificate manifest
+	assert.Contains(t, k8sClient.appliedManifests[2], "kind: Certificate")
+	assert.Contains(t, k8sClient.appliedManifests[2], "*.catalyst.local")
+	assert.Contains(t, k8sClient.appliedManifests[2], "foundry-ca-issuer")
+
+	// Check Gateway has HTTPS listener
+	assert.Contains(t, k8sClient.appliedManifests[3], "protocol: HTTPS")
+	assert.Contains(t, k8sClient.appliedManifests[3], "gateway-wildcard-tls")
+}
+
+func TestCreateGatewayResources_NoCertificate(t *testing.T) {
+	SetGatewayDomain("catalyst.local")
+	defer SetGatewayDomain("") // Clean up
+
+	k8sClient := &mockK8sClient{}
+	cfg := &Config{
+		Namespace:                "projectcontour",
+		CreateGateway:            true,
+		CreateGatewayCertificate: false, // Disable certificate creation
+	}
+
+	err := createGatewayResources(context.Background(), k8sClient, cfg)
+	require.NoError(t, err)
+
+	// Should have 3 manifests: GatewayClass, ContourConfiguration, and Gateway (no certificate)
+	assert.Len(t, k8sClient.appliedManifests, 3)
+
+	// Gateway should not have HTTPS listener
+	assert.NotContains(t, k8sClient.appliedManifests[2], "protocol: HTTPS")
+}
+
+func TestCreateGatewayResources_ApplyManifestError(t *testing.T) {
+	k8sClient := &mockK8sClient{
+		applyManifestErr: assert.AnError,
+	}
+	cfg := &Config{
+		Namespace:     "projectcontour",
+		CreateGateway: true,
+	}
+
+	err := createGatewayResources(context.Background(), k8sClient, cfg)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to create GatewayClass")
+}
+
+func TestGenerateGatewayClassManifest(t *testing.T) {
+	manifest := generateGatewayClassManifest()
+
+	assert.Contains(t, manifest, "apiVersion: gateway.networking.k8s.io/v1")
+	assert.Contains(t, manifest, "kind: GatewayClass")
+	assert.Contains(t, manifest, "name: contour")
+	assert.Contains(t, manifest, "controllerName: projectcontour.io/gateway-controller")
+}
+
+func TestGenerateGatewayCertificateManifest(t *testing.T) {
+	manifest := generateGatewayCertificateManifest("projectcontour", "example.com")
+
+	assert.Contains(t, manifest, "apiVersion: cert-manager.io/v1")
+	assert.Contains(t, manifest, "kind: Certificate")
+	assert.Contains(t, manifest, "namespace: projectcontour")
+	assert.Contains(t, manifest, "secretName: gateway-wildcard-tls")
+	assert.Contains(t, manifest, "*.example.com")
+	assert.Contains(t, manifest, "example.com")
+	assert.Contains(t, manifest, "foundry-ca-issuer")
+}
+
+func TestGenerateGatewayManifest_HTTPOnly(t *testing.T) {
+	manifest := generateGatewayManifest("projectcontour", "", false)
+
+	assert.Contains(t, manifest, "apiVersion: gateway.networking.k8s.io/v1")
+	assert.Contains(t, manifest, "kind: Gateway")
+	assert.Contains(t, manifest, "name: contour")
+	assert.Contains(t, manifest, "namespace: projectcontour")
+	assert.Contains(t, manifest, "gatewayClassName: contour")
+	assert.Contains(t, manifest, "name: http")
+	assert.Contains(t, manifest, "port: 80")
+	assert.Contains(t, manifest, "protocol: HTTP")
+	assert.NotContains(t, manifest, "protocol: HTTPS")
+}
+
+func TestGenerateGatewayManifest_WithHTTPS(t *testing.T) {
+	manifest := generateGatewayManifest("projectcontour", "catalyst.local", true)
+
+	assert.Contains(t, manifest, "name: http")
+	assert.Contains(t, manifest, "port: 80")
+	assert.Contains(t, manifest, "protocol: HTTP")
+	assert.Contains(t, manifest, "name: https")
+	assert.Contains(t, manifest, "port: 443")
+	assert.Contains(t, manifest, "protocol: HTTPS")
+	assert.Contains(t, manifest, "hostname: \"*.catalyst.local\"")
+	assert.Contains(t, manifest, "gateway-wildcard-tls")
+	assert.Contains(t, manifest, "mode: Terminate")
 }

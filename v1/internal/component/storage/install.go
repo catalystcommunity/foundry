@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/catalystcommunity/foundry/v1/internal/helm"
@@ -346,22 +347,23 @@ func installLonghorn(ctx context.Context, helmClient HelmClient, k8sClient K8sCl
 	}
 
 	// Check if release already exists
-	var releaseExists bool
-	var releaseStatus string
+	var existingRelease *helm.Release
 	releases, err := helmClient.List(ctx, namespace)
-	if err == nil {
-		for _, rel := range releases {
+	if err != nil {
+		// Log warning but continue - we'll try install and let it fail if release exists
+		fmt.Printf("  ⚠ Warning: Could not list existing releases: %v\n", err)
+	} else {
+		for i, rel := range releases {
 			if rel.Name == "longhorn" {
-				releaseExists = true
-				releaseStatus = rel.Status
+				existingRelease = &releases[i]
 				break
 			}
 		}
 	}
 
-	if releaseExists {
+	if existingRelease != nil {
 		// Try to upgrade existing release (even if failed - avoid data loss)
-		fmt.Printf("  Upgrading Longhorn (current status: %s)...\n", releaseStatus)
+		fmt.Printf("  Upgrading Longhorn (current status: %s)...\n", existingRelease.Status)
 		if err := helmClient.Upgrade(ctx, helm.UpgradeOptions{
 			ReleaseName: "longhorn",
 			Namespace:   namespace,
@@ -371,9 +373,9 @@ func installLonghorn(ctx context.Context, helmClient HelmClient, k8sClient K8sCl
 			Wait:        true,
 			Timeout:     10 * time.Minute,
 		}); err != nil {
-			if releaseStatus != "deployed" {
+			if existingRelease.Status != "deployed" {
 				// Upgrade of failed release didn't work - warn and skip
-				fmt.Printf("  ⚠ Warning: Failed to upgrade release (status: %s): %v\n", releaseStatus, err)
+				fmt.Printf("  ⚠ Warning: Failed to upgrade release (status: %s): %v\n", existingRelease.Status, err)
 				fmt.Println("  ⚠ Manual intervention required. You may need to:")
 				fmt.Println("    1. Check pod status: kubectl get pods -n", namespace, "-l app.kubernetes.io/name=longhorn")
 				fmt.Println("    2. Check PVC status: kubectl get pvc -n", namespace)
@@ -394,7 +396,23 @@ func installLonghorn(ctx context.Context, helmClient HelmClient, k8sClient K8sCl
 			Wait:            true,
 			Timeout:         10 * time.Minute,
 		}); err != nil {
-			return fmt.Errorf("failed to install longhorn: %w", err)
+			// Check if failure is due to existing release (can happen if List failed)
+			if strings.Contains(err.Error(), "cannot re-use a name") {
+				fmt.Println("  Release already exists - attempting upgrade instead...")
+				if upgradeErr := helmClient.Upgrade(ctx, helm.UpgradeOptions{
+					ReleaseName: "longhorn",
+					Namespace:   namespace,
+					Chart:       longhornChart,
+					Version:     version,
+					Values:      values,
+					Wait:        true,
+					Timeout:     10 * time.Minute,
+				}); upgradeErr != nil {
+					return fmt.Errorf("failed to upgrade longhorn: %w", upgradeErr)
+				}
+			} else {
+				return fmt.Errorf("failed to install longhorn: %w", err)
+			}
 		}
 	}
 
