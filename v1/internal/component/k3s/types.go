@@ -194,7 +194,9 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("VIP is required")
 	}
 
-	if err := ValidateVIP(c.VIP); err != nil {
+	// Dereference AllowCGNATVIP pointer (defaults to false if nil)
+	allowCGNAT := c.AllowCGNATVIP != nil && *c.AllowCGNATVIP
+	if err := ValidateVIP(c.VIP, allowCGNAT); err != nil {
 		return fmt.Errorf("VIP validation failed: %w", err)
 	}
 
