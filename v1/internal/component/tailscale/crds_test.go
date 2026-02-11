@@ -21,6 +21,19 @@ func (m *mockKubernetesClient) Apply(ctx context.Context, manifest map[string]in
 	return nil
 }
 
+// Stub implementations for new interface methods (not used in CRD tests)
+func (m *mockKubernetesClient) GetServiceIP(ctx context.Context, namespace, name string) (string, error) {
+	return "", fmt.Errorf("GetServiceIP not implemented in basic mock")
+}
+
+func (m *mockKubernetesClient) GetConfigMap(ctx context.Context, namespace, name string) (*ConfigMap, error) {
+	return nil, fmt.Errorf("GetConfigMap not implemented in basic mock")
+}
+
+func (m *mockKubernetesClient) UpdateConfigMap(ctx context.Context, cm *ConfigMap) error {
+	return fmt.Errorf("UpdateConfigMap not implemented in basic mock")
+}
+
 func TestNewCRDInstaller(t *testing.T) {
 	tests := []struct {
 		name    string
