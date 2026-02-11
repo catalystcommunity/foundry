@@ -83,7 +83,11 @@ func (c *Config) validateK8sVIPUniqueness() error {
 	// Check against all host addresses
 	for _, h := range c.Hosts {
 		if h.Address == vip {
-			return fmt.Errorf("k8s_vip %q conflicts with host %q IP address", vip, h.Hostname)
+			// Special error message for control plane conflicts (common mistake)
+			if h.HasRole(host.RoleClusterControlPlane) {
+				return fmt.Errorf("k8s_vip %q cannot be the same as control plane host %q IP address - VIP must be a separate floating IP managed by kube-vip", vip, h.Hostname)
+			}
+			return fmt.Errorf("k8s_vip %q conflicts with host %q IP address - VIP must be a unique IP address", vip, h.Hostname)
 		}
 	}
 

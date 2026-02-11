@@ -220,7 +220,7 @@ func TestConfig_ValidateVIPUniqueness(t *testing.T) {
 			errMsg:  "conflicts with host",
 		},
 		{
-			name: "VIP conflicts with cluster node",
+			name: "VIP conflicts with cluster control plane node",
 			config: Config{
 				Network: &NetworkConfig{
 					Gateway: "192.168.1.1",
@@ -236,7 +236,31 @@ func TestConfig_ValidateVIPUniqueness(t *testing.T) {
 				Cluster: ClusterConfig{
 					Name:          "test",
 					PrimaryDomain: "example.com",
-					VIP:    "192.168.1.20", // Conflicts with node1
+					VIP:    "192.168.1.20", // Conflicts with control plane node1
+				},
+				Components: ComponentMap{"k3s": ComponentConfig{}},
+			},
+			wantErr: true,
+			errMsg:  "cannot be the same as control plane host",
+		},
+		{
+			name: "VIP conflicts with cluster worker node",
+			config: Config{
+				Network: &NetworkConfig{
+					Gateway: "192.168.1.1",
+					Netmask: "255.255.255.0",
+				},
+				Hosts: []*host.Host{
+					{
+						Hostname: "worker1",
+						Address:  "192.168.1.30",
+						Roles:    []string{host.RoleClusterWorker},
+					},
+				},
+				Cluster: ClusterConfig{
+					Name:          "test",
+					PrimaryDomain: "example.com",
+					VIP:    "192.168.1.30", // Conflicts with worker1
 				},
 				Components: ComponentMap{"k3s": ComponentConfig{}},
 			},

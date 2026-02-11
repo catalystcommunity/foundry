@@ -22,7 +22,9 @@ func JoinWorker(ctx context.Context, executor SSHExecutor, serverURL string, tok
 
 	// Validate VIP if provided (worker nodes may not need full config validation)
 	if cfg.VIP != "" {
-		if err := ValidateVIP(cfg.VIP); err != nil {
+		// Dereference AllowCGNATVIP pointer (defaults to false if nil)
+		allowCGNAT := cfg.AllowCGNATVIP != nil && *cfg.AllowCGNATVIP
+		if err := ValidateVIP(cfg.VIP, allowCGNAT); err != nil {
 			return fmt.Errorf("VIP validation failed: %w", err)
 		}
 	}

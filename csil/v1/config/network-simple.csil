@@ -48,7 +48,8 @@ ClusterConfig = {
     name: text,
     ? domain: text,
     primary_domain: text @go_name("PrimaryDomain"),
-    vip: text @go_name("VIP")
+    vip: text @go_name("VIP"),
+    ? allow_cgnat_vip: bool @go_name("AllowCGNATVIP")
 }
 
 ; Map of component names to their configurations
