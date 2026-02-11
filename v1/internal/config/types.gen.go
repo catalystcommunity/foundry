@@ -44,6 +44,7 @@ type ClusterConfig struct {
 	PrimaryDomain string `json:"primary_domain" yaml:"primary_domain"`
 	VIP string `json:"vip" yaml:"vip"`
 	AllowCGNATVIP *bool `json:"allow_cgnat_vip,omitempty" yaml:"allow_cgnat_vip,omitempty"`
+	UseTailscale *bool `json:"use_tailscale,omitempty" yaml:"use_tailscale,omitempty"`
 }
 
 // ComponentMap is a type alias

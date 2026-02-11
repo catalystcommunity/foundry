@@ -1,0 +1,20 @@
+; Tailscale component configuration
+;
+; Configuration for Tailscale operator integration, enabling secure connectivity
+; to Tailscale overlay networks with automated VIP route advertisement and DNS.
+
+options {
+    go_module: "github.com/catalystcommunity/foundry/v1",
+    go_package: "github.com/catalystcommunity/foundry/v1/internal/component/tailscale"
+}
+
+; Tailscale operator configuration
+; OAuth credentials can be literal values or OpenBAO references: ${secret:path:key}
+; Default values will be set in Go code SetDefaults() function
+Config = {
+    ? oauth_client_id: text @go_name("OAuthClientID"),
+    ? oauth_client_secret: text @go_name("OAuthClientSecret"),
+    ? operator_image: text,
+    ? advertise_routes: [* text],
+    ? tags: [* text]
+}
