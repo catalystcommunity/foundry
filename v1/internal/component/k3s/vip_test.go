@@ -90,7 +90,7 @@ func TestValidateVIP(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := ValidateVIP(tt.vip)
+			err := ValidateVIP(tt.vip, false)
 			if tt.wantErr {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tt.errMsg)
@@ -244,7 +244,7 @@ func TestDetermineVIPConfig(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mock := tt.setupMock()
-			got, err := DetermineVIPConfig(tt.vip, mock)
+			got, err := DetermineVIPConfig(tt.vip, mock, false)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -573,7 +573,7 @@ func TestIsPrivateIP(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ip := parseIP(t, tt.ip)
-			got := isPrivateIP(ip)
+			got := isPrivateIP(ip, false)
 			assert.Equal(t, tt.want, got)
 		})
 	}
@@ -603,7 +603,7 @@ func TestVIPConfigIntegration(t *testing.T) {
 	vip := "192.168.1.100"
 
 	// Step 1: Determine VIP config
-	cfg, err := DetermineVIPConfig(vip, mock)
+	cfg, err := DetermineVIPConfig(vip, mock, false)
 	require.NoError(t, err)
 	assert.Equal(t, vip, cfg.VIP)
 	assert.Equal(t, "eth0", cfg.Interface)

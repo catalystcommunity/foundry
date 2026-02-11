@@ -284,6 +284,7 @@ func InitializeCluster(ctx context.Context, cfg *config.Config) error {
 			fmt.Sprintf("%s.%s", cfg.Cluster.Name, cfg.Cluster.PrimaryDomain),
 		},
 		DisableComponents: []string{"traefik", "servicelb"},
+		AllowCGNATVIP:     cfg.Cluster.AllowCGNATVIP,
 	}
 
 	// Parse additional registries and etcd args from component config
@@ -345,6 +346,7 @@ func InitializeCluster(ctx context.Context, cfg *config.Config) error {
 			DisableComponents: k3sConfig.DisableComponents,
 			RegistryConfig:    k3sConfig.RegistryConfig,
 			EtcdArgs:          k3sConfig.EtcdArgs,
+			AllowCGNATVIP:     k3sConfig.AllowCGNATVIP,
 		}
 
 		// Join control plane

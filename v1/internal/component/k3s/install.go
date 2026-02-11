@@ -294,8 +294,9 @@ func waitForK3sReady(executor SSHExecutor, retryCfg RetryConfig) error {
 func setupKubeVIP(ctx context.Context, executor SSHExecutor, cfg *Config) error {
 	// Determine VIP config
 	vipConfig := &VIPConfig{
-		VIP:       cfg.VIP,
-		Interface: cfg.Interface,
+		VIP:           cfg.VIP,
+		Interface:     cfg.Interface,
+		AllowCGNATVIP: cfg.AllowCGNATVIP,
 	}
 
 	// Generate kube-vip manifests
