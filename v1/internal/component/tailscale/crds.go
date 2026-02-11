@@ -5,10 +5,20 @@ import (
 	"fmt"
 )
 
+// ConfigMap represents a Kubernetes ConfigMap resource.
+type ConfigMap struct {
+	Name      string
+	Namespace string
+	Data      map[string]string
+}
+
 // KubernetesClient defines the interface for Kubernetes operations needed by Tailscale installer.
 // This interface allows for easier testing with mock implementations.
 type KubernetesClient interface {
 	Apply(ctx context.Context, manifest map[string]interface{}) error
+	GetServiceIP(ctx context.Context, namespace, name string) (string, error)
+	GetConfigMap(ctx context.Context, namespace, name string) (*ConfigMap, error)
+	UpdateConfigMap(ctx context.Context, cm *ConfigMap) error
 }
 
 // CRDInstaller handles CRD deployment for Tailscale operator.
