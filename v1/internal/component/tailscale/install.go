@@ -49,7 +49,17 @@ func (i *Installer) Install(ctx context.Context) error {
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
 
-	// TODO (PR #2c): Install operator via Helm
+	// Step 3: Install operator via Helm (PR #2c implementation)
+	// NOTE: Helm client will be passed in constructor in PR #2f (stack integration)
+	// For now, this is documented but not wired up
+	// helmInstaller := NewHelmInstaller(helmClient, i.config)
+	// if err := helmInstaller.AddRepository(ctx); err != nil {
+	//     return fmt.Errorf("failed to add Helm repository: %w", err)
+	// }
+	// if err := helmInstaller.InstallOperator(ctx); err != nil {
+	//     return fmt.Errorf("failed to install operator: %w", err)
+	// }
+
 	// TODO (PR #2d): Deploy Connector CRD
 	// TODO (PR #2d): Deploy DNSConfig CRD
 	// TODO (PR #2e): Patch CoreDNS
