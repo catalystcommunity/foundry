@@ -21,6 +21,7 @@ import (
 	"github.com/catalystcommunity/foundry/v1/internal/component/openbao"
 	"github.com/catalystcommunity/foundry/v1/internal/component/prometheus"
 	componentStorage "github.com/catalystcommunity/foundry/v1/internal/component/storage"
+	"github.com/catalystcommunity/foundry/v1/internal/component/tailscale"
 	"github.com/catalystcommunity/foundry/v1/internal/component/velero"
 	"github.com/catalystcommunity/foundry/v1/internal/config"
 	"github.com/catalystcommunity/foundry/v1/internal/helm"
@@ -111,6 +112,7 @@ var k8sComponents = map[string]bool{
 	"grafana":       true,
 	"external-dns":  true,
 	"velero":        true,
+	"tailscale":     true,
 }
 
 func runInstall(ctx context.Context, cmd *cli.Command) error {
@@ -201,6 +203,12 @@ func installK8sComponent(ctx context.Context, cmd *cli.Command, name string, sta
 	k8sClient, err := k8s.NewClientFromKubeconfig(kubeconfigBytes)
 	if err != nil {
 		return fmt.Errorf("failed to create k8s client: %w", err)
+	}
+
+	// Build secret resolver for resolving secret references
+	resolver, resCtx, err := buildSecretResolver(stackConfig)
+	if err != nil {
+		return fmt.Errorf("failed to setup secret resolver: %w", err)
 	}
 
 	// Build component config
@@ -296,11 +304,78 @@ func installK8sComponent(ctx context.Context, cmd *cli.Command, name string, sta
 		cfg["s3_bucket"] = "velero"
 		cfg["s3_region"] = "us-east-1"
 		componentWithClients = velero.NewComponent(helmClient, k8sClient)
+	case "tailscale":
+		// Get VIP from stack config
+		vip := stackConfig.Cluster.VIP
+		if vip == "" {
+			return fmt.Errorf("cluster VIP is required for Tailscale installation")
+		}
+		cfg["vip"] = vip
+
+		// Get Tailscale config from stack.yaml components section
+		var tsComponentConfig *tailscale.Config
+		if tsConfig, ok := stackConfig.Components[name]; ok {
+			// Parse config from stack.yaml
+			tsComponentConfig = &tailscale.Config{}
+
+			// Resolve OAuth client ID
+			if clientID, ok := tsConfig.Config["oauth_client_id"].(string); ok {
+				// Check if it's a secret reference
+				secretRef, err := secrets.ParseSecretRef(clientID)
+				if err != nil {
+					return fmt.Errorf("failed to parse oauth_client_id: %w", err)
+				}
+				if secretRef != nil {
+					// Resolve from secret store
+					resolvedClientID, err := resolver.Resolve(resCtx, *secretRef)
+					if err != nil {
+						return fmt.Errorf("failed to resolve oauth_client_id: %w", err)
+					}
+					fmt.Printf("DEBUG: Resolved client_id from %s to %s\n", clientID, resolvedClientID[:10]+"...")
+					tsComponentConfig.OAuthClientID = &resolvedClientID
+				} else {
+					// Use literal value
+					tsComponentConfig.OAuthClientID = &clientID
+				}
+			}
+
+			// Resolve OAuth client secret
+			if clientSecret, ok := tsConfig.Config["oauth_client_secret"].(string); ok {
+				// Check if it's a secret reference
+				secretRef, err := secrets.ParseSecretRef(clientSecret)
+				if err != nil {
+					return fmt.Errorf("failed to parse oauth_client_secret: %w", err)
+				}
+				if secretRef != nil {
+					// Resolve from secret store
+					resolvedClientSecret, err := resolver.Resolve(resCtx, *secretRef)
+					if err != nil {
+						return fmt.Errorf("failed to resolve oauth_client_secret: %w", err)
+					}
+					tsComponentConfig.OAuthClientSecret = &resolvedClientSecret
+				} else {
+					// Use literal value
+					tsComponentConfig.OAuthClientSecret = &clientSecret
+				}
+			}
+
+			// Copy other config to cfg map
+			for k, v := range tsConfig.Config {
+				cfg[k] = v
+			}
+		}
+
+		// Create component with clients directly (like contour, prometheus, etc.)
+		componentWithClients = tailscale.NewComponentWithClients(tsComponentConfig, vip, helmClient, k8sClient)
 	default:
 		return fmt.Errorf("unknown kubernetes component: %s", name)
 	}
 
 	fmt.Printf("\nInstalling component: %s\n", name)
+
+	// Add clients to component config for components that need them
+	cfg["helm_client"] = helmClient
+	cfg["k8s_client"] = k8sClient
 
 	// Install the component
 	if err := componentWithClients.Install(ctx, cfg); err != nil {
@@ -734,18 +809,41 @@ func buildSecretResolver(cfg *config.Config) (*secrets.ChainResolver, *secrets.R
 		Instance: "",
 	}
 
+	// Create FoundryVars resolver for ~/.foundryvars file
+	foundryVarsResolver, err := secrets.NewFoundryVarsResolverDefault()
+	if err != nil {
+		// Log warning but continue - foundryvars is optional
+		fmt.Printf("Warning: failed to load ~/.foundryvars: %v\n", err)
+	}
+
 	// If we have OpenBAO configured, add it to the resolver chain
 	if openBAOAddr != "" && openBAOToken != "" {
 		// Use foundry-core mount (where we enabled the KV v2 engine)
 		openBAOResolver, err := secrets.NewOpenBAOResolverWithMount(openBAOAddr, openBAOToken, "foundry-core")
 		if err != nil {
-			// Fall back to env-only if OpenBAO setup fails
+			// Fall back to env and foundryvars if OpenBAO setup fails
+			if foundryVarsResolver != nil {
+				resolver := secrets.NewChainResolver(
+					secrets.NewEnvResolver(),
+					foundryVarsResolver,
+				)
+				return resolver, resCtx, nil
+			}
 			resolver := secrets.NewChainResolver(
 				secrets.NewEnvResolver(),
 			)
 			return resolver, resCtx, nil
 		}
 
+		// Full chain: env -> foundryvars -> OpenBAO
+		if foundryVarsResolver != nil {
+			resolver := secrets.NewChainResolver(
+				secrets.NewEnvResolver(),
+				foundryVarsResolver,
+				openBAOResolver,
+			)
+			return resolver, resCtx, nil
+		}
 		resolver := secrets.NewChainResolver(
 			secrets.NewEnvResolver(),
 			openBAOResolver,
@@ -753,7 +851,16 @@ func buildSecretResolver(cfg *config.Config) (*secrets.ChainResolver, *secrets.R
 		return resolver, resCtx, nil
 	}
 
-	// OpenBAO not available, use env resolver only
+	// OpenBAO not available, use env and foundryvars
+	if foundryVarsResolver != nil {
+		resolver := secrets.NewChainResolver(
+			secrets.NewEnvResolver(),
+			foundryVarsResolver,
+		)
+		return resolver, resCtx, nil
+	}
+
+	// Fallback to env only
 	resolver := secrets.NewChainResolver(
 		secrets.NewEnvResolver(),
 	)

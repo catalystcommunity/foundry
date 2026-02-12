@@ -14,6 +14,7 @@ import (
 	"github.com/catalystcommunity/foundry/v1/internal/component/openbao"
 	"github.com/catalystcommunity/foundry/v1/internal/component/prometheus"
 	"github.com/catalystcommunity/foundry/v1/internal/component/storage"
+	"github.com/catalystcommunity/foundry/v1/internal/component/tailscale"
 	"github.com/catalystcommunity/foundry/v1/internal/component/velero"
 	"github.com/catalystcommunity/foundry/v1/internal/component/zot"
 )
@@ -40,6 +41,13 @@ func InitComponents() error {
 
 	// Register K3s - depends on OpenBAO, DNS, and Zot
 	if err := component.Register(&k3s.Component{}); err != nil {
+		return err
+	}
+
+	// Register Tailscale - depends on K3s
+	// Tailscale provides secure connectivity and VIP subnet route advertisement
+	tailscaleComp := tailscale.NewComponent(nil, "")
+	if err := component.Register(tailscaleComp); err != nil {
 		return err
 	}
 

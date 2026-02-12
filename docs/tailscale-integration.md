@@ -27,25 +27,45 @@ The automated operator integration requires OAuth credentials:
 
 1. **Create OAuth Client**:
    - Go to: https://login.tailscale.com/admin/settings/oauth
-   - Click "Generate OAuth Client"
-   - Name: `foundry-cluster-<name>`
-   - Scopes (minimum required):
-     - `devices:write` - Create and manage devices
-     - `routes:write` - Advertise subnet routes
-   - Save the `client_id` (starts with `tskey-client-`)
-   - Save the `client_secret` (starts with `tskey-secret-`)
+   - Click "+ Credential" → "OAuth client"
+   - Name/Description: `foundry-cluster-<name>` or `k8s-operator`
+   - **Scopes**: Choose one of:
+     - **Recommended**: Select "all" for full operator functionality
+     - **Minimum Required**:
+       - `devices:write` - Create and manage devices
+       - `routes:write` - Advertise subnet routes
+   - Click "Generate client"
+   - **Important**: Copy both Client ID and Client Secret immediately
+   - **Note**: Client Secret is shown only once and is single-use (regenerate if lost)
 
 2. **Store Credentials Securely**:
 
-   **Option A: OpenBAO (Recommended for Production)**
+   **Option A: `.foundryvars` File (Recommended for Local Development)**
+   ```bash
+   # Create or edit ~/.foundryvars
+   cat >> ~/.foundryvars <<EOF
+   foundry-core/tailscale:client_id=<YOUR_CLIENT_ID>
+   foundry-core/tailscale:client_secret=<YOUR_CLIENT_SECRET>
+   EOF
+
+   # Secure the file
+   chmod 600 ~/.foundryvars
+   ```
+
+   **Option B: OpenBAO (Recommended for Production)**
    ```bash
    foundry openbao write foundry-core/tailscale \
      client_id="<YOUR_CLIENT_ID>" \
      client_secret="<YOUR_CLIENT_SECRET>"
    ```
 
-   **Option B: Literal Values (Development/Testing Only)**
-   - Use credentials directly in configuration (not recommended for production)
+   **Option C: Literal Values (Not Recommended)**
+   - Use credentials directly in configuration (insecure, avoid for production)
+
+   **Secret Resolution Order**: Foundry checks in this order:
+   1. Environment variables (`FOUNDRY_SECRET_FOUNDRY_CORE_TAILSCALE_CLIENT_ID`)
+   2. `.foundryvars` file (`~/.foundryvars`)
+   3. OpenBAO KV store (`foundry-core/tailscale`)
 
 ## Required Tailscale ACL Configuration
 
@@ -81,12 +101,22 @@ Your Tailscale ACL must allow:
   ],
   "tagOwners": {
     "tag:k8s": ["autogroup:admin"],
+    "tag:k8s-operator": ["autogroup:admin"],  // Required for Tailscale operator
     "tag:k8s-foundry": ["autogroup:admin"]
   }
 }
 ```
 
 **Critical:** The second SSH rule (`tag:k8s` → `tag:k8s`) allows cluster nodes to SSH to each other, which is required for K3s agent installation on worker nodes.
+
+**Required Tags:**
+- `tag:k8s-operator` - Used by the Tailscale operator itself (auto-assigned by operator)
+- Any custom tags specified in your `components.tailscale.tags` configuration must be defined in `tagOwners`
+
+**Important**: If you add tags to the ACL after the operator has started, you must restart the operator pod to pick up the ACL changes:
+```bash
+kubectl delete pod -n tailscale <operator-pod-name>
+```
 
 ## Configuration
 
@@ -189,6 +219,38 @@ The operator automatically advertises your cluster VIP as a Tailscale subnet rou
 Routes advertised:
 - Cluster VIP (e.g., `100.81.89.100/32`)
 - Any additional routes in `advertise_routes` config
+
+## Installation Order for Multi-Node with Tailscale
+
+When deploying a multi-node cluster with `use_tailscale: true` and a CGNAT VIP, follow this sequence:
+
+1. **Install control plane only** (set `k8s_installed: false` in setup_state)
+2. **Install Tailscale operator** - This advertises the VIP route
+3. **Set `k8s_installed: false`** in setup_state to trigger worker installation
+4. **Run `foundry stack install`** again to join workers
+
+**Why this order is needed:**
+- Workers need to reach the VIP to join the cluster
+- The VIP route is only advertised after Tailscale operator starts
+- Setting `k8s_installed: true` tells Foundry to skip K3s installation
+- Setting it back to `false` allows workers to join on the next run
+
+**Example workflow:**
+```bash
+# 1. Initial install (control plane only)
+foundry stack install --config stack.yaml
+# Result: k8s_installed: true
+
+# 2. Tailscale operator deploys automatically
+
+# 3. Edit stack.yaml: change k8s_installed: true → false
+
+# 4. Install workers
+foundry stack install --config stack.yaml
+# Workers can now reach VIP via Tailscale
+```
+
+**Note:** This workflow will be automated in a future release (see [Issue #17](https://github.com/catalystcommunity/foundry/issues/17)).
 
 ## Verification
 
