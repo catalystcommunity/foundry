@@ -78,7 +78,18 @@ func JoinControlPlane(ctx context.Context, executor SSHExecutor, existingServerU
 			}
 		}
 
-		// Restart K3s if any config changed
+		// Check for TLS SAN changes
+		tlsSANsChanged, err := updateTLSSANConfig(executor, cfg)
+		if err != nil {
+			return fmt.Errorf("failed to update TLS SAN config: %w", err)
+		}
+		if tlsSANsChanged {
+			fmt.Println("   TLS SANs changed, will regenerate certificates")
+		} else {
+			fmt.Println("   ✓ TLS SANs unchanged")
+		}
+
+		// Restart K3s if any config changed (but not if only TLS SANs changed)
 		if needsRestart {
 			fmt.Println("   Restarting k3s to apply config changes...")
 			if _, err := executor.Exec("sudo systemctl restart k3s"); err != nil {
@@ -88,8 +99,15 @@ func JoinControlPlane(ctx context.Context, executor SSHExecutor, existingServerU
 			if err := waitForK3sReady(executor, DefaultRetryConfig()); err != nil {
 				return fmt.Errorf("k3s failed to become ready after restart: %w", err)
 			}
-		} else {
+		} else if !tlsSANsChanged {
 			fmt.Println("   ✓ No config changes, skipping restart")
+		}
+
+		// Regenerate certificates if TLS SANs changed
+		if tlsSANsChanged {
+			if err := regenerateK3sCertificates(executor); err != nil {
+				return fmt.Errorf("failed to regenerate certificates: %w", err)
+			}
 		}
 
 		fmt.Println("   ✓ Updates applied successfully")
