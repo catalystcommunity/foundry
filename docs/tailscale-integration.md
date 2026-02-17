@@ -220,6 +220,128 @@ Routes advertised:
 - Cluster VIP (e.g., `100.81.89.100/32`)
 - Any additional routes in `advertise_routes` config
 
+## Exposing Services via Tailscale
+
+After Foundry deploys the Tailscale operator, you can expose cluster services to your Tailscale network. The method you use depends on the protocol:
+
+### HTTP/HTTPS Services (Web Applications)
+
+**Use Case:** Web applications, REST APIs, dashboards, any HTTP-based service
+
+**Method:** Create a Kubernetes **Ingress** resource with `ingressClassName: tailscale`
+
+**Why:** The Tailscale IngressClass creates a dedicated HTTP/HTTPS proxy that:
+- Handles HTTP routing and TLS termination
+- Automatically provisions TLS certificates
+- Properly routes traffic based on hostnames and paths
+
+**Example: Exposing Grafana**
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: grafana-tailscale
+  namespace: monitoring
+  annotations:
+    tailscale.com/tailnet-fqdn: grafana.tail6fbc5.ts.net
+    tailscale.com/tags: tag:k8s-foundry,tag:production
+spec:
+  ingressClassName: tailscale
+  defaultBackend:
+    service:
+      name: grafana
+      port:
+        number: 3000
+  tls:
+    - hosts:
+        - grafana
+```
+
+Apply with:
+```bash
+kubectl apply -f grafana-ingress.yaml
+```
+
+**Result:** Accessible at `https://grafana-1.tail6fbc5.ts.net` (note: operator adds `-1` suffix)
+
+**Verification:**
+```bash
+kubectl get ingress -n monitoring grafana-tailscale
+# Shows ADDRESS with .tail6fbc5.ts.net hostname
+
+kubectl get pods -n tailscale | grep grafana
+# Shows dedicated ingress proxy pod
+```
+
+### TCP Services (Databases, SSH, Raw TCP)
+
+**Use Case:** Databases (PostgreSQL, MySQL), SSH services, Kubernetes API, any raw TCP service
+
+**Method:** Create a **LoadBalancer** service with `loadBalancerClass: tailscale`
+
+**Why:** LoadBalancer services create a simple TCP proxy that forwards traffic without HTTP processing.
+
+**Example: Exposing PostgreSQL**
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-tailscale
+  namespace: default
+  annotations:
+    tailscale.com/expose: "true"
+    tailscale.com/hostname: postgres
+    tailscale.com/tags: tag:k8s-foundry,tag:production
+spec:
+  type: LoadBalancer
+  loadBalancerClass: tailscale
+  selector:
+    app: postgresql
+  ports:
+    - name: postgresql
+      port: 5432
+      targetPort: 5432
+```
+
+Apply with:
+```bash
+kubectl apply -f postgres-service.yaml
+```
+
+**Result:** Accessible at `postgres.tail6fbc5.ts.net:5432`
+
+**Verification:**
+```bash
+kubectl get svc postgres-tailscale
+# Shows EXTERNAL-IP with .tail6fbc5.ts.net hostname
+
+# Test connection
+psql -h postgres.tail6fbc5.ts.net -U myuser -d mydb
+```
+
+### Quick Reference: Which Method to Use
+
+| Service Type | Example | Method | Result |
+|-------------|---------|--------|--------|
+| Web App | Grafana, Metabase | **Ingress** | `https://app-1.tail6fbc5.ts.net` |
+| REST API | API Server | **Ingress** | `https://api-1.tail6fbc5.ts.net` |
+| Database | PostgreSQL | **LoadBalancer** | `postgres.tail6fbc5.ts.net:5432` |
+| SSH | SSH Service | **LoadBalancer** | `ssh.tail6fbc5.ts.net:22` |
+| Raw TCP | Redis, MQTT | **LoadBalancer** | `redis.tail6fbc5.ts.net:6379` |
+
+### Common Pitfall
+
+**Don't use LoadBalancer for HTTP services!** This is a common mistake that leads to connection refused errors.
+
+**Why it fails:**
+- LoadBalancer creates a TCP proxy that doesn't understand HTTP
+- The proxy pod doesn't listen on ports 80/443 for HTTP traffic
+- Browsers get `ERR_CONNECTION_REFUSED`
+
+**Solution:** Always use **Ingress** for HTTP/HTTPS services.
+
 ## Installation Order for Multi-Node with Tailscale
 
 When deploying a multi-node cluster with `use_tailscale: true` and a CGNAT VIP, follow this sequence:
