@@ -19,6 +19,7 @@ import (
 	"github.com/catalystcommunity/foundry/v1/internal/component/loki"
 	"github.com/catalystcommunity/foundry/v1/internal/component/seaweedfs"
 	"github.com/catalystcommunity/foundry/v1/internal/component/openbao"
+	"github.com/catalystcommunity/foundry/v1/internal/component/openbaoinjector"
 	"github.com/catalystcommunity/foundry/v1/internal/component/prometheus"
 	componentStorage "github.com/catalystcommunity/foundry/v1/internal/component/storage"
 	"github.com/catalystcommunity/foundry/v1/internal/component/tailscale"
@@ -110,9 +111,10 @@ var k8sComponents = map[string]bool{
 	"prometheus":    true,
 	"loki":          true,
 	"grafana":       true,
-	"external-dns":  true,
-	"velero":        true,
-	"tailscale":     true,
+	"external-dns":      true,
+	"velero":            true,
+	"tailscale":         true,
+	"openbao-injector":  true,
 }
 
 func runInstall(ctx context.Context, cmd *cli.Command) error {
@@ -367,6 +369,12 @@ func installK8sComponent(ctx context.Context, cmd *cli.Command, name string, sta
 
 		// Create component with clients directly (like contour, prometheus, etc.)
 		componentWithClients = tailscale.NewComponentWithClients(tsComponentConfig, vip, helmClient, k8sClient)
+	case "openbao-injector":
+		// Inject the OpenBao address so the webhook knows where to reach it
+		if addr, err := stackConfig.GetPrimaryOpenBAOAddress(); err == nil {
+			cfg["external_vault_addr"] = fmt.Sprintf("http://%s:8200", addr)
+		}
+		componentWithClients = openbaoinjector.NewComponent(helmClient)
 	default:
 		return fmt.Errorf("unknown kubernetes component: %s", name)
 	}
