@@ -17,9 +17,9 @@ func TestDefaultConfig(t *testing.T) {
 	assert.Equal(t, "67.4.0", config.Version)
 	assert.Equal(t, "monitoring", config.Namespace)
 	assert.Equal(t, 15, config.RetentionDays)
-	assert.Equal(t, "10GB", config.RetentionSize) // Must end with 'B' per Prometheus CRD spec
+	assert.Equal(t, "160GB", config.RetentionSize) // Must end with 'B' per Prometheus CRD spec
 	assert.Equal(t, "", config.StorageClass)
-	assert.Equal(t, "20Gi", config.StorageSize)
+	assert.Equal(t, "200Gi", config.StorageSize)
 	assert.True(t, config.AlertmanagerEnabled)
 	assert.False(t, config.GrafanaEnabled)
 	assert.True(t, config.NodeExporterEnabled)
@@ -45,7 +45,7 @@ func TestParseConfig_CustomValues(t *testing.T) {
 		"version":                   "66.0.0",
 		"namespace":                 "custom-monitoring",
 		"retention_days":            30,
-		"retention_size":            "50Gi",
+		"retention_size":            "50GB",
 		"storage_class":             "fast-storage",
 		"storage_size":              "100Gi",
 		"alertmanager_enabled":      false,
@@ -63,7 +63,7 @@ func TestParseConfig_CustomValues(t *testing.T) {
 	assert.Equal(t, "66.0.0", config.Version)
 	assert.Equal(t, "custom-monitoring", config.Namespace)
 	assert.Equal(t, 30, config.RetentionDays)
-	assert.Equal(t, "50Gi", config.RetentionSize)
+	assert.Equal(t, "50GB", config.RetentionSize)
 	assert.Equal(t, "fast-storage", config.StorageClass)
 	assert.Equal(t, "100Gi", config.StorageSize)
 	assert.False(t, config.AlertmanagerEnabled)
@@ -133,6 +133,66 @@ func TestValidate_IngressEnabled_WithHost(t *testing.T) {
 
 	err := config.Validate()
 	assert.NoError(t, err)
+}
+
+func TestValidate_InvalidStorageSize(t *testing.T) {
+	config := &Config{
+		RetentionDays: 15,
+		StorageSize:   "notasize",
+	}
+
+	err := config.Validate()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid storage_size")
+}
+
+func TestValidate_ValidStorageSize(t *testing.T) {
+	config := &Config{
+		RetentionDays: 15,
+		StorageSize:   "200Gi",
+	}
+
+	err := config.Validate()
+	assert.NoError(t, err)
+}
+
+func TestValidate_InvalidRetentionSize(t *testing.T) {
+	tests := []struct {
+		name string
+		size string
+	}{
+		{"no unit", "160"},
+		{"kubernetes format", "160Gi"},
+		{"empty number", "GB"},
+		{"non-numeric prefix", "abcGB"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := &Config{
+				RetentionDays: 15,
+				RetentionSize: tt.size,
+			}
+			err := config.Validate()
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), "retention_size")
+		})
+	}
+}
+
+func TestValidate_ValidRetentionSize(t *testing.T) {
+	tests := []string{"160GB", "1TB", "500MB", "100KB", "1024B", "1PB", "1EB"}
+
+	for _, size := range tests {
+		t.Run(size, func(t *testing.T) {
+			config := &Config{
+				RetentionDays: 15,
+				RetentionSize: size,
+			}
+			err := config.Validate()
+			assert.NoError(t, err)
+		})
+	}
 }
 
 func TestGetPrometheusEndpoint(t *testing.T) {

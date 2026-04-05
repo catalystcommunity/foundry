@@ -3,6 +3,9 @@ package prometheus
 import (
 	"context"
 	"fmt"
+	"strings"
+
+	"k8s.io/apimachinery/pkg/api/resource"
 
 	"github.com/catalystcommunity/foundry/v1/internal/component"
 	"github.com/catalystcommunity/foundry/v1/internal/helm"
@@ -180,9 +183,9 @@ func DefaultConfig() *Config {
 		Version:                 "67.4.0", // kube-prometheus-stack chart version
 		Namespace:               "monitoring",
 		RetentionDays:           15,
-		RetentionSize:           "10GB", // Must end with 'B' per Prometheus CRD spec
-		StorageClass:            "",     // Use cluster default
-		StorageSize:             "20Gi",
+		RetentionSize:           "160GB", // Must end with 'B' per Prometheus CRD spec; ~80% of StorageSize for WAL headroom
+		StorageClass:            "",      // Use cluster default
+		StorageSize:             "200Gi",
 		AlertmanagerEnabled:     true,
 		GrafanaEnabled:          false, // We deploy Grafana separately
 		NodeExporterEnabled:     true,
@@ -311,11 +314,44 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("retention_days must be at least 1")
 	}
 
+	if c.StorageSize != "" {
+		if _, err := resource.ParseQuantity(c.StorageSize); err != nil {
+			return fmt.Errorf("invalid storage_size %q: %w (use Kubernetes quantity format, e.g. 200Gi)", c.StorageSize, err)
+		}
+	}
+
+	if c.RetentionSize != "" {
+		if err := validatePrometheusSize(c.RetentionSize); err != nil {
+			return err
+		}
+	}
+
 	if c.IngressEnabled && c.IngressHost == "" {
 		return fmt.Errorf("ingress_host is required when ingress is enabled")
 	}
 
 	return nil
+}
+
+// validatePrometheusSize checks that a size string uses Prometheus's expected
+// format: a number followed by a unit suffix ending in B (e.g. "160GB").
+func validatePrometheusSize(size string) error {
+	validUnits := []string{"EB", "PB", "TB", "GB", "MB", "KB", "B"}
+	for _, unit := range validUnits {
+		if strings.HasSuffix(size, unit) {
+			numPart := strings.TrimSuffix(size, unit)
+			if numPart == "" {
+				return fmt.Errorf("invalid retention_size %q: missing numeric value", size)
+			}
+			for _, ch := range numPart {
+				if ch < '0' || ch > '9' {
+					return fmt.Errorf("invalid retention_size %q: non-numeric prefix", size)
+				}
+			}
+			return nil
+		}
+	}
+	return fmt.Errorf("invalid retention_size %q: must end with a byte unit (B, KB, MB, GB, TB, PB, EB)", size)
 }
 
 // GetPrometheusEndpoint returns the Prometheus endpoint URL for internal cluster access
