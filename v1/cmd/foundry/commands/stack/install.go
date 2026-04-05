@@ -1358,21 +1358,49 @@ func getSeaweedFSCredentials(cfg *config.Config) (accessKey, secretKey string) {
 func buildPrometheusConfig(cfg *config.Config) component.ComponentConfig {
 	ingressHost := fmt.Sprintf("prometheus.%s", cfg.Cluster.PrimaryDomain)
 
+	// Defaults that can be overridden from components.prometheus in config YAML
+	retentionDays := 15
+	retentionSize := "160GB"
+	storageSize := "200Gi"
+	storageClass := "longhorn"
+
+	if cfg.Components != nil {
+		if compCfg, exists := cfg.Components["prometheus"]; exists && compCfg.Config != nil {
+			if v, ok := compCfg.Config["retention_days"]; ok {
+				switch val := v.(type) {
+				case int:
+					retentionDays = val
+				case float64:
+					retentionDays = int(val)
+				}
+			}
+			if v, ok := compCfg.Config["retention_size"].(string); ok {
+				retentionSize = v
+			}
+			if v, ok := compCfg.Config["storage_size"].(string); ok {
+				storageSize = v
+			}
+			if v, ok := compCfg.Config["storage_class"].(string); ok {
+				storageClass = v
+			}
+		}
+	}
+
 	// Default Helm values for kube-prometheus-stack (YAML format for readability)
 	defaultValuesYAML := fmt.Sprintf(`
 prometheus:
   prometheusSpec:
-    retention: 15d
+    retention: %dd
     scrapeInterval: 30s
     storageSpec:
       volumeClaimTemplate:
         spec:
-          storageClassName: longhorn
+          storageClassName: %s
           accessModes:
             - ReadWriteOnce
           resources:
             requests:
-              storage: 10Gi
+              storage: %s
     # ServiceMonitor discovery - discover all ServiceMonitors
     serviceMonitorSelectorNilUsesHelmValues: false
     serviceMonitorSelector: {}
@@ -1416,15 +1444,16 @@ prometheusOperator:
     requests:
       cpu: 100m
       memory: 128Mi
-`, ingressHost, ingressHost)
+`, retentionDays, storageClass, storageSize, ingressHost, ingressHost)
 
 	defaultValues := parseYAMLValues(defaultValuesYAML)
 
 	componentConfig := component.ComponentConfig{
 		"namespace":       "monitoring",
-		"retention_days":  15,
-		"storage_size":    "10Gi",
-		"storage_class":   "longhorn",
+		"retention_days":  retentionDays,
+		"retention_size":  retentionSize,
+		"storage_size":    storageSize,
+		"storage_class":   storageClass,
 		"ingress_enabled": true,
 		"ingress_host":    ingressHost,
 	}
