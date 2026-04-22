@@ -64,6 +64,11 @@ func ParseConfig(cfg component.ComponentConfig) (*Config, error) {
 		config.VIP = vip
 	}
 
+	// Allow CGNAT VIP
+	if allowCGNAT, ok := cfg.GetBool("allow_cgnat_vip"); ok {
+		config.AllowCGNATVIP = &allowCGNAT
+	}
+
 	// Interface
 	if iface, ok := cfg.GetString("interface"); ok {
 		config.Interface = iface
