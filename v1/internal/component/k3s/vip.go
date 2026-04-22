@@ -48,7 +48,7 @@ func ValidateVIP(vip string, allowCGNAT bool) error {
 		if allowCGNAT {
 			return fmt.Errorf("VIP should be a private IP address (RFC1918 or RFC6598): %s", vip)
 		}
-		return fmt.Errorf("VIP should be a private IP address: %s (hint: set allow_cgnat_vip: true to use CGNAT IPs in the 100.64.0.0/10 range)", vip)
+		return fmt.Errorf("VIP should be a private IP address: %s (hint: set allow_cgnat_vip: true to use CGNAT IPs in the 100.64.0.0/10 range, e.g. Tailscale)", vip)
 	}
 
 	return nil
@@ -57,9 +57,9 @@ func ValidateVIP(vip string, allowCGNAT bool) error {
 // isPrivateIP checks if an IP is in private ranges (RFC1918) or optionally shared address space (RFC6598)
 func isPrivateIP(ip net.IP, allowCGNAT bool) bool {
 	private := []string{
-		"10.0.0.0/8",        // RFC1918 - Private-Use
-		"172.16.0.0/12",     // RFC1918 - Private-Use
-		"192.168.0.0/16",    // RFC1918 - Private-Use
+		"10.0.0.0/8",     // RFC1918 - Private-Use
+		"172.16.0.0/12",  // RFC1918 - Private-Use
+		"192.168.0.0/16", // RFC1918 - Private-Use
 	}
 
 	// Optionally include CGNAT range (RFC6598) used by Tailscale and similar overlay networks
@@ -106,13 +106,14 @@ func DetermineVIPConfig(vip string, conn network.SSHExecutor, allowCGNAT bool) (
 		return nil, fmt.Errorf("interface detection failed: %w", err)
 	}
 
-	// Convert bool to *bool for VIPConfig
-	allowCGNATPtr := &allowCGNAT
-	return &VIPConfig{
-		VIP:           vip,
-		Interface:     iface,
-		AllowCGNATVIP: allowCGNATPtr,
-	}, nil
+	cfg := &VIPConfig{
+		VIP:       vip,
+		Interface: iface,
+	}
+	if allowCGNAT {
+		cfg.AllowCGNATVIP = &allowCGNAT
+	}
+	return cfg, nil
 }
 
 // GenerateKubeVIPManifest generates the kube-vip DaemonSet manifest YAML
