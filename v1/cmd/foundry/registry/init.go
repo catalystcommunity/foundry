@@ -10,9 +10,10 @@ import (
 	"github.com/catalystcommunity/foundry/v1/internal/component/grafana"
 	"github.com/catalystcommunity/foundry/v1/internal/component/k3s"
 	"github.com/catalystcommunity/foundry/v1/internal/component/loki"
-	"github.com/catalystcommunity/foundry/v1/internal/component/seaweedfs"
 	"github.com/catalystcommunity/foundry/v1/internal/component/openbao"
+	"github.com/catalystcommunity/foundry/v1/internal/component/openbaoinjector"
 	"github.com/catalystcommunity/foundry/v1/internal/component/prometheus"
+	"github.com/catalystcommunity/foundry/v1/internal/component/seaweedfs"
 	"github.com/catalystcommunity/foundry/v1/internal/component/storage"
 	"github.com/catalystcommunity/foundry/v1/internal/component/velero"
 	"github.com/catalystcommunity/foundry/v1/internal/component/zot"
@@ -40,6 +41,14 @@ func InitComponents() error {
 
 	// Register K3s - depends on OpenBAO, DNS, and Zot
 	if err := component.Register(&k3s.Component{}); err != nil {
+		return err
+	}
+
+	// Register OpenBao agent injector - depends on OpenBAO and K3s
+	// Installs the MutatingWebhookConfiguration so pods can receive secrets
+	// from OpenBao via vault.hashicorp.com/agent-inject annotations
+	openbaoInjectorComp := openbaoinjector.NewComponent(nil, nil, nil)
+	if err := component.Register(openbaoInjectorComp); err != nil {
 		return err
 	}
 

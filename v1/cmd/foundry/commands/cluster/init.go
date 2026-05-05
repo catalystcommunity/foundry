@@ -223,11 +223,10 @@ func InitializeCluster(ctx context.Context, cfg *config.Config) error {
 	}
 
 	// Get OpenBAO client with authenticated token
-	openbaoIP, err := cfg.GetPrimaryOpenBAOAddress()
+	openbaoAddr, err := cfg.GetPrimaryOpenBAOURL()
 	if err != nil {
 		return fmt.Errorf("failed to get OpenBAO address: %w", err)
 	}
-	openbaoAddr := fmt.Sprintf("http://%s:8200", openbaoIP)
 	openbaoClient := openbao.NewClient(openbaoAddr, keyMaterial.RootToken)
 	fmt.Println("✓ OpenBAO credentials loaded")
 

@@ -41,11 +41,10 @@ func runUnseal(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	// Get OpenBAO API URL from config
-	apiURL, err := stackConfig.GetPrimaryOpenBAOAddress()
+	apiURL, err := stackConfig.GetPrimaryOpenBAOURL()
 	if err != nil {
 		return fmt.Errorf("failed to get OpenBAO address: %w", err)
 	}
-	apiURL = fmt.Sprintf("http://%s:8200", apiURL)
 
 	// Get cluster name for keys
 	clusterName := stackConfig.Cluster.Name

@@ -23,9 +23,9 @@ import (
 	"github.com/catalystcommunity/foundry/v1/internal/component/gatewayapi"
 	"github.com/catalystcommunity/foundry/v1/internal/component/grafana"
 	"github.com/catalystcommunity/foundry/v1/internal/component/loki"
-	"github.com/catalystcommunity/foundry/v1/internal/component/seaweedfs"
 	"github.com/catalystcommunity/foundry/v1/internal/component/openbao"
 	"github.com/catalystcommunity/foundry/v1/internal/component/prometheus"
+	"github.com/catalystcommunity/foundry/v1/internal/component/seaweedfs"
 	"github.com/catalystcommunity/foundry/v1/internal/component/storage"
 	"github.com/catalystcommunity/foundry/v1/internal/component/velero"
 	"github.com/catalystcommunity/foundry/v1/internal/config"
@@ -1093,11 +1093,10 @@ resources:
 // getDNSAPIKeyFromOpenBAO retrieves the DNS API key from OpenBAO
 func getDNSAPIKeyFromOpenBAO(ctx context.Context, cfg *config.Config, configDir string) (string, error) {
 	// Get OpenBAO address from config
-	addr, err := cfg.GetPrimaryOpenBAOAddress()
+	openBAOAddr, err := cfg.GetPrimaryOpenBAOURL()
 	if err != nil {
 		return "", err
 	}
-	openBAOAddr := fmt.Sprintf("http://%s:8200", addr)
 
 	// Get OpenBAO token from keys file
 	keysPath := filepath.Join(configDir, "openbao-keys", cfg.Cluster.Name, "keys.json")
@@ -1795,9 +1794,8 @@ func buildComponentConfig(ctx context.Context, cfg *config.Config, componentName
 	switch componentName {
 	case "openbao":
 		// OpenBAO needs API URL for initialization
-		addr, err := cfg.GetPrimaryOpenBAOAddress()
-		if err == nil {
-			compCfg["api_url"] = fmt.Sprintf("http://%s:8200", addr)
+		if url, err := cfg.GetPrimaryOpenBAOURL(); err == nil {
+			compCfg["api_url"] = url
 		}
 
 	case "dns", "powerdns":
@@ -2226,11 +2224,10 @@ func ensureDNSAPIKey(stackConfig *config.Config) (string, error) {
 	}
 
 	// Get OpenBAO address from config
-	addr, err := stackConfig.GetPrimaryOpenBAOAddress()
+	openBAOAddr, err := stackConfig.GetPrimaryOpenBAOURL()
 	if err != nil {
 		return "", fmt.Errorf("OpenBAO host not configured: %w", err)
 	}
-	openBAOAddr := fmt.Sprintf("http://%s:8200", addr)
 
 	// Get OpenBAO token from keys file
 	keysPath := filepath.Join(configDir, "openbao-keys", stackConfig.Cluster.Name, "keys.json")
@@ -2293,11 +2290,10 @@ func generateDNSAPIKey() (string, error) {
 // This enables authenticated pulls to avoid Docker Hub rate limiting
 func getZotDockerHubCredentials(cfg *config.Config, configDir string) (username, password string, err error) {
 	// Get OpenBAO address from config
-	addr, err := cfg.GetPrimaryOpenBAOAddress()
+	openBAOAddr, err := cfg.GetPrimaryOpenBAOURL()
 	if err != nil {
 		return "", "", err
 	}
-	openBAOAddr := fmt.Sprintf("http://%s:8200", addr)
 
 	// Get OpenBAO token from keys file
 	keysPath := filepath.Join(configDir, "openbao-keys", cfg.Cluster.Name, "keys.json")

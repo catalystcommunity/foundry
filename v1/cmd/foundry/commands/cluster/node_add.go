@@ -223,11 +223,10 @@ func printNodeAddPlan(hostname string, role *k3s.DeterminedRole, cfg *config.Con
 func addNodeToCluster(ctx context.Context, hostname string, nodeRole *k3s.DeterminedRole, cfg *config.Config) error {
 	// Step 1: Get OpenBAO client
 	fmt.Println("Connecting to OpenBAO...")
-	openbaoIP, err := cfg.GetPrimaryOpenBAOAddress()
+	openbaoAddr, err := cfg.GetPrimaryOpenBAOURL()
 	if err != nil {
 		return fmt.Errorf("failed to get OpenBAO address: %w", err)
 	}
-	openbaoAddr := fmt.Sprintf("http://%s:8200", openbaoIP)
 
 	// Load OpenBAO token from keys.json file
 	configDir, err := config.GetConfigDir()

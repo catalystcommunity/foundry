@@ -2,8 +2,16 @@ package config
 
 import (
 	"fmt"
+	"os"
+	"strconv"
 
 	"github.com/catalystcommunity/foundry/v1/internal/host"
+)
+
+const (
+	OpenBAODefaultPort   = 8200
+	OpenBAOAddrEnvVar    = "OPENBAO_ADDR"
+	OpenBAOClientAddrEnv = "OPENBAO_CLIENT_ADDR"
 )
 
 // GetHostsByRole returns all hosts that have the specified role
@@ -102,6 +110,47 @@ func (c *Config) GetPrimaryOpenBAOAddress() (string, error) {
 		return "", err
 	}
 	return h.Address, nil
+}
+
+// GetPrimaryOpenBAOAddr returns the full address with port for the first OpenBAO host
+func (c *Config) GetPrimaryOpenBAOAddr() (string, error) {
+	h, err := c.GetPrimaryOpenBAOHost()
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s:%d", h.Address, OpenBAODefaultPort), nil
+}
+
+// GetPrimaryOpenBAOURL returns the full HTTP URL for the first OpenBAO host
+// It first checks the OPENBAO_ADDR environment variable, then falls back to config
+func (c *Config) GetPrimaryOpenBAOURL() (string, error) {
+	if addr := os.Getenv(OpenBAOAddrEnvVar); addr != "" {
+		return addr, nil
+	}
+	addr, err := c.GetPrimaryOpenBAOAddr()
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("http://%s", addr), nil
+}
+
+// GetOpenBAOClientAddr returns the client address for OpenBAO connections
+// It first checks OPENBAO_CLIENT_ADDR env var, then falls back to config address
+func (c *Config) GetOpenBAOClientAddr() (string, error) {
+	if addr := os.Getenv(OpenBAOClientAddrEnv); addr != "" {
+		return addr, nil
+	}
+	return c.GetPrimaryOpenBAOAddr()
+}
+
+// GetOpenBAOPort returns the OpenBAO port, first checking OPENBAO_PORT env var
+func (c *Config) GetOpenBAOPort() int {
+	if port := os.Getenv("OPENBAO_PORT"); port != "" {
+		if p, err := strconv.Atoi(port); err == nil {
+			return p
+		}
+	}
+	return OpenBAODefaultPort
 }
 
 // GetPrimaryDNSHost returns the first DNS host

@@ -113,11 +113,10 @@ func printNodeRemovePlan(hostname string, cfg *config.Config) {
 func removeNodeFromCluster(ctx context.Context, hostname string, cfg *config.Config) error {
 	// Step 1: Get OpenBAO client and load kubeconfig
 	fmt.Println("Loading kubeconfig from OpenBAO...")
-	openbaoIP, err := cfg.GetPrimaryOpenBAOAddress()
+	openbaoAddr, err := cfg.GetPrimaryOpenBAOURL()
 	if err != nil {
 		return fmt.Errorf("failed to get OpenBAO address: %w", err)
 	}
-	openbaoAddr := fmt.Sprintf("http://%s:8200", openbaoIP)
 	// TODO: Get token from auth management
 	openbaoClient := openbao.NewClient(openbaoAddr, "")
 

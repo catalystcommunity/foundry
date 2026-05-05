@@ -156,11 +156,10 @@ func getOpenBAOClient() (*openbao.Client, error) {
 	}
 
 	// Get OpenBAO address
-	addr, err := stackConfig.GetPrimaryOpenBAOAddress()
+	openBAOAddr, err := stackConfig.GetPrimaryOpenBAOURL()
 	if err != nil {
 		return nil, fmt.Errorf("OpenBAO host not configured: %w", err)
 	}
-	openBAOAddr := fmt.Sprintf("http://%s:8200", addr)
 
 	// Get config directory for OpenBAO keys
 	configDir, err := config.GetConfigDir()
