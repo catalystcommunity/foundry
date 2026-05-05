@@ -8,6 +8,8 @@ import (
 	"github.com/catalystcommunity/foundry/v1/internal/container"
 )
 
+const DefaultPort = 8200
+
 // Component implements the component.Component interface for OpenBAO
 type Component struct {
 	conn container.SSHExecutor

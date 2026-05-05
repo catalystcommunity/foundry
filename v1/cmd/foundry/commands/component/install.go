@@ -17,9 +17,10 @@ import (
 	"github.com/catalystcommunity/foundry/v1/internal/component/gatewayapi"
 	"github.com/catalystcommunity/foundry/v1/internal/component/grafana"
 	"github.com/catalystcommunity/foundry/v1/internal/component/loki"
-	"github.com/catalystcommunity/foundry/v1/internal/component/seaweedfs"
 	"github.com/catalystcommunity/foundry/v1/internal/component/openbao"
+	"github.com/catalystcommunity/foundry/v1/internal/component/openbaoinjector"
 	"github.com/catalystcommunity/foundry/v1/internal/component/prometheus"
+	"github.com/catalystcommunity/foundry/v1/internal/component/seaweedfs"
 	componentStorage "github.com/catalystcommunity/foundry/v1/internal/component/storage"
 	"github.com/catalystcommunity/foundry/v1/internal/component/velero"
 	"github.com/catalystcommunity/foundry/v1/internal/config"
@@ -101,16 +102,17 @@ Examples:
 
 // k8sComponents lists all components that are installed via kubeconfig (Helm/K8s)
 var k8sComponents = map[string]bool{
-	"gateway-api":   true,
-	"contour":       true,
-	"cert-manager":  true,
-	"storage":       true,
-	"seaweedfs":     true,
-	"prometheus":    true,
-	"loki":          true,
-	"grafana":       true,
-	"external-dns":  true,
-	"velero":        true,
+	"gateway-api":      true,
+	"contour":          true,
+	"cert-manager":     true,
+	"storage":          true,
+	"seaweedfs":        true,
+	"prometheus":       true,
+	"loki":             true,
+	"grafana":          true,
+	"external-dns":     true,
+	"velero":           true,
+	"openbao-injector": true,
 }
 
 func runInstall(ctx context.Context, cmd *cli.Command) error {
@@ -296,6 +298,20 @@ func installK8sComponent(ctx context.Context, cmd *cli.Command, name string, sta
 		cfg["s3_bucket"] = "velero"
 		cfg["s3_region"] = "us-east-1"
 		componentWithClients = velero.NewComponent(helmClient, k8sClient)
+	case "openbao-injector":
+		// Inject the OpenBao address so the webhook knows where to reach it
+		url, err := stackConfig.GetPrimaryOpenBAOURL()
+		if err != nil {
+			return fmt.Errorf("failed to get OpenBao address for injector: %w", err)
+		}
+		cfg["external_vault_addr"] = url
+
+		// Create OpenBAO client for configuring Kubernetes auth
+		openbaoClient, err := createOpenBAOClient(stackConfig)
+		if err != nil {
+			return fmt.Errorf("failed to create OpenBAO client: %w", err)
+		}
+		componentWithClients = openbaoinjector.NewComponent(helmClient, k8sClient, openbaoClient)
 	default:
 		return fmt.Errorf("unknown kubernetes component: %s", name)
 	}
@@ -348,11 +364,10 @@ func getDNSAPIKey(stackConfig *config.Config) (string, error) {
 		return "", err
 	}
 
-	addr, err := stackConfig.GetPrimaryOpenBAOAddress()
+	openBAOAddr, err := stackConfig.GetPrimaryOpenBAOURL()
 	if err != nil {
 		return "", err
 	}
-	openBAOAddr := fmt.Sprintf("http://%s:8200", addr)
 
 	keysPath := filepath.Join(configDir, "openbao-keys", stackConfig.Cluster.Name, "keys.json")
 	keysData, err := os.ReadFile(keysPath)
@@ -377,6 +392,38 @@ func getDNSAPIKey(stackConfig *config.Config) (string, error) {
 		return apiKey, nil
 	}
 	return "", fmt.Errorf("api_key not found in OpenBAO")
+}
+
+// createOpenBAOClient creates an OpenBAO client from stack config
+func createOpenBAOClient(stackConfig *config.Config) (*openbao.Client, error) {
+	configDir, err := config.GetConfigDir()
+	if err != nil {
+		return nil, err
+	}
+
+	openBAOAddr, err := stackConfig.GetPrimaryOpenBAOURL()
+	if err != nil {
+		return nil, err
+	}
+
+	keysPath := filepath.Join(configDir, "openbao-keys", stackConfig.Cluster.Name, "keys.json")
+	keysData, err := os.ReadFile(keysPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read OpenBAO keys file: %w", err)
+	}
+
+	var keys struct {
+		RootToken string `json:"root_token"`
+	}
+	if err := json.Unmarshal(keysData, &keys); err != nil {
+		return nil, fmt.Errorf("failed to parse OpenBAO keys file: %w", err)
+	}
+
+	if keys.RootToken == "" {
+		return nil, fmt.Errorf("root token not found in keys file")
+	}
+
+	return openbao.NewClient(openBAOAddr, keys.RootToken), nil
 }
 
 // installSSHComponent installs a container-based component via SSH
@@ -441,10 +488,9 @@ func installSSHComponent(ctx context.Context, cmd *cli.Command, name string, sta
 
 	// Add OpenBAO API URL (for OpenBAO component initialization)
 	if name == "openbao" {
-		addr, err := stackConfig.GetPrimaryOpenBAOAddress()
+		url, err := stackConfig.GetPrimaryOpenBAOURL()
 		if err == nil {
-			// Construct the API URL from the network config
-			cfg["api_url"] = fmt.Sprintf("http://%s:8200", addr)
+			cfg["api_url"] = url
 		}
 	}
 
@@ -709,21 +755,20 @@ func buildSecretResolver(cfg *config.Config) (*secrets.ChainResolver, *secrets.R
 	// Try to get OpenBAO address and token
 	var openBAOAddr, openBAOToken string
 
-	addr, err := cfg.GetPrimaryOpenBAOAddress()
-	if err == nil {
-		openBAOAddr = fmt.Sprintf("http://%s:8200", addr)
+	if addr, err := cfg.GetPrimaryOpenBAOURL(); err == nil {
+		openBAOAddr = addr
+	}
 
-		// Try to read OpenBAO token from keys file
-		configDir, errConfig := config.GetConfigDir()
-		if errConfig == nil {
-			keysPath := filepath.Join(configDir, "openbao-keys", cfg.Cluster.Name, "keys.json")
-			if keysData, errRead := os.ReadFile(keysPath); errRead == nil {
-				var keys struct {
-					RootToken string `json:"root_token"`
-				}
-				if errUnmarshal := json.Unmarshal(keysData, &keys); errUnmarshal == nil {
-					openBAOToken = keys.RootToken
-				}
+	// Try to read OpenBAO token from keys file
+	configDir, errConfig := config.GetConfigDir()
+	if errConfig == nil {
+		keysPath := filepath.Join(configDir, "openbao-keys", cfg.Cluster.Name, "keys.json")
+		if keysData, errRead := os.ReadFile(keysPath); errRead == nil {
+			var keys struct {
+				RootToken string `json:"root_token"`
+			}
+			if errUnmarshal := json.Unmarshal(keysData, &keys); errUnmarshal == nil {
+				openBAOToken = keys.RootToken
 			}
 		}
 	}
@@ -890,11 +935,10 @@ func ensureDNSAPIKey(stackConfig *config.Config) (string, error) {
 	}
 
 	// Get OpenBAO address from config
-	addr, err := stackConfig.GetPrimaryOpenBAOAddress()
+	openBAOAddr, err := stackConfig.GetPrimaryOpenBAOURL()
 	if err != nil {
 		return "", fmt.Errorf("OpenBAO host not configured: %w", err)
 	}
-	openBAOAddr := fmt.Sprintf("http://%s:8200", addr)
 
 	// Get OpenBAO token from keys file
 	keysPath := filepath.Join(configDir, "openbao-keys", stackConfig.Cluster.Name, "keys.json")
@@ -1056,12 +1100,12 @@ func buildExternalTargetsFromStackConfig(stackConfig *config.Config) []prometheu
 		return targets
 	}
 
-	// OpenBAO metrics at /v1/sys/metrics?format=prometheus on port 8200
+	// OpenBAO metrics at /v1/sys/metrics?format=prometheus
 	if stackConfig.SetupState.OpenBAOInstalled {
-		if addr, err := stackConfig.GetPrimaryOpenBAOAddress(); err == nil {
+		if addr, err := stackConfig.GetOpenBAOClientAddr(); err == nil {
 			targets = append(targets, prometheus.ExternalTarget{
 				Name:        "openbao",
-				Targets:     []string{fmt.Sprintf("%s:8200", addr)},
+				Targets:     []string{addr},
 				MetricsPath: "/v1/sys/metrics",
 				Params: map[string][]string{
 					"format": {"prometheus"},

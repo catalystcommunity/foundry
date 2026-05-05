@@ -1,0 +1,28 @@
+; OpenBao Agent Injector component configuration
+;
+; Configuration for the OpenBao Agent Injector which installs a
+; MutatingWebhookConfiguration to inject secrets into pods.
+
+options {
+    go_module: "github.com/catalystcommunity/foundry/v1",
+    go_package: "github.com/catalystcommunity/foundry/v1/internal/component/openbaoinjector"
+}
+
+; K8sAuthRole defines a Kubernetes auth role for a specific app
+K8sAuthRole = {
+    role_name: text,                 ; Role name in OpenBao (e.g., "redditwatch")
+    service_account_name: text,      ; Service account name to bind (e.g., "redditwatch")
+    service_account_namespace: text, ; Namespace where the SA exists (e.g., "default")
+    policies: text,                  ; Comma-separated policies to grant (e.g., "foundry-core-read")
+    ttl: text,                       ; Token TTL (e.g., "1h"), default: "1h"
+}
+
+; OpenBao Agent Injector component configuration
+; Default values will be set in Go code DefaultConfig() function
+Config = {
+    version: text,                ; Default: "0.26.2"
+    namespace: text,              ; Default: "openbao"
+    external_vault_addr: text,    ; Required: OpenBao address (e.g. http://100.81.89.62:8200)
+    configure_k8s_auth: boolean,  ; Enable Kubernetes auth in OpenBao (default: false)
+    k8s_auth_roles: [K8sAuthRole], ; List of K8s auth roles to create
+}

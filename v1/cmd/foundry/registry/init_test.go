@@ -37,6 +37,7 @@ func TestInitComponents(t *testing.T) {
 		"grafana",
 		"external-dns",
 		"velero",
+		"openbao-injector",
 	}
 	for _, name := range expectedComponents {
 		assert.True(t, testRegistry.Has(name), "component %s should be registered", name)
@@ -76,6 +77,7 @@ func TestInitComponents_ComponentNames(t *testing.T) {
 		{name: "grafana"},
 		{name: "external-dns"},
 		{name: "velero"},
+		{name: "openbao-injector"},
 	}
 
 	for _, tt := range tests {
@@ -158,6 +160,10 @@ func TestInitComponents_Dependencies(t *testing.T) {
 		{
 			name:         "velero",
 			dependencies: []string{"seaweedfs"},
+		},
+		{
+			name:         "openbao-injector",
+			dependencies: []string{"openbao", "k3s"},
 		},
 	}
 

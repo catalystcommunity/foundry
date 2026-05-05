@@ -3,6 +3,7 @@ package k8s
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -243,23 +244,23 @@ func (c *Client) applySingleManifest(ctx context.Context, manifest string) error
 // isClusterScopedResource returns true if the resource kind is cluster-scoped
 func isClusterScopedResource(kind string) bool {
 	clusterScoped := map[string]bool{
-		"ClusterIssuer":                   true,
-		"ClusterRole":                     true,
-		"ClusterRoleBinding":              true,
-		"Namespace":                       true,
-		"Node":                            true,
-		"PersistentVolume":                true,
-		"StorageClass":                    true,
-		"CustomResourceDefinition":        true,
-		"PriorityClass":                   true,
-		"IngressClass":                    true,
-		"RuntimeClass":                    true,
-		"VolumeSnapshotClass":             true,
-		"CSIDriver":                       true,
-		"CSINode":                         true,
-		"ValidatingWebhookConfiguration":  true,
-		"MutatingWebhookConfiguration":    true,
-		"GatewayClass":                    true, // Gateway API cluster-scoped resource
+		"ClusterIssuer":                  true,
+		"ClusterRole":                    true,
+		"ClusterRoleBinding":             true,
+		"Namespace":                      true,
+		"Node":                           true,
+		"PersistentVolume":               true,
+		"StorageClass":                   true,
+		"CustomResourceDefinition":       true,
+		"PriorityClass":                  true,
+		"IngressClass":                   true,
+		"RuntimeClass":                   true,
+		"VolumeSnapshotClass":            true,
+		"CSIDriver":                      true,
+		"CSINode":                        true,
+		"ValidatingWebhookConfiguration": true,
+		"MutatingWebhookConfiguration":   true,
+		"GatewayClass":                   true, // Gateway API cluster-scoped resource
 	}
 	return clusterScoped[kind]
 }
@@ -299,6 +300,80 @@ func (c *Client) Config() *rest.Config {
 // GetSecret retrieves a secret from the specified namespace
 func (c *Client) GetSecret(ctx context.Context, namespace, name string) (*corev1.Secret, error) {
 	return c.clientset.CoreV1().Secrets(namespace).Get(ctx, name, metav1.GetOptions{})
+}
+
+// CreateServiceAccount creates a ServiceAccount in the specified namespace
+func (c *Client) CreateServiceAccount(ctx context.Context, name string, sa *corev1.ServiceAccount) error {
+	if sa == nil {
+		sa = &corev1.ServiceAccount{}
+	}
+	if sa.ObjectMeta.Name == "" {
+		sa.ObjectMeta.Name = name
+	}
+	_, err := c.clientset.CoreV1().ServiceAccounts(sa.Namespace).Create(ctx, sa, metav1.CreateOptions{})
+	if err != nil && strings.Contains(err.Error(), "already exists") {
+		return nil // Already exists - idempotent
+	}
+	return err
+}
+
+// GetServiceAccountToken retrieves the token from a ServiceAccount's secret
+func (c *Client) GetServiceAccountToken(ctx context.Context, namespace, name string) (string, error) {
+	sa, err := c.clientset.CoreV1().ServiceAccounts(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return "", fmt.Errorf("failed to get service account %s/%s: %w", namespace, name, err)
+	}
+
+	// If the SA has secrets, get the token from the first one
+	if len(sa.Secrets) > 0 {
+		secretName := sa.Secrets[0].Name
+		secret, err := c.clientset.CoreV1().Secrets(namespace).Get(ctx, secretName, metav1.GetOptions{})
+		if err != nil {
+			return "", fmt.Errorf("failed to get secret %s/%s: %w", namespace, secretName, err)
+		}
+		token, ok := secret.Data["token"]
+		if !ok {
+			return "", fmt.Errorf("token not found in secret %s", secretName)
+		}
+		return string(token), nil
+	}
+
+	// Otherwise, need to create a token manually via TokenRequest
+	// This requires the ServiceAccount to have annotations or use TokenRequest API
+	// For now, return error - user should ensure SA has a token secret
+	return "", fmt.Errorf("no token secret found for service account %s/%s", namespace, name)
+}
+
+// GetClusterCACert returns the cluster CA certificate data
+func (c *Client) GetClusterCACert(ctx context.Context) (string, error) {
+	if c.config == nil {
+		return "", fmt.Errorf("client config is nil")
+	}
+	if c.config.CAData != nil {
+		return string(c.config.CAData), nil
+	}
+	if c.config.CAFile != "" {
+		data, err := os.ReadFile(c.config.CAFile)
+		if err != nil {
+			return "", fmt.Errorf("failed to read CA file: %w", err)
+		}
+		return string(data), nil
+	}
+	return "", fmt.Errorf("no CA certificate found in config")
+}
+
+// ApplyClusterRoleBinding applies a ClusterRoleBinding manifest
+func (c *Client) ApplyClusterRoleBinding(ctx context.Context, manifest string) error {
+	return c.ApplyManifest(ctx, manifest)
+}
+
+// GetKubernetesHost returns the Kubernetes API server host
+// This returns the host from the kubeconfig (e.g., the ClusterIP or hostname)
+func (c *Client) GetKubernetesHost() string {
+	if c.config == nil {
+		return ""
+	}
+	return c.config.Host
 }
 
 // CordonNode marks a node as unschedulable

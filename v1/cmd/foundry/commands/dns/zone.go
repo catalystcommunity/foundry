@@ -469,8 +469,8 @@ func buildSecretResolver(cfg *config.Config) (*secrets.ChainResolver, *secrets.R
 	// Try to get OpenBAO address and token
 	var openBAOAddr, openBAOToken string
 
-	if addr, err := cfg.GetPrimaryOpenBAOAddress(); err == nil {
-		openBAOAddr = fmt.Sprintf("http://%s:8200", addr)
+	if addr, err := cfg.GetPrimaryOpenBAOURL(); err == nil {
+		openBAOAddr = addr
 
 		// Try to read OpenBAO token from keys file
 		configDir, err := config.GetConfigDir()

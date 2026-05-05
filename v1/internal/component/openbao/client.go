@@ -264,3 +264,43 @@ func (c *Client) EnableKVv2Engine(ctx context.Context, mount string) error {
 
 	return readResponse(resp, nil)
 }
+
+// EnableAuth enables an auth method at the specified path
+func (c *Client) EnableAuth(ctx context.Context, authType string) error {
+	apiPath := fmt.Sprintf("/v1/sys/auth/%s", authType)
+
+	body := map[string]interface{}{
+		"type": authType,
+	}
+
+	resp, err := c.doRequest(ctx, "POST", apiPath, body)
+	if err != nil {
+		return fmt.Errorf("failed to enable %s auth: %w", authType, err)
+	}
+
+	return readResponse(resp, nil)
+}
+
+// WriteAuthConfig writes configuration for an auth method
+func (c *Client) WriteAuthConfig(ctx context.Context, authPath string, data map[string]interface{}) error {
+	apiPath := fmt.Sprintf("/v1/auth/%s/config", authPath)
+
+	resp, err := c.doRequest(ctx, "POST", apiPath, data)
+	if err != nil {
+		return fmt.Errorf("failed to write auth config for %s: %w", authPath, err)
+	}
+
+	return readResponse(resp, nil)
+}
+
+// WriteRole writes a role for an auth method
+func (c *Client) WriteRole(ctx context.Context, authPath, roleName string, data map[string]interface{}) error {
+	apiPath := fmt.Sprintf("/v1/auth/%s/role/%s", authPath, roleName)
+
+	resp, err := c.doRequest(ctx, "POST", apiPath, data)
+	if err != nil {
+		return fmt.Errorf("failed to write role %s for %s: %w", roleName, authPath, err)
+	}
+
+	return readResponse(resp, nil)
+}

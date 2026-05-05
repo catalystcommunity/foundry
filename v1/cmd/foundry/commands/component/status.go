@@ -160,7 +160,15 @@ func CheckOpenBAOStatus(ctx context.Context, cfg *config.Config) (*component.Com
 	version := ""
 
 	if healthy {
-		healthJSON, err := conn.Exec("curl -s http://localhost:8200/v1/sys/health")
+		openbaoURL, err := cfg.GetPrimaryOpenBAOURL()
+		if err != nil {
+			return &component.ComponentStatus{
+				Installed: false,
+				Healthy:   false,
+				Message:   fmt.Sprintf("failed to get OpenBAO URL: %v", err),
+			}, nil
+		}
+		healthJSON, err := conn.Exec(fmt.Sprintf("curl -s %s/v1/sys/health", openbaoURL))
 		if err == nil && healthJSON.ExitCode == 0 {
 			var healthData struct {
 				Initialized bool   `json:"initialized"`
