@@ -17,11 +17,11 @@ import (
 	"github.com/catalystcommunity/foundry/v1/internal/component/gatewayapi"
 	"github.com/catalystcommunity/foundry/v1/internal/component/grafana"
 	"github.com/catalystcommunity/foundry/v1/internal/component/loki"
-	"github.com/catalystcommunity/foundry/v1/internal/component/openbao"
-	"github.com/catalystcommunity/foundry/v1/internal/component/openbaoinjector"
-	"github.com/catalystcommunity/foundry/v1/internal/component/prometheus"
 	"github.com/catalystcommunity/foundry/v1/internal/component/seaweedfs"
+	"github.com/catalystcommunity/foundry/v1/internal/component/openbao"
+	"github.com/catalystcommunity/foundry/v1/internal/component/prometheus"
 	componentStorage "github.com/catalystcommunity/foundry/v1/internal/component/storage"
+	"github.com/catalystcommunity/foundry/v1/internal/component/tailscale"
 	"github.com/catalystcommunity/foundry/v1/internal/component/velero"
 	"github.com/catalystcommunity/foundry/v1/internal/config"
 	"github.com/catalystcommunity/foundry/v1/internal/helm"
@@ -102,17 +102,17 @@ Examples:
 
 // k8sComponents lists all components that are installed via kubeconfig (Helm/K8s)
 var k8sComponents = map[string]bool{
-	"gateway-api":      true,
-	"contour":          true,
-	"cert-manager":     true,
-	"storage":          true,
-	"seaweedfs":        true,
-	"prometheus":       true,
-	"loki":             true,
-	"grafana":          true,
-	"external-dns":     true,
-	"velero":           true,
-	"openbao-injector": true,
+	"gateway-api":   true,
+	"contour":       true,
+	"cert-manager":  true,
+	"storage":       true,
+	"seaweedfs":     true,
+	"prometheus":    true,
+	"loki":          true,
+	"grafana":       true,
+	"external-dns":  true,
+	"velero":        true,
+	"tailscale":     true,
 }
 
 func runInstall(ctx context.Context, cmd *cli.Command) error {
@@ -203,6 +203,12 @@ func installK8sComponent(ctx context.Context, cmd *cli.Command, name string, sta
 	k8sClient, err := k8s.NewClientFromKubeconfig(kubeconfigBytes)
 	if err != nil {
 		return fmt.Errorf("failed to create k8s client: %w", err)
+	}
+
+	// Build secret resolver for resolving secret references
+	resolver, resCtx, err := buildSecretResolver(stackConfig)
+	if err != nil {
+		return fmt.Errorf("failed to setup secret resolver: %w", err)
 	}
 
 	// Build component config
@@ -298,25 +304,78 @@ func installK8sComponent(ctx context.Context, cmd *cli.Command, name string, sta
 		cfg["s3_bucket"] = "velero"
 		cfg["s3_region"] = "us-east-1"
 		componentWithClients = velero.NewComponent(helmClient, k8sClient)
-	case "openbao-injector":
-		// Inject the OpenBao address so the webhook knows where to reach it
-		url, err := stackConfig.GetPrimaryOpenBAOURL()
-		if err != nil {
-			return fmt.Errorf("failed to get OpenBao address for injector: %w", err)
+	case "tailscale":
+		// Get VIP from stack config
+		vip := stackConfig.Cluster.VIP
+		if vip == "" {
+			return fmt.Errorf("cluster VIP is required for Tailscale installation")
 		}
-		cfg["external_vault_addr"] = url
+		cfg["vip"] = vip
 
-		// Create OpenBAO client for configuring Kubernetes auth
-		openbaoClient, err := createOpenBAOClient(stackConfig)
-		if err != nil {
-			return fmt.Errorf("failed to create OpenBAO client: %w", err)
+		// Get Tailscale config from stack.yaml components section
+		var tsComponentConfig *tailscale.Config
+		if tsConfig, ok := stackConfig.Components[name]; ok {
+			// Parse config from stack.yaml
+			tsComponentConfig = &tailscale.Config{}
+
+			// Resolve OAuth client ID
+			if clientID, ok := tsConfig.Config["oauth_client_id"].(string); ok {
+				// Check if it's a secret reference
+				secretRef, err := secrets.ParseSecretRef(clientID)
+				if err != nil {
+					return fmt.Errorf("failed to parse oauth_client_id: %w", err)
+				}
+				if secretRef != nil {
+					// Resolve from secret store
+					resolvedClientID, err := resolver.Resolve(resCtx, *secretRef)
+					if err != nil {
+						return fmt.Errorf("failed to resolve oauth_client_id: %w", err)
+					}
+					fmt.Printf("DEBUG: Resolved client_id from %s to %s\n", clientID, resolvedClientID[:10]+"...")
+					tsComponentConfig.OAuthClientID = &resolvedClientID
+				} else {
+					// Use literal value
+					tsComponentConfig.OAuthClientID = &clientID
+				}
+			}
+
+			// Resolve OAuth client secret
+			if clientSecret, ok := tsConfig.Config["oauth_client_secret"].(string); ok {
+				// Check if it's a secret reference
+				secretRef, err := secrets.ParseSecretRef(clientSecret)
+				if err != nil {
+					return fmt.Errorf("failed to parse oauth_client_secret: %w", err)
+				}
+				if secretRef != nil {
+					// Resolve from secret store
+					resolvedClientSecret, err := resolver.Resolve(resCtx, *secretRef)
+					if err != nil {
+						return fmt.Errorf("failed to resolve oauth_client_secret: %w", err)
+					}
+					tsComponentConfig.OAuthClientSecret = &resolvedClientSecret
+				} else {
+					// Use literal value
+					tsComponentConfig.OAuthClientSecret = &clientSecret
+				}
+			}
+
+			// Copy other config to cfg map
+			for k, v := range tsConfig.Config {
+				cfg[k] = v
+			}
 		}
-		componentWithClients = openbaoinjector.NewComponent(helmClient, k8sClient, openbaoClient)
+
+		// Create component with clients directly (like contour, prometheus, etc.)
+		componentWithClients = tailscale.NewComponentWithClients(tsComponentConfig, vip, helmClient, k8sClient)
 	default:
 		return fmt.Errorf("unknown kubernetes component: %s", name)
 	}
 
 	fmt.Printf("\nInstalling component: %s\n", name)
+
+	// Add clients to component config for components that need them
+	cfg["helm_client"] = helmClient
+	cfg["k8s_client"] = k8sClient
 
 	// Install the component
 	if err := componentWithClients.Install(ctx, cfg); err != nil {
@@ -364,10 +423,11 @@ func getDNSAPIKey(stackConfig *config.Config) (string, error) {
 		return "", err
 	}
 
-	openBAOAddr, err := stackConfig.GetPrimaryOpenBAOURL()
+	addr, err := stackConfig.GetPrimaryOpenBAOAddress()
 	if err != nil {
 		return "", err
 	}
+	openBAOAddr := fmt.Sprintf("http://%s:8200", addr)
 
 	keysPath := filepath.Join(configDir, "openbao-keys", stackConfig.Cluster.Name, "keys.json")
 	keysData, err := os.ReadFile(keysPath)
@@ -392,38 +452,6 @@ func getDNSAPIKey(stackConfig *config.Config) (string, error) {
 		return apiKey, nil
 	}
 	return "", fmt.Errorf("api_key not found in OpenBAO")
-}
-
-// createOpenBAOClient creates an OpenBAO client from stack config
-func createOpenBAOClient(stackConfig *config.Config) (*openbao.Client, error) {
-	configDir, err := config.GetConfigDir()
-	if err != nil {
-		return nil, err
-	}
-
-	openBAOAddr, err := stackConfig.GetPrimaryOpenBAOURL()
-	if err != nil {
-		return nil, err
-	}
-
-	keysPath := filepath.Join(configDir, "openbao-keys", stackConfig.Cluster.Name, "keys.json")
-	keysData, err := os.ReadFile(keysPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read OpenBAO keys file: %w", err)
-	}
-
-	var keys struct {
-		RootToken string `json:"root_token"`
-	}
-	if err := json.Unmarshal(keysData, &keys); err != nil {
-		return nil, fmt.Errorf("failed to parse OpenBAO keys file: %w", err)
-	}
-
-	if keys.RootToken == "" {
-		return nil, fmt.Errorf("root token not found in keys file")
-	}
-
-	return openbao.NewClient(openBAOAddr, keys.RootToken), nil
 }
 
 // installSSHComponent installs a container-based component via SSH
@@ -488,9 +516,10 @@ func installSSHComponent(ctx context.Context, cmd *cli.Command, name string, sta
 
 	// Add OpenBAO API URL (for OpenBAO component initialization)
 	if name == "openbao" {
-		url, err := stackConfig.GetPrimaryOpenBAOURL()
+		addr, err := stackConfig.GetPrimaryOpenBAOAddress()
 		if err == nil {
-			cfg["api_url"] = url
+			// Construct the API URL from the network config
+			cfg["api_url"] = fmt.Sprintf("http://%s:8200", addr)
 		}
 	}
 
@@ -755,20 +784,21 @@ func buildSecretResolver(cfg *config.Config) (*secrets.ChainResolver, *secrets.R
 	// Try to get OpenBAO address and token
 	var openBAOAddr, openBAOToken string
 
-	if addr, err := cfg.GetPrimaryOpenBAOURL(); err == nil {
-		openBAOAddr = addr
-	}
+	addr, err := cfg.GetPrimaryOpenBAOAddress()
+	if err == nil {
+		openBAOAddr = fmt.Sprintf("http://%s:8200", addr)
 
-	// Try to read OpenBAO token from keys file
-	configDir, errConfig := config.GetConfigDir()
-	if errConfig == nil {
-		keysPath := filepath.Join(configDir, "openbao-keys", cfg.Cluster.Name, "keys.json")
-		if keysData, errRead := os.ReadFile(keysPath); errRead == nil {
-			var keys struct {
-				RootToken string `json:"root_token"`
-			}
-			if errUnmarshal := json.Unmarshal(keysData, &keys); errUnmarshal == nil {
-				openBAOToken = keys.RootToken
+		// Try to read OpenBAO token from keys file
+		configDir, errConfig := config.GetConfigDir()
+		if errConfig == nil {
+			keysPath := filepath.Join(configDir, "openbao-keys", cfg.Cluster.Name, "keys.json")
+			if keysData, errRead := os.ReadFile(keysPath); errRead == nil {
+				var keys struct {
+					RootToken string `json:"root_token"`
+				}
+				if errUnmarshal := json.Unmarshal(keysData, &keys); errUnmarshal == nil {
+					openBAOToken = keys.RootToken
+				}
 			}
 		}
 	}
@@ -779,18 +809,41 @@ func buildSecretResolver(cfg *config.Config) (*secrets.ChainResolver, *secrets.R
 		Instance: "",
 	}
 
+	// Create FoundryVars resolver for ~/.foundryvars file
+	foundryVarsResolver, err := secrets.NewFoundryVarsResolverDefault()
+	if err != nil {
+		// Log warning but continue - foundryvars is optional
+		fmt.Printf("Warning: failed to load ~/.foundryvars: %v\n", err)
+	}
+
 	// If we have OpenBAO configured, add it to the resolver chain
 	if openBAOAddr != "" && openBAOToken != "" {
 		// Use foundry-core mount (where we enabled the KV v2 engine)
 		openBAOResolver, err := secrets.NewOpenBAOResolverWithMount(openBAOAddr, openBAOToken, "foundry-core")
 		if err != nil {
-			// Fall back to env-only if OpenBAO setup fails
+			// Fall back to env and foundryvars if OpenBAO setup fails
+			if foundryVarsResolver != nil {
+				resolver := secrets.NewChainResolver(
+					secrets.NewEnvResolver(),
+					foundryVarsResolver,
+				)
+				return resolver, resCtx, nil
+			}
 			resolver := secrets.NewChainResolver(
 				secrets.NewEnvResolver(),
 			)
 			return resolver, resCtx, nil
 		}
 
+		// Full chain: env -> foundryvars -> OpenBAO
+		if foundryVarsResolver != nil {
+			resolver := secrets.NewChainResolver(
+				secrets.NewEnvResolver(),
+				foundryVarsResolver,
+				openBAOResolver,
+			)
+			return resolver, resCtx, nil
+		}
 		resolver := secrets.NewChainResolver(
 			secrets.NewEnvResolver(),
 			openBAOResolver,
@@ -798,7 +851,16 @@ func buildSecretResolver(cfg *config.Config) (*secrets.ChainResolver, *secrets.R
 		return resolver, resCtx, nil
 	}
 
-	// OpenBAO not available, use env resolver only
+	// OpenBAO not available, use env and foundryvars
+	if foundryVarsResolver != nil {
+		resolver := secrets.NewChainResolver(
+			secrets.NewEnvResolver(),
+			foundryVarsResolver,
+		)
+		return resolver, resCtx, nil
+	}
+
+	// Fallback to env only
 	resolver := secrets.NewChainResolver(
 		secrets.NewEnvResolver(),
 	)
@@ -935,10 +997,11 @@ func ensureDNSAPIKey(stackConfig *config.Config) (string, error) {
 	}
 
 	// Get OpenBAO address from config
-	openBAOAddr, err := stackConfig.GetPrimaryOpenBAOURL()
+	addr, err := stackConfig.GetPrimaryOpenBAOAddress()
 	if err != nil {
 		return "", fmt.Errorf("OpenBAO host not configured: %w", err)
 	}
+	openBAOAddr := fmt.Sprintf("http://%s:8200", addr)
 
 	// Get OpenBAO token from keys file
 	keysPath := filepath.Join(configDir, "openbao-keys", stackConfig.Cluster.Name, "keys.json")
@@ -1100,12 +1163,12 @@ func buildExternalTargetsFromStackConfig(stackConfig *config.Config) []prometheu
 		return targets
 	}
 
-	// OpenBAO metrics at /v1/sys/metrics?format=prometheus
+	// OpenBAO metrics at /v1/sys/metrics?format=prometheus on port 8200
 	if stackConfig.SetupState.OpenBAOInstalled {
-		if addr, err := stackConfig.GetOpenBAOClientAddr(); err == nil {
+		if addr, err := stackConfig.GetPrimaryOpenBAOAddress(); err == nil {
 			targets = append(targets, prometheus.ExternalTarget{
 				Name:        "openbao",
-				Targets:     []string{addr},
+				Targets:     []string{fmt.Sprintf("%s:8200", addr)},
 				MetricsPath: "/v1/sys/metrics",
 				Params: map[string][]string{
 					"format": {"prometheus"},
