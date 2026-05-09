@@ -278,11 +278,11 @@ func buildNFSValues(cfg *Config) map[string]interface{} {
 
 	// Storage class configuration
 	storageClass := map[string]interface{}{
-		"create":           true,
-		"name":             cfg.StorageClassName,
-		"defaultClass":     cfg.SetDefault,
-		"archiveOnDelete":  cfg.NFS.ArchiveOnDelete,
-		"accessModes":      "ReadWriteOnce",
+		"create":               true,
+		"name":                 cfg.StorageClassName,
+		"defaultClass":         cfg.SetDefault,
+		"archiveOnDelete":      cfg.NFS.ArchiveOnDelete,
+		"accessModes":          "ReadWriteOnce",
 		"allowVolumeExpansion": true,
 	}
 

@@ -1,6 +1,5 @@
 package zot
 
-
 import (
 	"context"
 	"fmt"
@@ -8,6 +7,7 @@ import (
 	"github.com/catalystcommunity/foundry/v1/internal/component"
 	"github.com/catalystcommunity/foundry/v1/internal/container"
 )
+
 // Component implements the component.Component interface for Zot registry
 type Component struct {
 	conn container.SSHExecutor

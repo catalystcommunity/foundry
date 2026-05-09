@@ -386,11 +386,11 @@ func startPowerDNSContainer(ctx context.Context, t *testing.T) (testcontainers.C
 		Image:        "powerdns/pdns-auth-master:latest",
 		ExposedPorts: []string{"8081/tcp"}, // PowerDNS API port
 		Env: map[string]string{
-			"PDNS_AUTH_API_KEY":    testAPIKey,
-			"PDNS_AUTH_WEBSERVER":  "yes",
-			"PDNS_AUTH_API":        "yes",
-			"PDNS_AUTH_WEBSERVER_ADDRESS": "0.0.0.0",
-			"PDNS_AUTH_WEBSERVER_PORT":    "8081",
+			"PDNS_AUTH_API_KEY":              testAPIKey,
+			"PDNS_AUTH_WEBSERVER":            "yes",
+			"PDNS_AUTH_API":                  "yes",
+			"PDNS_AUTH_WEBSERVER_ADDRESS":    "0.0.0.0",
+			"PDNS_AUTH_WEBSERVER_PORT":       "8081",
 			"PDNS_AUTH_WEBSERVER_ALLOW_FROM": "0.0.0.0/0",
 		},
 		WaitingFor: wait.ForHTTP("/api/v1/servers/localhost").

@@ -245,9 +245,9 @@ func buildHelmValues(cfg *Config) map[string]interface{} {
 	// S3 ingress configuration
 	if cfg.IngressEnabled && cfg.IngressHostS3 != "" {
 		s3Config["ingress"] = map[string]interface{}{
-			"enabled":          true,
-			"className":        "contour",
-			"host":             cfg.IngressHostS3,
+			"enabled":   true,
+			"className": "contour",
+			"host":      cfg.IngressHostS3,
 			"annotations": map[string]interface{}{
 				"cert-manager.io/cluster-issuer": "foundry-ca-issuer",
 			},
@@ -264,9 +264,9 @@ func buildHelmValues(cfg *Config) map[string]interface{} {
 	// Filer ingress configuration
 	if cfg.IngressEnabled && cfg.IngressHostFiler != "" {
 		filerConfig["ingress"] = map[string]interface{}{
-			"enabled":          true,
-			"className":        "contour",
-			"host":             cfg.IngressHostFiler,
+			"enabled":   true,
+			"className": "contour",
+			"host":      cfg.IngressHostFiler,
 			"annotations": map[string]interface{}{
 				"cert-manager.io/cluster-issuer": "foundry-ca-issuer",
 			},

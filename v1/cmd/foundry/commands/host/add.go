@@ -152,11 +152,11 @@ func runAdd(ctx context.Context, cmd *cli.Command) error {
 
 	// Validate roles
 	validRoles := map[string]bool{
-		"openbao":                 true,
-		"dns":                     true,
-		"zot":                     true,
-		"cluster-control-plane":   true,
-		"cluster-worker":          true,
+		"openbao":               true,
+		"dns":                   true,
+		"zot":                   true,
+		"cluster-control-plane": true,
+		"cluster-worker":        true,
 	}
 	for _, role := range roles {
 		if !validRoles[role] {

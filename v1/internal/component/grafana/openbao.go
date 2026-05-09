@@ -9,10 +9,10 @@ import (
 
 const (
 	// OpenBAO path constants for Grafana secrets
-	openBAOMount        = "foundry-core"
-	openBAOSecretPath   = "grafana"
-	openBAOPasswordKey  = "admin_password"
-	openBAOUsernameKey  = "admin_user"
+	openBAOMount       = "foundry-core"
+	openBAOSecretPath  = "grafana"
+	openBAOPasswordKey = "admin_password"
+	openBAOUsernameKey = "admin_user"
 )
 
 // OpenBAOClient defines the interface for storing/retrieving secrets in OpenBAO

@@ -500,9 +500,9 @@ func TestVeleroClient_DeleteSchedule(t *testing.T) {
 
 func TestFormatTime(t *testing.T) {
 	tests := []struct {
-		name     string
-		time     time.Time
-		wantHas  string // substring that should be in the result
+		name    string
+		time    time.Time
+		wantHas string // substring that should be in the result
 	}{
 		{
 			name:    "just now",
@@ -551,10 +551,10 @@ func TestFormatTime(t *testing.T) {
 
 func TestTruncate(t *testing.T) {
 	tests := []struct {
-		name   string
-		input  string
-		max    int
-		want   string
+		name  string
+		input string
+		max   int
+		want  string
 	}{
 		{
 			name:  "no truncation needed",
@@ -669,16 +669,16 @@ func TestScheduleOptions(t *testing.T) {
 func TestBackupInfoStruct(t *testing.T) {
 	now := time.Now()
 	info := BackupInfo{
-		Name:              "test-backup",
-		Status:            "Completed",
-		StartTimestamp:    &now,
-		CompletionTime:    &now,
-		ItemsBackedUp:     100,
-		TotalItems:        100,
+		Name:               "test-backup",
+		Status:             "Completed",
+		StartTimestamp:     &now,
+		CompletionTime:     &now,
+		ItemsBackedUp:      100,
+		TotalItems:         100,
 		IncludedNamespaces: []string{"default"},
 		ExcludedNamespaces: []string{"kube-system"},
-		Errors:            0,
-		Warnings:          1,
+		Errors:             0,
+		Warnings:           1,
 	}
 
 	if info.Name != "test-backup" {

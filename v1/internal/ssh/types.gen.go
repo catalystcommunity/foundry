@@ -6,6 +6,5 @@ package ssh
 // SSHKeyStorage represents a structured data type
 type SSHKeyStorage struct {
 	PrivateKey string `json:"private_key" yaml:"private_key"`
-	PublicKey string `json:"public_key" yaml:"public_key"`
+	PublicKey  string `json:"public_key" yaml:"public_key"`
 }
-

@@ -5,13 +5,12 @@ package certmanager
 
 // Config represents a structured data type
 type Config struct {
-	Namespace string `json:"namespace" yaml:"namespace"`
-	Version string `json:"version" yaml:"version"`
-	CreateDefaultIssuer bool `json:"create_default_issuer" yaml:"create_default_issuer"`
-	DefaultIssuerType string `json:"default_issuer_type" yaml:"default_issuer_type"`
-	ACMEEmail string `json:"acme_email" yaml:"acme_email"`
-	ACMEServer string `json:"acme_server" yaml:"acme_server"`
-	InstallCRDs bool `json:"install_crds" yaml:"install_crds"`
-	ServiceMonitorEnabled bool `json:"service_monitor_enabled" yaml:"service_monitor_enabled"`
+	Namespace             string `json:"namespace" yaml:"namespace"`
+	Version               string `json:"version" yaml:"version"`
+	CreateDefaultIssuer   bool   `json:"create_default_issuer" yaml:"create_default_issuer"`
+	DefaultIssuerType     string `json:"default_issuer_type" yaml:"default_issuer_type"`
+	ACMEEmail             string `json:"acme_email" yaml:"acme_email"`
+	ACMEServer            string `json:"acme_server" yaml:"acme_server"`
+	InstallCRDs           bool   `json:"install_crds" yaml:"install_crds"`
+	ServiceMonitorEnabled bool   `json:"service_monitor_enabled" yaml:"service_monitor_enabled"`
 }
-

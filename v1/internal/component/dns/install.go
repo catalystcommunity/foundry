@@ -31,9 +31,9 @@ func (a *sshExecutorAdapter) Execute(cmd string) (string, error) {
 
 const (
 	defaultImageRegistry = "docker.io/powerdns"
-	defaultAuthImage     = "pdns-auth-master" // PowerDNS authoritative server
+	defaultAuthImage     = "pdns-auth-master"     // PowerDNS authoritative server
 	defaultRecursorImage = "pdns-recursor-master" // PowerDNS recursor
-	defaultImageTag      = "latest" // Use latest tag by default
+	defaultImageTag      = "latest"               // Use latest tag by default
 )
 
 // Install implements the component.Component interface.

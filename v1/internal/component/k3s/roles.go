@@ -22,11 +22,11 @@ type NodeConfig struct {
 
 // DeterminedRole represents a node with its determined role
 type DeterminedRole struct {
-	Hostname        string
-	Role            NodeRole
-	IsControlPlane  bool
-	IsWorker        bool
-	ExplicitlySet   bool // True if role was explicitly set by user
+	Hostname       string
+	Role           NodeRole
+	IsControlPlane bool
+	IsWorker       bool
+	ExplicitlySet  bool // True if role was explicitly set by user
 }
 
 // DetermineNodeRoles determines the role for each node based on cluster size and explicit configuration

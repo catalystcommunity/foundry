@@ -33,9 +33,9 @@ func TestInstallControlPlane(t *testing.T) {
 		{
 			name: "successful installation",
 			cfg: &Config{
-				VIP:         "192.168.1.100",
-				Interface:   "eth0",
-				ClusterInit: true,
+				VIP:          "192.168.1.100",
+				Interface:    "eth0",
+				ClusterInit:  true,
 				ClusterToken: "test-cluster-token",
 				AgentToken:   "test-agent-token",
 			},

@@ -8,18 +8,18 @@ import (
 
 // Node represents a Kubernetes node with simplified fields
 type Node struct {
-	Name               string
-	Status             string
-	Ready              bool
-	Roles              []string
-	Labels             map[string]string
-	Version            string
-	InternalIP         string
-	ExternalIP         string
-	Conditions         []NodeCondition
-	CreationTimestamp  time.Time
-	AllocatableCPU     *string
-	AllocatableMemory  *string
+	Name              string
+	Status            string
+	Ready             bool
+	Roles             []string
+	Labels            map[string]string
+	Version           string
+	InternalIP        string
+	ExternalIP        string
+	Conditions        []NodeCondition
+	CreationTimestamp time.Time
+	AllocatableCPU    *string
+	AllocatableMemory *string
 }
 
 // NodeCondition represents a node condition
@@ -52,10 +52,10 @@ type Namespace struct {
 
 // Container represents a container within a pod
 type Container struct {
-	Name    string
-	Image   string
-	Ready   bool
-	State   string
+	Name     string
+	Image    string
+	Ready    bool
+	State    string
 	Restarts int32
 }
 

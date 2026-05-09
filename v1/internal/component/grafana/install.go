@@ -171,10 +171,10 @@ func buildHelmValues(cfg *Config) map[string]interface{} {
 	if cfg.SidecarEnabled {
 		values["sidecar"] = map[string]interface{}{
 			"dashboards": map[string]interface{}{
-				"enabled":         true,
-				"searchNamespace": "ALL",
-				"label":           "grafana_dashboard",
-				"labelValue":      "1",
+				"enabled":          true,
+				"searchNamespace":  "ALL",
+				"label":            "grafana_dashboard",
+				"labelValue":       "1",
 				"folderAnnotation": "grafana_folder",
 			},
 			"datasources": map[string]interface{}{

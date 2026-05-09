@@ -121,11 +121,11 @@ func TestBuildHelmValues_Defaults(t *testing.T) {
 
 func TestBuildHelmValues_CustomReplicas(t *testing.T) {
 	cfg := &Config{
-		ReplicaCount:      uint64(5),
-		EnvoyReplicaCount: uint64(3),
-		UseKubeVIP:        false,
+		ReplicaCount:        uint64(5),
+		EnvoyReplicaCount:   uint64(3),
+		UseKubeVIP:          false,
 		DefaultIngressClass: false,
-		Values:            make(map[string]interface{}),
+		Values:              make(map[string]interface{}),
 	}
 
 	values := buildHelmValues(cfg)
@@ -141,11 +141,11 @@ func TestBuildHelmValues_CustomReplicas(t *testing.T) {
 
 func TestBuildHelmValues_NoKubeVIP(t *testing.T) {
 	cfg := &Config{
-		ReplicaCount:      uint64(2),
-		EnvoyReplicaCount: uint64(2),
-		UseKubeVIP:        false,
+		ReplicaCount:        uint64(2),
+		EnvoyReplicaCount:   uint64(2),
+		UseKubeVIP:          false,
 		DefaultIngressClass: true,
-		Values:            make(map[string]interface{}),
+		Values:              make(map[string]interface{}),
 	}
 
 	values := buildHelmValues(cfg)
@@ -163,11 +163,11 @@ func TestBuildHelmValues_NoKubeVIP(t *testing.T) {
 
 func TestBuildHelmValues_NoDefaultIngressClass(t *testing.T) {
 	cfg := &Config{
-		ReplicaCount:      uint64(2),
-		EnvoyReplicaCount: uint64(2),
-		UseKubeVIP:        true,
+		ReplicaCount:        uint64(2),
+		EnvoyReplicaCount:   uint64(2),
+		UseKubeVIP:          true,
 		DefaultIngressClass: false,
-		Values:            make(map[string]interface{}),
+		Values:              make(map[string]interface{}),
 	}
 
 	values := buildHelmValues(cfg)
@@ -183,9 +183,9 @@ func TestBuildHelmValues_NoDefaultIngressClass(t *testing.T) {
 
 func TestBuildHelmValues_WithCustomValues(t *testing.T) {
 	cfg := &Config{
-		ReplicaCount:      uint64(2),
-		EnvoyReplicaCount: uint64(2),
-		UseKubeVIP:        true,
+		ReplicaCount:        uint64(2),
+		EnvoyReplicaCount:   uint64(2),
+		UseKubeVIP:          true,
 		DefaultIngressClass: true,
 		Values: map[string]interface{}{
 			"custom": "value",
@@ -210,14 +210,15 @@ func TestBuildHelmValues_WithClusterVIP(t *testing.T) {
 	cfg := DefaultConfig()
 	values := buildHelmValues(cfg)
 
-	// Check that the VIP is used instead of "auto"
+	// When sharing the control-plane VIP, the envoy service uses ClusterIP +
+	// externalIPs instead of LoadBalancer with a kube-vip annotation, to avoid
+	// kube-vip running a separate leader election for the service VIP.
 	envoy, ok := values["envoy"].(map[string]interface{})
 	require.True(t, ok)
 	service, ok := envoy["service"].(map[string]interface{})
 	require.True(t, ok)
-	annotations, ok := service["annotations"].(map[string]interface{})
-	require.True(t, ok)
-	assert.Equal(t, "10.16.0.43", annotations["kube-vip.io/loadbalancerIPs"])
+	assert.Equal(t, "ClusterIP", service["type"])
+	assert.Equal(t, []string{"10.16.0.43"}, service["externalIPs"])
 }
 
 func TestInstall_Success(t *testing.T) {

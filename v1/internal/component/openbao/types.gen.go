@@ -5,10 +5,9 @@ package openbao
 
 // Config represents a structured data type
 type Config struct {
-	Version string `json:"version" yaml:"version"`
-	DataPath string `json:"data_path" yaml:"data_path"`
-	ConfigPath string `json:"config_path" yaml:"config_path"`
-	Address string `json:"address" yaml:"address"`
+	Version          string `json:"version" yaml:"version"`
+	DataPath         string `json:"data_path" yaml:"data_path"`
+	ConfigPath       string `json:"config_path" yaml:"config_path"`
+	Address          string `json:"address" yaml:"address"`
 	ContainerRuntime string `json:"container_runtime" yaml:"container_runtime"`
 }
-

@@ -23,9 +23,9 @@ func TestComponentConfig_Get(t *testing.T) {
 
 func TestComponentConfig_GetString(t *testing.T) {
 	cfg := ComponentConfig{
-		"str":   "hello",
-		"int":   42,
-		"bool":  true,
+		"str":  "hello",
+		"int":  42,
+		"bool": true,
 	}
 
 	// Valid string
@@ -46,9 +46,9 @@ func TestComponentConfig_GetString(t *testing.T) {
 
 func TestComponentConfig_GetInt(t *testing.T) {
 	cfg := ComponentConfig{
-		"int":     42,
-		"float":   123.0,
-		"string":  "hello",
+		"int":    42,
+		"float":  123.0,
+		"string": "hello",
 	}
 
 	// Valid int

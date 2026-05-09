@@ -51,8 +51,7 @@ func TestPrintClusterPlan(t *testing.T) {
 					PrimaryDomain: "example.com",
 					VIP:           "192.168.1.100",
 				},
-				Network: &config.NetworkConfig{
-				},
+				Network: &config.NetworkConfig{},
 				Hosts: []*host.Host{
 					{
 						Hostname: "node1.example.com",
@@ -70,8 +69,7 @@ func TestPrintClusterPlan(t *testing.T) {
 					PrimaryDomain: "example.com",
 					VIP:           "192.168.1.100",
 				},
-				Network: &config.NetworkConfig{
-				},
+				Network: &config.NetworkConfig{},
 				Hosts: []*host.Host{
 					{
 						Hostname: "cp1.example.com",
@@ -94,8 +92,7 @@ func TestPrintClusterPlan(t *testing.T) {
 					PrimaryDomain: "example.com",
 					VIP:           "192.168.1.100",
 				},
-				Network: &config.NetworkConfig{
-				},
+				Network: &config.NetworkConfig{},
 				Hosts: []*host.Host{
 					{
 						Hostname: "node1.example.com",
@@ -209,8 +206,8 @@ func TestRunClusterInit_NoClusterConfig(t *testing.T) {
 
 	testConfig := &config.Config{
 		Network: &config.NetworkConfig{
-			Gateway:      "192.168.1.1",
-			Netmask:      "255.255.255.0",
+			Gateway: "192.168.1.1",
+			Netmask: "255.255.255.0",
 		},
 		Components: config.ComponentMap{
 			"openbao": {},
@@ -256,8 +253,8 @@ func TestRunClusterInit_NoNodes(t *testing.T) {
 			PrimaryDomain: "example.com",
 		},
 		Network: &config.NetworkConfig{
-			Gateway:      "192.168.1.1",
-			Netmask:      "255.255.255.0",
+			Gateway: "192.168.1.1",
+			Netmask: "255.255.255.0",
 		},
 		Components: config.ComponentMap{
 			"openbao": {},
@@ -357,8 +354,8 @@ func TestInitializeCluster_HostNotFound(t *testing.T) {
 			PrimaryDomain: "example.com",
 		},
 		Network: &config.NetworkConfig{
-			Gateway:      "192.168.1.1",
-			Netmask:      "255.255.255.0",
+			Gateway: "192.168.1.1",
+			Netmask: "255.255.255.0",
 		},
 		Components: config.ComponentMap{
 			"openbao": {},

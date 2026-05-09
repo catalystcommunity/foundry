@@ -136,10 +136,10 @@ func TestAccessModes(t *testing.T) {
 
 func TestTruncatePVC(t *testing.T) {
 	tests := []struct {
-		name   string
-		input  string
-		max    int
-		want   string
+		name  string
+		input string
+		max   int
+		want  string
 	}{
 		{
 			name:  "no truncation needed",

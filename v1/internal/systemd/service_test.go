@@ -12,17 +12,17 @@ import (
 
 // mockSSHExecutor implements SSHExecutor for testing
 type mockSSHExecutor struct {
-	commands []string
-	responses map[string]string
-	errors map[string]error
+	commands    []string
+	responses   map[string]string
+	errors      map[string]error
 	executeFunc func(string) (string, error)
 }
 
 func newMockSSHExecutor() *mockSSHExecutor {
 	return &mockSSHExecutor{
-		commands: make([]string, 0),
+		commands:  make([]string, 0),
 		responses: make(map[string]string),
-		errors: make(map[string]error),
+		errors:    make(map[string]error),
 	}
 }
 

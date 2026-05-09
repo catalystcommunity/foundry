@@ -37,8 +37,8 @@ func TestValidateConfigStructure(t *testing.T) {
 			name: "valid config",
 			cfg: &config.Config{
 				Network: &config.NetworkConfig{
-					Gateway:      "192.168.1.1",
-					Netmask:      "255.255.255.0",
+					Gateway: "192.168.1.1",
+					Netmask: "255.255.255.0",
 				},
 				DNS: &config.DNSConfig{
 					InfrastructureZones: []config.DNSZone{{Name: "infra.example.com"}},
@@ -60,8 +60,8 @@ func TestValidateConfigStructure(t *testing.T) {
 			name: "invalid gateway IP",
 			cfg: &config.Config{
 				Network: &config.NetworkConfig{
-					Gateway:      "not-an-ip",
-					Netmask:      "255.255.255.0",
+					Gateway: "not-an-ip",
+					Netmask: "255.255.255.0",
 				},
 				DNS: &config.DNSConfig{
 					InfrastructureZones: []config.DNSZone{{Name: "infra.example.com"}},
@@ -117,8 +117,8 @@ func TestValidateConfigStructure(t *testing.T) {
 			name: "missing components",
 			cfg: &config.Config{
 				Network: &config.NetworkConfig{
-					Gateway:      "192.168.1.1",
-					Netmask:      "255.255.255.0",
+					Gateway: "192.168.1.1",
+					Netmask: "255.255.255.0",
 				},
 				DNS: &config.DNSConfig{
 					InfrastructureZones: []config.DNSZone{{Name: "infra.example.com"}},
@@ -164,8 +164,8 @@ func TestValidateSecretReferences(t *testing.T) {
 			name: "valid secret references",
 			cfg: &config.Config{
 				Network: &config.NetworkConfig{
-					Gateway:      "192.168.1.1",
-					Netmask:      "255.255.255.0",
+					Gateway: "192.168.1.1",
+					Netmask: "255.255.255.0",
 				},
 				DNS: &config.DNSConfig{
 					InfrastructureZones: []config.DNSZone{{Name: "infra.example.com"}},
@@ -187,8 +187,8 @@ func TestValidateSecretReferences(t *testing.T) {
 			name: "invalid secret reference (missing colon)",
 			cfg: &config.Config{
 				Network: &config.NetworkConfig{
-					Gateway:      "192.168.1.1",
-					Netmask:      "255.255.255.0",
+					Gateway: "192.168.1.1",
+					Netmask: "255.255.255.0",
 				},
 				DNS: &config.DNSConfig{
 					InfrastructureZones: []config.DNSZone{{Name: "infra.example.com"}},
@@ -211,8 +211,8 @@ func TestValidateSecretReferences(t *testing.T) {
 			name: "no secret references is valid",
 			cfg: &config.Config{
 				Network: &config.NetworkConfig{
-					Gateway:      "192.168.1.1",
-					Netmask:      "255.255.255.0",
+					Gateway: "192.168.1.1",
+					Netmask: "255.255.255.0",
 				},
 				DNS: &config.DNSConfig{
 					InfrastructureZones: []config.DNSZone{{Name: "infra.example.com"}},
@@ -452,8 +452,7 @@ func TestValidateVIPConfig(t *testing.T) {
 		{
 			name: "valid VIP config",
 			cfg: &config.Config{
-				Network: &config.NetworkConfig{
-				},
+				Network: &config.NetworkConfig{},
 				Cluster: config.ClusterConfig{
 					VIP: "192.168.1.100",
 				},
@@ -463,8 +462,7 @@ func TestValidateVIPConfig(t *testing.T) {
 		{
 			name: "missing VIP",
 			cfg: &config.Config{
-				Network: &config.NetworkConfig{
-				},
+				Network: &config.NetworkConfig{},
 			},
 			wantErr: true,
 			errMsg:  "vip is required",
@@ -680,8 +678,8 @@ func TestRunStackValidate_Integration(t *testing.T) {
 	t.Run("config with multiple errors", func(t *testing.T) {
 		invalidCfg := &config.Config{
 			Network: &config.NetworkConfig{
-				Gateway:      "192.168.1.1",
-				Netmask:      "255.255.255.0",
+				Gateway: "192.168.1.1",
+				Netmask: "255.255.255.0",
 			},
 			DNS: &config.DNSConfig{
 				InfrastructureZones: []config.DNSZone{}, // Empty!

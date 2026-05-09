@@ -7,7 +7,7 @@ import (
 
 // ZotConfig represents the Zot registry configuration file structure
 type ZotConfig struct {
-	DistSpecVersion string              `json:"distSpecVersion"`
+	DistSpecVersion string               `json:"distSpecVersion"`
 	Storage         StorageConfiguration `json:"storage"`
 	HTTP            HTTPConfiguration    `json:"http"`
 	Log             LogConfiguration     `json:"log"`
@@ -16,10 +16,10 @@ type ZotConfig struct {
 
 // StorageConfiguration represents storage settings
 type StorageConfiguration struct {
-	RootDirectory string                `json:"rootDirectory"`
-	GC            bool                  `json:"gc"`
-	Dedupe        bool                  `json:"dedupe"`
-	SubPaths      map[string]SubPath    `json:"subPaths,omitempty"`
+	RootDirectory string             `json:"rootDirectory"`
+	GC            bool               `json:"gc"`
+	Dedupe        bool               `json:"dedupe"`
+	SubPaths      map[string]SubPath `json:"subPaths,omitempty"`
 }
 
 // SubPath represents a storage subpath configuration
@@ -31,10 +31,10 @@ type SubPath struct {
 
 // HTTPConfiguration represents HTTP server settings
 type HTTPConfiguration struct {
-	Address string       `json:"address"`
-	Port    string       `json:"port"`
-	TLS     *TLSConfig   `json:"tls,omitempty"`
-	Auth    *AuthMethod  `json:"auth,omitempty"`
+	Address string      `json:"address"`
+	Port    string      `json:"port"`
+	TLS     *TLSConfig  `json:"tls,omitempty"`
+	Auth    *AuthMethod `json:"auth,omitempty"`
 }
 
 // TLSConfig represents TLS settings
@@ -46,9 +46,9 @@ type TLSConfig struct {
 
 // AuthMethod represents authentication settings
 type AuthMethod struct {
-	HTPasswd HTPasswdConfig    `json:"htpasswd,omitempty"`
-	LDAP     *LDAPConfig       `json:"ldap,omitempty"`
-	Bearer   *BearerConfig     `json:"bearer,omitempty"`
+	HTPasswd HTPasswdConfig `json:"htpasswd,omitempty"`
+	LDAP     *LDAPConfig    `json:"ldap,omitempty"`
+	Bearer   *BearerConfig  `json:"bearer,omitempty"`
 }
 
 // HTPasswdConfig represents htpasswd authentication
@@ -58,9 +58,9 @@ type HTPasswdConfig struct {
 
 // LDAPConfig represents LDAP authentication
 type LDAPConfig struct {
-	Address      string `json:"address"`
-	Port         int    `json:"port"`
-	BaseDN       string `json:"baseDN"`
+	Address       string `json:"address"`
+	Port          int    `json:"port"`
+	BaseDN        string `json:"baseDN"`
 	UserAttribute string `json:"userAttribute"`
 }
 
@@ -81,8 +81,8 @@ type Extensions struct {
 
 // SyncExtension enables pull-through cache
 type SyncExtension struct {
-	Enable     bool              `json:"enable"`
-	Registries []RegistryConfig  `json:"registries"`
+	Enable     bool             `json:"enable"`
+	Registries []RegistryConfig `json:"registries"`
 }
 
 // RegistryConfig represents a registry for pull-through caching
@@ -104,9 +104,9 @@ type RegistryCredentials struct {
 
 // ContentConfig represents content filtering for sync
 type ContentConfig struct {
-	Prefix      string   `json:"prefix"`
-	Tags        *Tags    `json:"tags,omitempty"`
-	Destination string   `json:"destination,omitempty"`
+	Prefix      string `json:"prefix"`
+	Tags        *Tags  `json:"tags,omitempty"`
+	Destination string `json:"destination,omitempty"`
 }
 
 // Tags represents tag filtering
@@ -133,7 +133,7 @@ type UIExtension struct {
 
 // MetricsExtension enables Prometheus metrics
 type MetricsExtension struct {
-	Enable     bool                      `json:"enable"`
+	Enable     bool                     `json:"enable"`
 	Prometheus *MetricsPrometheusConfig `json:"prometheus,omitempty"`
 }
 

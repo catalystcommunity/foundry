@@ -180,12 +180,12 @@ func DefaultConfig() *Config {
 		Namespace:                "projectcontour",
 		ReplicaCount:             2,
 		EnvoyReplicaCount:        2,
-		UseKubeVIP:               true,  // Enable for bare metal
-		DefaultIngressClass:      true,  // Set as default
+		UseKubeVIP:               true,     // Enable for bare metal
+		DefaultIngressClass:      true,     // Set as default
 		GatewayAPIVersion:        "v1.3.0", // Gateway API version
-		ServiceMonitorEnabled:    true,  // Enable ServiceMonitor for Prometheus (requires CRD)
-		CreateGateway:            true,  // Create GatewayClass and Gateway resources
-		CreateGatewayCertificate: true,  // Create TLS Certificate for HTTPS listener
+		ServiceMonitorEnabled:    true,     // Enable ServiceMonitor for Prometheus (requires CRD)
+		CreateGateway:            true,     // Create GatewayClass and Gateway resources
+		CreateGatewayCertificate: true,     // Create TLS Certificate for HTTPS listener
 		Values:                   make(map[string]interface{}),
 	}
 }

@@ -4,13 +4,13 @@ import "time"
 
 // Release represents a Helm release
 type Release struct {
-	Name      string
-	Namespace string
-	Version   int
-	Status    string
-	Chart     string
+	Name       string
+	Namespace  string
+	Version    int
+	Status     string
+	Chart      string
 	AppVersion string
-	Updated   time.Time
+	Updated    time.Time
 }
 
 // Chart represents a Helm chart
@@ -55,9 +55,9 @@ type UninstallOptions struct {
 
 // RepoAddOptions contains options for adding a Helm repository
 type RepoAddOptions struct {
-	Name     string
-	URL      string
-	Username string
-	Password string
+	Name        string
+	URL         string
+	Username    string
+	Password    string
 	ForceUpdate bool
 }

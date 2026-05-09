@@ -5,28 +5,28 @@ package k3s
 
 // Config represents a structured data type
 type Config struct {
-	Version string `json:"version" yaml:"version"`
-	VIP string `json:"vip" yaml:"vip"`
-	Interface string `json:"interface" yaml:"interface"`
-	ClusterToken string `json:"cluster_token" yaml:"cluster_token"`
-	AgentToken string `json:"agent_token" yaml:"agent_token"`
-	TLSSANs []string `json:"tls_sans" yaml:"tls_sans"`
-	DisableComponents []string `json:"disable_components" yaml:"disable_components"`
-	RegistryConfig string `json:"registry_config" yaml:"registry_config"`
-	ClusterInit bool `json:"cluster_init" yaml:"cluster_init"`
-	ServerURL string `json:"server_url" yaml:"server_url"`
-	DNSServers []string `json:"dns_servers" yaml:"dns_servers"`
+	Version              string               `json:"version" yaml:"version"`
+	VIP                  string               `json:"vip" yaml:"vip"`
+	Interface            string               `json:"interface" yaml:"interface"`
+	ClusterToken         string               `json:"cluster_token" yaml:"cluster_token"`
+	AgentToken           string               `json:"agent_token" yaml:"agent_token"`
+	TLSSANs              []string             `json:"tls_sans" yaml:"tls_sans"`
+	DisableComponents    []string             `json:"disable_components" yaml:"disable_components"`
+	RegistryConfig       string               `json:"registry_config" yaml:"registry_config"`
+	ClusterInit          bool                 `json:"cluster_init" yaml:"cluster_init"`
+	ServerURL            string               `json:"server_url" yaml:"server_url"`
+	DNSServers           []string             `json:"dns_servers" yaml:"dns_servers"`
 	AdditionalRegistries []AdditionalRegistry `json:"additional_registries,omitempty" yaml:"additional_registries,omitempty"`
-	EtcdArgs []string `json:"etcd_args,omitempty" yaml:"etcd_args,omitempty"`
-	AllowCGNATVIP *bool `json:"allow_cgnat_vip,omitempty" yaml:"allow_cgnat_vip,omitempty"`
+	EtcdArgs             []string             `json:"etcd_args,omitempty" yaml:"etcd_args,omitempty"`
+	AllowCGNATVIP        *bool                `json:"allow_cgnat_vip,omitempty" yaml:"allow_cgnat_vip,omitempty"`
 }
 
 // AdditionalRegistry represents a structured data type
 type AdditionalRegistry struct {
-	Name string `json:"name" yaml:"name"`
+	Name     string  `json:"name" yaml:"name"`
 	Endpoint *string `json:"endpoint,omitempty" yaml:"endpoint,omitempty"`
-	HTTP *bool `json:"http,omitempty" yaml:"http,omitempty"`
-	Insecure *bool `json:"insecure,omitempty" yaml:"insecure,omitempty"`
+	HTTP     *bool   `json:"http,omitempty" yaml:"http,omitempty"`
+	Insecure *bool   `json:"insecure,omitempty" yaml:"insecure,omitempty"`
 	Username *string `json:"username,omitempty" yaml:"username,omitempty"`
 	Password *string `json:"password,omitempty" yaml:"password,omitempty"`
 }
@@ -34,7 +34,7 @@ type AdditionalRegistry struct {
 // RegistryConfig represents a structured data type
 type RegistryConfig struct {
 	Mirrors RegistryMirrorMap `json:"mirrors" yaml:"mirrors"`
-	Configs RegistryAuthMap `json:"configs" yaml:"configs"`
+	Configs RegistryAuthMap   `json:"configs" yaml:"configs"`
 }
 
 // RegistryMirrorMap is a type alias
@@ -51,7 +51,7 @@ type RegistryMirror struct {
 // RegistryAuth represents a structured data type
 type RegistryAuth struct {
 	Auth *RegistryAuthConfig `json:"auth,omitempty" yaml:"auth,omitempty"`
-	Tls *RegistryTLSConfig `json:"tls,omitempty" yaml:"tls,omitempty"`
+	Tls  *RegistryTLSConfig  `json:"tls,omitempty" yaml:"tls,omitempty"`
 }
 
 // RegistryAuthConfig represents a structured data type
@@ -74,4 +74,3 @@ type K3sClusterToken struct {
 type K3sAgentToken struct {
 	Token string `json:"token" yaml:"token"`
 }
-

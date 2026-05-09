@@ -12,16 +12,16 @@ import (
 	"helm.sh/helm/v3/pkg/chart/loader"
 	"helm.sh/helm/v3/pkg/cli"
 	"helm.sh/helm/v3/pkg/getter"
-	"helm.sh/helm/v3/pkg/repo"
 	"helm.sh/helm/v3/pkg/release"
+	"helm.sh/helm/v3/pkg/repo"
 	"sigs.k8s.io/yaml"
 )
 
 // Retry configuration for transient errors
 const (
-	maxRetries    = 3
-	retryDelay    = 2 * time.Second
-	retryBackoff  = 2 // Multiplier for exponential backoff
+	maxRetries   = 3
+	retryDelay   = 2 * time.Second
+	retryBackoff = 2 // Multiplier for exponential backoff
 )
 
 // isTransientError checks if an error is a transient network error that should be retried
@@ -444,12 +444,12 @@ func (c *Client) doList(ctx context.Context, namespace string) ([]Release, error
 // convertRelease converts a Helm release to our Release type
 func convertRelease(rel *release.Release) Release {
 	return Release{
-		Name:      rel.Name,
-		Namespace: rel.Namespace,
-		Version:   rel.Version,
-		Status:    rel.Info.Status.String(),
-		Chart:     fmt.Sprintf("%s-%s", rel.Chart.Metadata.Name, rel.Chart.Metadata.Version),
+		Name:       rel.Name,
+		Namespace:  rel.Namespace,
+		Version:    rel.Version,
+		Status:     rel.Info.Status.String(),
+		Chart:      fmt.Sprintf("%s-%s", rel.Chart.Metadata.Name, rel.Chart.Metadata.Version),
 		AppVersion: rel.Chart.Metadata.AppVersion,
-		Updated:   rel.Info.LastDeployed.Time,
+		Updated:    rel.Info.LastDeployed.Time,
 	}
 }

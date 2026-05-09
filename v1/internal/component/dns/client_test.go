@@ -388,12 +388,12 @@ func TestDeleteRecord(t *testing.T) {
 
 func TestListRecords(t *testing.T) {
 	tests := []struct {
-		name         string
-		zone         string
-		wantErr      bool
-		errMsg       string
-		wantRecords  int
-		serverFunc   func(w http.ResponseWriter, r *http.Request)
+		name        string
+		zone        string
+		wantErr     bool
+		errMsg      string
+		wantRecords int
+		serverFunc  func(w http.ResponseWriter, r *http.Request)
 	}{
 		{
 			name:        "successful list",

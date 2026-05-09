@@ -263,12 +263,12 @@ func runTargets(ctx context.Context, cmd *cli.Command) error {
 		Status string `json:"status"`
 		Data   struct {
 			ActiveTargets []struct {
-				Labels       map[string]string `json:"labels"`
-				ScrapeURL    string            `json:"scrapeUrl"`
-				Health       string            `json:"health"`
-				LastError    string            `json:"lastError"`
-				LastScrape   string            `json:"lastScrape"`
-				ScrapePool   string            `json:"scrapePool"`
+				Labels     map[string]string `json:"labels"`
+				ScrapeURL  string            `json:"scrapeUrl"`
+				Health     string            `json:"health"`
+				LastError  string            `json:"lastError"`
+				LastScrape string            `json:"lastScrape"`
+				ScrapePool string            `json:"scrapePool"`
 			} `json:"activeTargets"`
 		} `json:"data"`
 		Error string `json:"error,omitempty"`
@@ -368,9 +368,9 @@ func getPrometheusURL(ctx context.Context, namespace string) (string, error) {
 
 // prometheusResponse represents a Prometheus API response
 type prometheusResponse struct {
-	Status string         `json:"status"`
-	Data   queryData      `json:"data"`
-	Error  string         `json:"error,omitempty"`
+	Status string    `json:"status"`
+	Data   queryData `json:"data"`
+	Error  string    `json:"error,omitempty"`
 }
 
 type queryData struct {

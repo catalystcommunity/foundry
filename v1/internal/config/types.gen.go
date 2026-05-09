@@ -4,46 +4,46 @@
 package config
 
 import (
-	"github.com/catalystcommunity/foundry/v1/internal/setup"
 	"github.com/catalystcommunity/foundry/v1/internal/host"
+	"github.com/catalystcommunity/foundry/v1/internal/setup"
 )
 
 // NetworkConfig represents a structured data type
 type NetworkConfig struct {
-	Gateway string `json:"gateway" yaml:"gateway"`
-	Netmask string `json:"netmask" yaml:"netmask"`
+	Gateway   string     `json:"gateway" yaml:"gateway"`
+	Netmask   string     `json:"netmask" yaml:"netmask"`
 	DHCPRange *DHCPRange `json:"dhcp_range,omitempty" yaml:"dhcp_range,omitempty"`
 }
 
 // DHCPRange represents a structured data type
 type DHCPRange struct {
 	Start string `json:"start" yaml:"start"`
-	End string `json:"end" yaml:"end"`
+	End   string `json:"end" yaml:"end"`
 }
 
 // DNSConfig represents a structured data type
 type DNSConfig struct {
 	InfrastructureZones []DNSZone `json:"infrastructure_zones" yaml:"infrastructure_zones"`
-	KubernetesZones []DNSZone `json:"kubernetes_zones" yaml:"kubernetes_zones"`
-	Forwarders []string `json:"forwarders" yaml:"forwarders"`
-	Backend string `json:"backend" yaml:"backend"`
-	APIKey string `json:"api_key" yaml:"api_key"`
+	KubernetesZones     []DNSZone `json:"kubernetes_zones" yaml:"kubernetes_zones"`
+	Forwarders          []string  `json:"forwarders" yaml:"forwarders"`
+	Backend             string    `json:"backend" yaml:"backend"`
+	APIKey              string    `json:"api_key" yaml:"api_key"`
 }
 
 // DNSZone represents a structured data type
 type DNSZone struct {
-	Name string `json:"name" yaml:"name"`
-	Public bool `json:"public" yaml:"public"`
+	Name        string  `json:"name" yaml:"name"`
+	Public      bool    `json:"public" yaml:"public"`
 	PublicCNAME *string `json:"public_cname,omitempty" yaml:"public_cname,omitempty"`
 }
 
 // ClusterConfig represents a structured data type
 type ClusterConfig struct {
-	Name string `json:"name" yaml:"name"`
-	Domain *string `json:"domain,omitempty" yaml:"domain,omitempty"`
-	PrimaryDomain string `json:"primary_domain" yaml:"primary_domain"`
-	VIP string `json:"vip" yaml:"vip"`
-	AllowCGNATVIP *bool `json:"allow_cgnat_vip,omitempty" yaml:"allow_cgnat_vip,omitempty"`
+	Name          string  `json:"name" yaml:"name"`
+	Domain        *string `json:"domain,omitempty" yaml:"domain,omitempty"`
+	PrimaryDomain string  `json:"primary_domain" yaml:"primary_domain"`
+	VIP           string  `json:"vip" yaml:"vip"`
+	AllowCGNATVIP *bool   `json:"allow_cgnat_vip,omitempty" yaml:"allow_cgnat_vip,omitempty"`
 }
 
 // ComponentMap is a type alias
@@ -51,16 +51,16 @@ type ComponentMap map[string]ComponentConfig
 
 // ComponentConfig represents a structured data type
 type ComponentConfig struct {
-	Version *string `json:"version,omitempty" yaml:"version,omitempty"`
-	Hosts []string `json:"hosts,omitempty" yaml:"hosts,omitempty"`
-	Config map[string]any `json:"config" yaml:",inline"`
+	Version *string        `json:"version,omitempty" yaml:"version,omitempty"`
+	Hosts   []string       `json:"hosts,omitempty" yaml:"hosts,omitempty"`
+	Config  map[string]any `json:"config" yaml:",inline"`
 }
 
 // ObsConfig represents a structured data type
 type ObsConfig struct {
 	Prometheus *PrometheusConfig `json:"prometheus,omitempty" yaml:"prometheus,omitempty"`
-	Loki *LokiConfig `json:"loki,omitempty" yaml:"loki,omitempty"`
-	Grafana *GrafanaConfig `json:"grafana,omitempty" yaml:"grafana,omitempty"`
+	Loki       *LokiConfig       `json:"loki,omitempty" yaml:"loki,omitempty"`
+	Grafana    *GrafanaConfig    `json:"grafana,omitempty" yaml:"grafana,omitempty"`
 }
 
 // PrometheusConfig represents a structured data type
@@ -80,7 +80,7 @@ type GrafanaConfig struct {
 
 // StorageConfig represents a structured data type
 type StorageConfig struct {
-	Backend string `json:"backend" yaml:"backend"`
+	Backend string         `json:"backend" yaml:"backend"`
 	TrueNAS *TrueNASConfig `json:"truenas,omitempty" yaml:"truenas,omitempty"`
 }
 
@@ -92,13 +92,12 @@ type TrueNASConfig struct {
 
 // Config represents a structured data type
 type Config struct {
-	Network *NetworkConfig `json:"network,omitempty" yaml:"network,omitempty"`
-	DNS *DNSConfig `json:"dns,omitempty" yaml:"dns,omitempty"`
-	Cluster ClusterConfig `json:"cluster" yaml:"cluster"`
-	Components ComponentMap `json:"components" yaml:"components"`
-	Observability *ObsConfig `json:"observability,omitempty" yaml:"observability,omitempty"`
-	Storage *StorageConfig `json:"storage,omitempty" yaml:"storage,omitempty"`
-	Hosts []*host.Host `json:"hosts" yaml:"hosts"`
-	SetupState *setup.SetupState `json:"setup_state" yaml:"setup_state"`
+	Network       *NetworkConfig    `json:"network,omitempty" yaml:"network,omitempty"`
+	DNS           *DNSConfig        `json:"dns,omitempty" yaml:"dns,omitempty"`
+	Cluster       ClusterConfig     `json:"cluster" yaml:"cluster"`
+	Components    ComponentMap      `json:"components" yaml:"components"`
+	Observability *ObsConfig        `json:"observability,omitempty" yaml:"observability,omitempty"`
+	Storage       *StorageConfig    `json:"storage,omitempty" yaml:"storage,omitempty"`
+	Hosts         []*host.Host      `json:"hosts" yaml:"hosts"`
+	SetupState    *setup.SetupState `json:"setup_state" yaml:"setup_state"`
 }
-

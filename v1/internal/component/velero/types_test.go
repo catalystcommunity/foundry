@@ -202,8 +202,8 @@ func TestValidate_S3_MissingEndpoint(t *testing.T) {
 func TestValidate_NegativeRetentionDays(t *testing.T) {
 	config := &Config{
 		Provider:            ProviderS3,
-		S3Endpoint:         "http://garage:3900",
-		S3Bucket:           "velero",
+		S3Endpoint:          "http://garage:3900",
+		S3Bucket:            "velero",
 		BackupRetentionDays: -1,
 	}
 

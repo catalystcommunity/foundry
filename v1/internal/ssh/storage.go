@@ -169,7 +169,7 @@ func (s *OpenBAOKeyStorage) Exists(host string) (bool, error) {
 	if err != nil {
 		// Check if the error indicates the secret doesn't exist
 		if strings.Contains(err.Error(), "secret not found") ||
-		   strings.Contains(err.Error(), "404") {
+			strings.Contains(err.Error(), "404") {
 			return false, nil
 		}
 		// Other errors are real errors

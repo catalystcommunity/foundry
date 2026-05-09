@@ -42,29 +42,29 @@ var (
 
 // BackupInfo contains information about a Velero backup
 type BackupInfo struct {
-	Name              string
-	Status            string
-	StartTimestamp    *time.Time
-	CompletionTime    *time.Time
-	ExpirationTime    *time.Time
-	ItemsBackedUp     int64
-	TotalItems        int64
+	Name               string
+	Status             string
+	StartTimestamp     *time.Time
+	CompletionTime     *time.Time
+	ExpirationTime     *time.Time
+	ItemsBackedUp      int64
+	TotalItems         int64
 	IncludedNamespaces []string
 	ExcludedNamespaces []string
-	Errors            int64
-	Warnings          int64
+	Errors             int64
+	Warnings           int64
 }
 
 // RestoreInfo contains information about a Velero restore
 type RestoreInfo struct {
-	Name             string
-	BackupName       string
-	Status           string
-	StartTimestamp   *time.Time
-	CompletionTime   *time.Time
-	ItemsRestored    int64
-	Errors           int64
-	Warnings         int64
+	Name           string
+	BackupName     string
+	Status         string
+	StartTimestamp *time.Time
+	CompletionTime *time.Time
+	ItemsRestored  int64
+	Errors         int64
+	Warnings       int64
 }
 
 // ScheduleInfo contains information about a Velero schedule

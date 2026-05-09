@@ -68,16 +68,16 @@ func TestParseConfig(t *testing.T) {
 		{
 			name: "full config",
 			input: component.ComponentConfig{
-				"version":        "v1.28.5+k3s1",
-				"vip":            "192.168.1.100",
-				"interface":      "eth0",
-				"cluster_token":  "test-cluster-token",
-				"agent_token":    "test-agent-token",
-				"tls_sans":       []interface{}{"example.com", "api.example.com"},
-				"disable":        []interface{}{"traefik", "servicelb", "local-storage"},
+				"version":         "v1.28.5+k3s1",
+				"vip":             "192.168.1.100",
+				"interface":       "eth0",
+				"cluster_token":   "test-cluster-token",
+				"agent_token":     "test-agent-token",
+				"tls_sans":        []interface{}{"example.com", "api.example.com"},
+				"disable":         []interface{}{"traefik", "servicelb", "local-storage"},
 				"registry_config": "mirrors:\n  docker.io:\n    endpoint:\n      - http://zot:5000",
-				"cluster_init":   true,
-				"dns_servers":    []interface{}{"192.168.1.10", "8.8.8.8"},
+				"cluster_init":    true,
+				"dns_servers":     []interface{}{"192.168.1.10", "8.8.8.8"},
 			},
 			want: &Config{
 				Version:           "v1.28.5+k3s1",
@@ -162,9 +162,9 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "valid joining node with agent token",
 			config: &Config{
-				VIP:        "192.168.1.100",
-				ServerURL:  "https://192.168.1.100:6443",
-				AgentToken: "test-token",
+				VIP:         "192.168.1.100",
+				ServerURL:   "https://192.168.1.100:6443",
+				AgentToken:  "test-token",
 				ClusterInit: false,
 			},
 			wantErr: false,

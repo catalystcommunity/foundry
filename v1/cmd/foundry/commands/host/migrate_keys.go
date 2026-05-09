@@ -135,7 +135,7 @@ func runMigrateKeys(ctx context.Context, cmd *cli.Command) error {
 		}
 
 		// Store in OpenBAO
-		if err := openBAOStorage.Store(hostname, keyPair)  ; err != nil {
+		if err := openBAOStorage.Store(hostname, keyPair); err != nil {
 			fmt.Printf("  ✗ Failed to store in OpenBAO: %v\n", err)
 			failCount++
 			continue
