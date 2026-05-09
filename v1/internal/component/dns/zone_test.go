@@ -834,13 +834,13 @@ func TestInfrastructureRecordConfigValidate(t *testing.T) {
 
 func TestInitializeInfrastructureDNS(t *testing.T) {
 	tests := []struct {
-		name             string
-		config           InfrastructureRecordConfig
-		wantErr          bool
-		errContains      string
-		wantRecordCount  int
-		wantRecordNames  []string
-		wantRecordTypes  []string
+		name            string
+		config          InfrastructureRecordConfig
+		wantErr         bool
+		errContains     string
+		wantRecordCount int
+		wantRecordNames []string
+		wantRecordTypes []string
 	}{
 		{
 			name: "initialize infrastructure DNS - basic",

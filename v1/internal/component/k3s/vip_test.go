@@ -212,8 +212,9 @@ func TestDetermineVIPConfig(t *testing.T) {
 				}
 			},
 			want: &VIPConfig{
-				VIP:       "192.168.1.100",
-				Interface: "eth0",
+				VIP:           "192.168.1.100",
+				Interface:     "eth0",
+				AllowCGNATVIP: boolPtr(false),
 			},
 			wantErr: false,
 		},

@@ -38,10 +38,10 @@ func TestIsSystemLabel(t *testing.T) {
 func TestFilterUserLabels(t *testing.T) {
 	t.Run("filters out system labels", func(t *testing.T) {
 		labels := map[string]string{
-			"kubernetes.io/hostname":                  "node1",
-			"node-role.kubernetes.io/control-plane":   "",
-			"environment":                             "production",
-			"zone":                                    "us-east-1a",
+			"kubernetes.io/hostname":                "node1",
+			"node-role.kubernetes.io/control-plane": "",
+			"environment":                           "production",
+			"zone":                                  "us-east-1a",
 		}
 
 		result := FilterUserLabels(labels)
@@ -82,10 +82,10 @@ func TestFilterUserLabels(t *testing.T) {
 func TestFilterSystemLabels(t *testing.T) {
 	t.Run("keeps only system labels", func(t *testing.T) {
 		labels := map[string]string{
-			"kubernetes.io/hostname":                  "node1",
-			"node-role.kubernetes.io/control-plane":   "",
-			"environment":                             "production",
-			"zone":                                    "us-east-1a",
+			"kubernetes.io/hostname":                "node1",
+			"node-role.kubernetes.io/control-plane": "",
+			"environment":                           "production",
+			"zone":                                  "us-east-1a",
 		}
 
 		result := FilterSystemLabels(labels)

@@ -100,8 +100,8 @@ func TestNodeAddCommand_MissingHostname(t *testing.T) {
 			Name: "test",
 		},
 		Network: &config.NetworkConfig{
-			Gateway:      "192.168.1.1",
-			Netmask:      "255.255.255.0",
+			Gateway: "192.168.1.1",
+			Netmask: "255.255.255.0",
 		},
 		Components: config.ComponentMap{
 			"k3s": {},
@@ -414,8 +414,7 @@ func TestPrintNodeAddPlan(t *testing.T) {
 				Cluster: config.ClusterConfig{
 					Name: "prod",
 				},
-				Network: &config.NetworkConfig{
-				},
+				Network: &config.NetworkConfig{},
 			}
 
 			// Just verify the function doesn't panic

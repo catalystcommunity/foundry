@@ -110,7 +110,7 @@ func TestGenerateRegistriesConfig(t *testing.T) {
 }
 
 func strPtr(s string) *string { return &s }
-func boolPtr(b bool) *bool   { return &b }
+func boolPtr(b bool) *bool    { return &b }
 
 func TestGenerateRegistriesYAML_AdditionalRegistries(t *testing.T) {
 	tests := []struct {
@@ -305,10 +305,10 @@ func TestGenerateK3sServerFlags(t *testing.T) {
 		{
 			name: "first control plane node",
 			cfg: &Config{
-				VIP:         "192.168.1.100",
-				ClusterInit: true,
-				ClusterToken: "cluster-token-123",
-				AgentToken:   "agent-token-456",
+				VIP:               "192.168.1.100",
+				ClusterInit:       true,
+				ClusterToken:      "cluster-token-123",
+				AgentToken:        "agent-token-456",
 				DisableComponents: []string{"traefik", "servicelb"},
 			},
 			want: []string{
@@ -323,10 +323,10 @@ func TestGenerateK3sServerFlags(t *testing.T) {
 		{
 			name: "joining control plane node",
 			cfg: &Config{
-				VIP:          "192.168.1.100",
-				ServerURL:    "https://192.168.1.100:6443",
-				ClusterToken: "cluster-token-123",
-				TLSSANs:      []string{"api.example.com"},
+				VIP:               "192.168.1.100",
+				ServerURL:         "https://192.168.1.100:6443",
+				ClusterToken:      "cluster-token-123",
+				TLSSANs:           []string{"api.example.com"},
 				DisableComponents: []string{"traefik"},
 			},
 			want: []string{
@@ -362,9 +362,9 @@ func TestGenerateK3sServerFlags(t *testing.T) {
 
 func TestGenerateK3sInstallCommand(t *testing.T) {
 	cfg := &Config{
-		VIP:          "192.168.1.100",
-		ClusterInit:  true,
-		ClusterToken: "test-token",
+		VIP:               "192.168.1.100",
+		ClusterInit:       true,
+		ClusterToken:      "test-token",
 		DisableComponents: []string{"traefik"},
 	}
 

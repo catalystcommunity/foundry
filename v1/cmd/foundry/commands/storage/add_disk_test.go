@@ -103,8 +103,8 @@ func TestLonghornDiskConfig_JSONArray(t *testing.T) {
 
 func TestMountPointNaming(t *testing.T) {
 	tests := []struct {
-		diskName       string
-		expectedMount  string
+		diskName      string
+		expectedMount string
 	}{
 		{
 			diskName:      "sdb",
@@ -251,9 +251,9 @@ func TestParseLsblkOutput_WithSystemDisk(t *testing.T) {
 
 func TestPartitionNaming(t *testing.T) {
 	tests := []struct {
-		name           string
-		deviceName     string
-		expectedPart   string
+		name         string
+		deviceName   string
+		expectedPart string
 	}{
 		{
 			name:         "standard SATA disk",

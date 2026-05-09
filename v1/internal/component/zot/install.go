@@ -76,7 +76,6 @@ func createDirectories(conn container.SSHExecutor, cfg *ParsedConfig) error {
 	return nil
 }
 
-
 // writeConfigFile generates and writes the Zot config.json file
 func writeConfigFile(conn container.SSHExecutor, cfg *ParsedConfig) error {
 	// Generate config content (pass upstream credentials for pull-through cache)

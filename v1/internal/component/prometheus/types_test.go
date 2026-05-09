@@ -42,19 +42,19 @@ func TestParseConfig_Defaults(t *testing.T) {
 
 func TestParseConfig_CustomValues(t *testing.T) {
 	cfg := component.ComponentConfig{
-		"version":                   "66.0.0",
-		"namespace":                 "custom-monitoring",
-		"retention_days":            30,
-		"retention_size":            "50GB",
-		"storage_class":             "fast-storage",
-		"storage_size":              "100Gi",
-		"alertmanager_enabled":      false,
-		"grafana_enabled":           true,
-		"node_exporter_enabled":     false,
+		"version":                    "66.0.0",
+		"namespace":                  "custom-monitoring",
+		"retention_days":             30,
+		"retention_size":             "50GB",
+		"storage_class":              "fast-storage",
+		"storage_size":               "100Gi",
+		"alertmanager_enabled":       false,
+		"grafana_enabled":            true,
+		"node_exporter_enabled":      false,
 		"kube_state_metrics_enabled": false,
-		"scrape_interval":           "15s",
-		"ingress_enabled":           true,
-		"ingress_host":              "prometheus.example.com",
+		"scrape_interval":            "15s",
+		"ingress_enabled":            true,
+		"ingress_host":               "prometheus.example.com",
 	}
 
 	config, err := ParseConfig(cfg)

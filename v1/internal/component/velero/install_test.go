@@ -175,14 +175,14 @@ func TestBuildHelmValues_Default(t *testing.T) {
 func TestBuildHelmValues_S3Configuration(t *testing.T) {
 	cfg := &Config{
 		Provider:                ProviderS3,
-		S3Endpoint:             "http://garage:3900",
-		S3Bucket:               "velero",
-		S3Region:               "us-east-1",
-		S3AccessKey:            "garageadmin",
-		S3SecretKey:            "garageadmin",
+		S3Endpoint:              "http://garage:3900",
+		S3Bucket:                "velero",
+		S3Region:                "us-east-1",
+		S3AccessKey:             "garageadmin",
+		S3SecretKey:             "garageadmin",
 		S3InsecureSkipTLSVerify: true,
-		S3ForcePathStyle:       true,
-		Values:                 map[string]interface{}{},
+		S3ForcePathStyle:        true,
+		Values:                  map[string]interface{}{},
 	}
 
 	values := buildHelmValues(cfg)
@@ -231,13 +231,13 @@ func TestBuildHelmValues_AWSConfiguration(t *testing.T) {
 func TestBuildHelmValues_WithSnapshots(t *testing.T) {
 	cfg := &Config{
 		Provider:         ProviderS3,
-		S3Endpoint:      "http://garage:3900",
-		S3Bucket:        "velero",
-		S3Region:        "us-east-1",
-		S3AccessKey:     "garageadmin",
-		S3SecretKey:     "garageadmin",
+		S3Endpoint:       "http://garage:3900",
+		S3Bucket:         "velero",
+		S3Region:         "us-east-1",
+		S3AccessKey:      "garageadmin",
+		S3SecretKey:      "garageadmin",
 		SnapshotsEnabled: true,
-		Values:          map[string]interface{}{},
+		Values:           map[string]interface{}{},
 	}
 
 	values := buildHelmValues(cfg)
@@ -255,16 +255,16 @@ func TestBuildHelmValues_WithSnapshots(t *testing.T) {
 func TestBuildHelmValues_WithSchedule(t *testing.T) {
 	cfg := &Config{
 		Provider:                   ProviderS3,
-		S3Endpoint:                "http://garage:3900",
-		S3Bucket:                  "velero",
-		S3Region:                  "us-east-1",
-		S3AccessKey:               "garageadmin",
-		S3SecretKey:               "garageadmin",
-		ScheduleName:              "daily-backup",
-		ScheduleCron:              "0 2 * * *",
-		BackupRetentionDays:       30,
+		S3Endpoint:                 "http://garage:3900",
+		S3Bucket:                   "velero",
+		S3Region:                   "us-east-1",
+		S3AccessKey:                "garageadmin",
+		S3SecretKey:                "garageadmin",
+		ScheduleName:               "daily-backup",
+		ScheduleCron:               "0 2 * * *",
+		BackupRetentionDays:        30,
 		ScheduleExcludedNamespaces: []string{"kube-system", "velero"},
-		Values:                    map[string]interface{}{},
+		Values:                     map[string]interface{}{},
 	}
 
 	values := buildHelmValues(cfg)
@@ -287,15 +287,15 @@ func TestBuildHelmValues_WithSchedule(t *testing.T) {
 func TestBuildHelmValues_WithIncludedNamespaces(t *testing.T) {
 	cfg := &Config{
 		Provider:                   ProviderS3,
-		S3Endpoint:                "http://garage:3900",
-		S3Bucket:                  "velero",
-		S3Region:                  "us-east-1",
-		S3AccessKey:               "garageadmin",
-		S3SecretKey:               "garageadmin",
-		ScheduleName:              "prod-backup",
-		ScheduleCron:              "0 1 * * *",
+		S3Endpoint:                 "http://garage:3900",
+		S3Bucket:                   "velero",
+		S3Region:                   "us-east-1",
+		S3AccessKey:                "garageadmin",
+		S3SecretKey:                "garageadmin",
+		ScheduleName:               "prod-backup",
+		ScheduleCron:               "0 1 * * *",
 		ScheduleIncludedNamespaces: []string{"production", "staging"},
-		Values:                    map[string]interface{}{},
+		Values:                     map[string]interface{}{},
 	}
 
 	values := buildHelmValues(cfg)
@@ -314,9 +314,9 @@ func TestBuildHelmValues_WithIncludedNamespaces(t *testing.T) {
 func TestBuildHelmValues_WithResourceLimits(t *testing.T) {
 	cfg := &Config{
 		Provider:    ProviderS3,
-		S3Endpoint: "http://garage:3900",
-		S3Bucket:   "velero",
-		S3Region:   "us-east-1",
+		S3Endpoint:  "http://garage:3900",
+		S3Bucket:    "velero",
+		S3Region:    "us-east-1",
 		S3AccessKey: "garageadmin",
 		S3SecretKey: "garageadmin",
 		ResourceRequests: map[string]string{
@@ -349,9 +349,9 @@ func TestBuildHelmValues_WithResourceLimits(t *testing.T) {
 func TestBuildHelmValues_CustomValues(t *testing.T) {
 	cfg := &Config{
 		Provider:    ProviderS3,
-		S3Endpoint: "http://garage:3900",
-		S3Bucket:   "velero",
-		S3Region:   "us-east-1",
+		S3Endpoint:  "http://garage:3900",
+		S3Bucket:    "velero",
+		S3Region:    "us-east-1",
 		S3AccessKey: "garageadmin",
 		S3SecretKey: "garageadmin",
 		Values: map[string]interface{}{
@@ -372,13 +372,13 @@ func TestBuildHelmValues_CustomValues(t *testing.T) {
 func TestBuildHelmValues_NoSchedule(t *testing.T) {
 	cfg := &Config{
 		Provider:     ProviderS3,
-		S3Endpoint:  "http://garage:3900",
-		S3Bucket:    "velero",
-		S3Region:    "us-east-1",
+		S3Endpoint:   "http://garage:3900",
+		S3Bucket:     "velero",
+		S3Region:     "us-east-1",
 		S3AccessKey:  "garageadmin",
 		S3SecretKey:  "garageadmin",
 		ScheduleCron: "", // No schedule
-		Values:      map[string]interface{}{},
+		Values:       map[string]interface{}{},
 	}
 
 	values := buildHelmValues(cfg)
@@ -391,11 +391,11 @@ func TestBuildHelmValues_NoSchedule(t *testing.T) {
 func TestBuildBackupStorageLocation_S3(t *testing.T) {
 	cfg := &Config{
 		Provider:                     ProviderS3,
-		S3Endpoint:                  "http://garage:3900",
-		S3Bucket:                    "velero",
-		S3Region:                    "us-east-1",
+		S3Endpoint:                   "http://garage:3900",
+		S3Bucket:                     "velero",
+		S3Region:                     "us-east-1",
 		S3InsecureSkipTLSVerify:      true,
-		S3ForcePathStyle:            true,
+		S3ForcePathStyle:             true,
 		DefaultBackupStorageLocation: true,
 	}
 
@@ -417,8 +417,8 @@ func TestBuildBackupStorageLocation_S3(t *testing.T) {
 func TestBuildBackupStorageLocation_AWS(t *testing.T) {
 	cfg := &Config{
 		Provider:                     ProviderAWS,
-		S3Bucket:                    "my-backups",
-		S3Region:                    "us-west-2",
+		S3Bucket:                     "my-backups",
+		S3Region:                     "us-west-2",
 		DefaultBackupStorageLocation: false,
 	}
 

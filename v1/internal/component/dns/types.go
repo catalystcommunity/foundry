@@ -80,10 +80,10 @@ type Zone struct {
 
 // Record represents a DNS record in PowerDNS.
 type Record struct {
-	Name    string
-	Type    string // A, AAAA, CNAME, MX, TXT, NS, SOA, etc.
-	Content string
-	TTL     int
+	Name     string
+	Type     string // A, AAAA, CNAME, MX, TXT, NS, SOA, etc.
+	Content  string
+	TTL      int
 	Disabled bool
 }
 

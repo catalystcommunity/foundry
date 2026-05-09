@@ -168,7 +168,7 @@ func TestConfigStep(t *testing.T) {
 
 // mockConnection implements a minimal ssh.Connection for testing
 type mockConnection struct {
-	commands []string
+	commands  []string
 	responses map[string]*ssh.ExecResult
 }
 

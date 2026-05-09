@@ -22,14 +22,14 @@ func NewStatusCommand() *cli.Command {
 
 // ClusterHealth represents the overall health of the cluster
 type ClusterHealth struct {
-	TotalNodes         int
-	ControlPlaneNodes  int
-	WorkerNodes        int
-	ReadyNodes         int
-	NotReadyNodes      int
-	Version            string
-	OverallHealthy     bool
-	HealthMessage      string
+	TotalNodes        int
+	ControlPlaneNodes int
+	WorkerNodes       int
+	ReadyNodes        int
+	NotReadyNodes     int
+	Version           string
+	OverallHealthy    bool
+	HealthMessage     string
 }
 
 // runClusterStatus shows overall cluster health and status

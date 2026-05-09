@@ -71,9 +71,9 @@ func TestConfigSaveLoad(t *testing.T) {
 				APIKey:  "${secret:foundry-core/dns:api_key}",
 			},
 			Cluster: config.ClusterConfig{
-				Name:   "test-cluster",
+				Name:          "test-cluster",
 				PrimaryDomain: "example.com",
-				VIP:    "192.168.1.100",
+				VIP:           "192.168.1.100",
 			},
 			Components: config.ComponentMap{
 				"openbao": config.ComponentConfig{},
@@ -125,9 +125,9 @@ func TestConfigSaveLoad(t *testing.T) {
 				APIKey:  "test-key",
 			},
 			Cluster: config.ClusterConfig{
-				Name:   "test",
+				Name:          "test",
 				PrimaryDomain: "example.com",
-				VIP:    "192.168.1.100",
+				VIP:           "192.168.1.100",
 			},
 			Components: config.ComponentMap{
 				"test": config.ComponentConfig{},

@@ -16,7 +16,7 @@ import (
 
 // mockSSHExecutor implements ssh.Executor for testing
 type mockSSHExecutor struct {
-	commands []string
+	commands  []string
 	responses map[string]string
 	errors    map[string]error
 }
@@ -219,7 +219,7 @@ SubState=running`)
 		{
 			name: "invalid config",
 			cfg: component.ComponentConfig{
-				"version": "", // Invalid: empty version
+				"version": "",  // Invalid: empty version
 				"host":    nil, // Will be set in setup
 			},
 			setupMock:   func(m *mockSSHExecutor) {},

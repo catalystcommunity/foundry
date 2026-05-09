@@ -5,16 +5,15 @@ package contour
 
 // Config represents a structured data type
 type Config struct {
-	Version string `json:"version" yaml:"version"`
-	Namespace string `json:"namespace" yaml:"namespace"`
-	ReplicaCount uint64 `json:"replica_count" yaml:"replica_count"`
-	EnvoyReplicaCount uint64 `json:"envoy_replica_count" yaml:"envoy_replica_count"`
-	UseKubeVIP bool `json:"use_kubevip" yaml:"use_kubevip"`
-	DefaultIngressClass bool `json:"default_ingress_class" yaml:"default_ingress_class"`
-	GatewayAPIVersion string `json:"gateway_api_version" yaml:"gateway_api_version"`
-	ServiceMonitorEnabled bool `json:"service_monitor_enabled" yaml:"service_monitor_enabled"`
-	CreateGateway bool `json:"create_gateway" yaml:"create_gateway"`
-	CreateGatewayCertificate bool `json:"create_gateway_certificate" yaml:"create_gateway_certificate"`
-	Values map[string]any `json:"values" yaml:",inline"`
+	Version                  string         `json:"version" yaml:"version"`
+	Namespace                string         `json:"namespace" yaml:"namespace"`
+	ReplicaCount             uint64         `json:"replica_count" yaml:"replica_count"`
+	EnvoyReplicaCount        uint64         `json:"envoy_replica_count" yaml:"envoy_replica_count"`
+	UseKubeVIP               bool           `json:"use_kubevip" yaml:"use_kubevip"`
+	DefaultIngressClass      bool           `json:"default_ingress_class" yaml:"default_ingress_class"`
+	GatewayAPIVersion        string         `json:"gateway_api_version" yaml:"gateway_api_version"`
+	ServiceMonitorEnabled    bool           `json:"service_monitor_enabled" yaml:"service_monitor_enabled"`
+	CreateGateway            bool           `json:"create_gateway" yaml:"create_gateway"`
+	CreateGatewayCertificate bool           `json:"create_gateway_certificate" yaml:"create_gateway_certificate"`
+	Values                   map[string]any `json:"values" yaml:",inline"`
 }
-

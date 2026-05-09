@@ -34,7 +34,7 @@ func TestValidateSecretRefs(t *testing.T) {
 			name: "valid secret refs",
 			config: &Config{
 				Cluster: ClusterConfig{
-					Name:   "${secret:foundry-core/cluster:name}",
+					Name:          "${secret:foundry-core/cluster:name}",
 					PrimaryDomain: "example.com",
 				},
 				Components: ComponentMap{
@@ -47,7 +47,7 @@ func TestValidateSecretRefs(t *testing.T) {
 			name: "invalid secret ref format",
 			config: &Config{
 				Cluster: ClusterConfig{
-					Name:   "${secret:invalid}",
+					Name:          "${secret:invalid}",
 					PrimaryDomain: "example.com",
 				},
 				Components: ComponentMap{
@@ -61,7 +61,7 @@ func TestValidateSecretRefs(t *testing.T) {
 			name: "no secret refs",
 			config: &Config{
 				Cluster: ClusterConfig{
-					Name:   "test",
+					Name:          "test",
 					PrimaryDomain: "example.com",
 				},
 				Components: ComponentMap{
@@ -99,7 +99,7 @@ func TestResolveSecrets(t *testing.T) {
 			name: "resolve single secret",
 			config: &Config{
 				Cluster: ClusterConfig{
-					Name:   "${secret:cluster:name}",
+					Name:          "${secret:cluster:name}",
 					PrimaryDomain: "example.com",
 				},
 				Components: ComponentMap{
@@ -121,7 +121,7 @@ func TestResolveSecrets(t *testing.T) {
 			name: "multiple secrets",
 			config: &Config{
 				Cluster: ClusterConfig{
-					Name:   "${secret:cluster:name}",
+					Name:          "${secret:cluster:name}",
 					PrimaryDomain: "${secret:cluster:primary_domain}",
 				},
 				Components: ComponentMap{
@@ -131,7 +131,7 @@ func TestResolveSecrets(t *testing.T) {
 			ctx: secrets.NewResolutionContext("foundry-core"),
 			resolver: &mockSecretResolver{
 				values: map[string]string{
-					"foundry-core/cluster:name":   "resolved-name",
+					"foundry-core/cluster:name":           "resolved-name",
 					"foundry-core/cluster:primary_domain": "resolved.example.com",
 				},
 			},
@@ -145,7 +145,7 @@ func TestResolveSecrets(t *testing.T) {
 			name: "resolution failure",
 			config: &Config{
 				Cluster: ClusterConfig{
-					Name:   "${secret:cluster:name}",
+					Name:          "${secret:cluster:name}",
 					PrimaryDomain: "example.com",
 				},
 				Components: ComponentMap{
@@ -163,7 +163,7 @@ func TestResolveSecrets(t *testing.T) {
 			name: "non-secret values unchanged",
 			config: &Config{
 				Cluster: ClusterConfig{
-					Name:   "test",
+					Name:          "test",
 					PrimaryDomain: "example.com",
 				},
 				Components: ComponentMap{
@@ -202,7 +202,7 @@ func TestResolveSecrets(t *testing.T) {
 func TestResolveSecrets_NilParameters(t *testing.T) {
 	config := &Config{
 		Cluster: ClusterConfig{
-			Name:   "test",
+			Name:          "test",
 			PrimaryDomain: "example.com",
 		},
 		Components: ComponentMap{

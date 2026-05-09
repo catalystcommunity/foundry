@@ -174,7 +174,7 @@ func buildHelmValues(cfg *Config) map[string]interface{} {
 		"schemaConfig": map[string]interface{}{
 			"configs": []map[string]interface{}{
 				{
-					"from": "2024-01-01",
+					"from":  "2024-01-01",
 					"store": "tsdb",
 					"object_store": func() string {
 						if cfg.StorageBackend == BackendS3 {
@@ -194,8 +194,8 @@ func buildHelmValues(cfg *Config) map[string]interface{} {
 			"retention_period": fmt.Sprintf("%dh", cfg.RetentionDays*24),
 		},
 		"compactor": map[string]interface{}{
-			"retention_enabled":         true,
-			"delete_request_store":      "s3",
+			"retention_enabled":            true,
+			"delete_request_store":         "s3",
 			"delete_request_cancel_period": "24h",
 		},
 	}
@@ -253,7 +253,7 @@ func buildHelmValues(cfg *Config) map[string]interface{} {
 
 	// Gateway configuration
 	values["gateway"] = map[string]interface{}{
-		"enabled": true,
+		"enabled":  true,
 		"replicas": 1,
 	}
 

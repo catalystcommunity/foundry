@@ -24,8 +24,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
-	"sigs.k8s.io/kind/pkg/cluster"
 	kindconfig "sigs.k8s.io/kind/pkg/apis/config/v1alpha4"
+	"sigs.k8s.io/kind/pkg/cluster"
 )
 
 // TestStackPhase1_OpenBAO_PowerDNS tests the integration of OpenBAO and PowerDNS working together

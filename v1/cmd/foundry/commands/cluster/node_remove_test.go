@@ -100,8 +100,8 @@ func TestNodeRemoveCommand_MissingHostname(t *testing.T) {
 			Name: "test",
 		},
 		Network: &config.NetworkConfig{
-			Gateway:      "192.168.1.1",
-			Netmask:      "255.255.255.0",
+			Gateway: "192.168.1.1",
+			Netmask: "255.255.255.0",
 		},
 		Components: config.ComponentMap{
 			"k3s": {},
@@ -188,8 +188,7 @@ func TestPrintNodeRemovePlan(t *testing.T) {
 		Cluster: config.ClusterConfig{
 			Name: "prod",
 		},
-		Network: &config.NetworkConfig{
-		},
+		Network: &config.NetworkConfig{},
 	}
 
 	// Just verify the function doesn't panic
@@ -199,25 +198,25 @@ func TestPrintNodeRemovePlan(t *testing.T) {
 
 func TestUninstallK3s(t *testing.T) {
 	tests := []struct {
-		name           string
-		execResponses  map[string]*ssh.ExecResult
-		expectError    bool
-		errorContains  string
+		name          string
+		execResponses map[string]*ssh.ExecResult
+		expectError   bool
+		errorContains string
 	}{
 		{
 			name: "server uninstall script exists and succeeds",
 			execResponses: map[string]*ssh.ExecResult{
-				"test -f /usr/local/bin/k3s-uninstall.sh":     {ExitCode: 0},
-				"/usr/local/bin/k3s-uninstall.sh":             {ExitCode: 0},
+				"test -f /usr/local/bin/k3s-uninstall.sh": {ExitCode: 0},
+				"/usr/local/bin/k3s-uninstall.sh":         {ExitCode: 0},
 			},
 			expectError: false,
 		},
 		{
 			name: "agent uninstall script exists and succeeds",
 			execResponses: map[string]*ssh.ExecResult{
-				"test -f /usr/local/bin/k3s-uninstall.sh":           {ExitCode: 1},
-				"test -f /usr/local/bin/k3s-agent-uninstall.sh":     {ExitCode: 0},
-				"/usr/local/bin/k3s-agent-uninstall.sh":             {ExitCode: 0},
+				"test -f /usr/local/bin/k3s-uninstall.sh":       {ExitCode: 1},
+				"test -f /usr/local/bin/k3s-agent-uninstall.sh": {ExitCode: 0},
+				"/usr/local/bin/k3s-agent-uninstall.sh":         {ExitCode: 0},
 			},
 			expectError: false,
 		},

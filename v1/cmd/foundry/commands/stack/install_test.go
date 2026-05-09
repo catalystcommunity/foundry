@@ -73,8 +73,8 @@ func setupTestRegistry() *component.Registry {
 func createTestConfig(t *testing.T) *config.Config {
 	return &config.Config{
 		Network: &config.NetworkConfig{
-			Gateway:       "192.168.1.1",
-			Netmask:       "255.255.255.0",
+			Gateway: "192.168.1.1",
+			Netmask: "255.255.255.0",
 		},
 		DNS: &config.DNSConfig{
 			InfrastructureZones: []config.DNSZone{
@@ -142,7 +142,7 @@ func TestValidateStackConfig(t *testing.T) {
 			name: "missing network gateway",
 			cfg: &config.Config{
 				Network: &config.NetworkConfig{
-					Netmask:      "255.255.255.0",
+					Netmask: "255.255.255.0",
 				},
 				DNS: &config.DNSConfig{
 					InfrastructureZones: []config.DNSZone{{Name: "infra.local"}},
@@ -151,7 +151,7 @@ func TestValidateStackConfig(t *testing.T) {
 					APIKey:              "test-api-key",
 				},
 				Cluster: config.ClusterConfig{
-					Name:   "test",
+					Name:          "test",
 					PrimaryDomain: "example.com",
 				},
 				Components: config.ComponentMap{
@@ -175,7 +175,7 @@ func TestValidateStackConfig(t *testing.T) {
 					APIKey:              "test-api-key",
 				},
 				Cluster: config.ClusterConfig{
-					Name:   "test",
+					Name:          "test",
 					PrimaryDomain: "example.com",
 				},
 				Components: config.ComponentMap{
@@ -199,7 +199,7 @@ func TestValidateStackConfig(t *testing.T) {
 					APIKey:              "test-api-key",
 				},
 				Cluster: config.ClusterConfig{
-					Name:   "test",
+					Name:          "test",
 					PrimaryDomain: "example.com",
 				},
 				Hosts: []*host.Host{
@@ -226,7 +226,7 @@ func TestValidateStackConfig(t *testing.T) {
 					APIKey:              "test-api-key",
 				},
 				Cluster: config.ClusterConfig{
-					Name:   "test",
+					Name:          "test",
 					PrimaryDomain: "example.com",
 					// VIP is intentionally missing
 				},
@@ -246,8 +246,8 @@ func TestValidateStackConfig(t *testing.T) {
 			name: "missing infrastructure zones",
 			cfg: &config.Config{
 				Network: &config.NetworkConfig{
-					Gateway:      "192.168.1.1",
-					Netmask:      "255.255.255.0",
+					Gateway: "192.168.1.1",
+					Netmask: "255.255.255.0",
 				},
 				DNS: &config.DNSConfig{
 					KubernetesZones: []config.DNSZone{{Name: "k8s.local"}},
@@ -256,9 +256,9 @@ func TestValidateStackConfig(t *testing.T) {
 					// InfrastructureZones intentionally missing
 				},
 				Cluster: config.ClusterConfig{
-					Name:   "test",
+					Name:          "test",
 					PrimaryDomain: "example.com",
-					VIP:    "192.168.1.100",
+					VIP:           "192.168.1.100",
 				},
 				Hosts: []*host.Host{
 					{Hostname: "openbao1", Address: "192.168.1.10", Roles: []string{host.RoleOpenBAO}},
@@ -276,8 +276,8 @@ func TestValidateStackConfig(t *testing.T) {
 			name: "missing kubernetes zones",
 			cfg: &config.Config{
 				Network: &config.NetworkConfig{
-					Gateway:      "192.168.1.1",
-					Netmask:      "255.255.255.0",
+					Gateway: "192.168.1.1",
+					Netmask: "255.255.255.0",
 				},
 				DNS: &config.DNSConfig{
 					InfrastructureZones: []config.DNSZone{{Name: "infra.local"}},
@@ -286,9 +286,9 @@ func TestValidateStackConfig(t *testing.T) {
 					// KubernetesZones intentionally missing
 				},
 				Cluster: config.ClusterConfig{
-					Name:   "test",
+					Name:          "test",
 					PrimaryDomain: "example.com",
-					VIP:    "192.168.1.100",
+					VIP:           "192.168.1.100",
 				},
 				Hosts: []*host.Host{
 					{Hostname: "openbao1", Address: "192.168.1.10", Roles: []string{host.RoleOpenBAO}},
@@ -306,8 +306,8 @@ func TestValidateStackConfig(t *testing.T) {
 			name: "missing cluster name",
 			cfg: &config.Config{
 				Network: &config.NetworkConfig{
-					Gateway:      "192.168.1.1",
-					Netmask:      "255.255.255.0",
+					Gateway: "192.168.1.1",
+					Netmask: "255.255.255.0",
 				},
 				DNS: &config.DNSConfig{
 					InfrastructureZones: []config.DNSZone{{Name: "infra.local"}},
@@ -317,7 +317,7 @@ func TestValidateStackConfig(t *testing.T) {
 				},
 				Cluster: config.ClusterConfig{
 					PrimaryDomain: "example.com",
-					VIP:    "192.168.1.100",
+					VIP:           "192.168.1.100",
 					// Name intentionally missing
 				},
 				Hosts: []*host.Host{
@@ -346,9 +346,9 @@ func TestValidateStackConfig(t *testing.T) {
 					APIKey:              "test-api-key",
 				},
 				Cluster: config.ClusterConfig{
-					Name:   "test",
+					Name:          "test",
 					PrimaryDomain: "example.com",
-					VIP:    "192.168.1.100",
+					VIP:           "192.168.1.100",
 				},
 				Hosts: []*host.Host{
 					{Hostname: "openbao1", Address: "192.168.1.10", Roles: []string{host.RoleOpenBAO}},

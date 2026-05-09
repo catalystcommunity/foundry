@@ -243,8 +243,8 @@ func TestDisplayStatusTable(t *testing.T) {
 			},
 		},
 		{
-			name:     "nil status entry (should skip)",
-			order:    []string{"openbao", "dns"},
+			name:  "nil status entry (should skip)",
+			order: []string{"openbao", "dns"},
 			statuses: map[string]*component.ComponentStatus{
 				"openbao": {
 					Installed: true,

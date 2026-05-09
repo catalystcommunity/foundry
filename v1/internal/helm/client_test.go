@@ -514,13 +514,13 @@ func TestConvertRelease(t *testing.T) {
 	// This tests the unexported convertRelease function indirectly
 	// by verifying that the Release type has the correct structure
 	r := Release{
-		Name:      "test-release",
-		Namespace: "test-ns",
-		Version:   1,
-		Status:    "deployed",
-		Chart:     "nginx-1.0.0",
+		Name:       "test-release",
+		Namespace:  "test-ns",
+		Version:    1,
+		Status:     "deployed",
+		Chart:      "nginx-1.0.0",
 		AppVersion: "1.0",
-		Updated:   time.Now(),
+		Updated:    time.Now(),
 	}
 
 	assert.Equal(t, "test-release", r.Name)

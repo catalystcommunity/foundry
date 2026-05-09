@@ -135,8 +135,8 @@ func buildHelmValues(cfg *Config) map[string]interface{} {
 
 	// Prometheus configuration
 	prometheusSpec := map[string]interface{}{
-		"retention":     fmt.Sprintf("%dd", cfg.RetentionDays),
-		"retentionSize": cfg.RetentionSize,
+		"retention":      fmt.Sprintf("%dd", cfg.RetentionDays),
+		"retentionSize":  cfg.RetentionSize,
 		"scrapeInterval": cfg.ScrapeInterval,
 	}
 

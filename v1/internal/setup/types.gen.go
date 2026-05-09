@@ -5,14 +5,13 @@ package setup
 
 // SetupState represents a structured data type
 type SetupState struct {
-	NetworkPlanned bool `json:"network_planned" yaml:"network_planned"`
-	NetworkValidated bool `json:"network_validated" yaml:"network_validated"`
-	OpenBAOInstalled bool `json:"openbao_installed" yaml:"openbao_installed"`
+	NetworkPlanned     bool `json:"network_planned" yaml:"network_planned"`
+	NetworkValidated   bool `json:"network_validated" yaml:"network_validated"`
+	OpenBAOInstalled   bool `json:"openbao_installed" yaml:"openbao_installed"`
 	OpenBAOInitialized bool `json:"openbao_initialized" yaml:"openbao_initialized"`
-	DNSInstalled bool `json:"dns_installed" yaml:"dns_installed"`
-	DNSZonesCreated bool `json:"dns_zones_created" yaml:"dns_zones_created"`
-	ZotInstalled bool `json:"zot_installed" yaml:"zot_installed"`
-	K8sInstalled bool `json:"k8s_installed" yaml:"k8s_installed"`
-	StackComplete bool `json:"stack_complete" yaml:"stack_complete"`
+	DNSInstalled       bool `json:"dns_installed" yaml:"dns_installed"`
+	DNSZonesCreated    bool `json:"dns_zones_created" yaml:"dns_zones_created"`
+	ZotInstalled       bool `json:"zot_installed" yaml:"zot_installed"`
+	K8sInstalled       bool `json:"k8s_installed" yaml:"k8s_installed"`
+	StackComplete      bool `json:"stack_complete" yaml:"stack_complete"`
 }
-

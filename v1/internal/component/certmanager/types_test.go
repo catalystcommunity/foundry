@@ -27,7 +27,7 @@ func TestNewComponent(t *testing.T) {
 			},
 		},
 		{
-			name: "empty config uses defaults",
+			name:   "empty config uses defaults",
 			config: &Config{},
 			expected: &Config{
 				Namespace:         "cert-manager",
@@ -145,7 +145,7 @@ func TestParseConfig(t *testing.T) {
 		{
 			name: "wrong types ignored",
 			input: map[string]interface{}{
-				"namespace":             123, // Should be string
+				"namespace":             123,    // Should be string
 				"create_default_issuer": "true", // Should be bool
 			},
 			expected: &Config{

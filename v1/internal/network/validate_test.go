@@ -42,7 +42,7 @@ func TestValidateIPs(t *testing.T) {
 				Cluster: config.ClusterConfig{
 					Name:          "test",
 					PrimaryDomain: "example.com",
-					VIP:    "192.168.1.100",
+					VIP:           "192.168.1.100",
 				},
 				Components: config.ComponentMap{
 					"k3s": config.ComponentConfig{},
@@ -67,7 +67,7 @@ func TestValidateIPs(t *testing.T) {
 				Cluster: config.ClusterConfig{
 					Name:          "test",
 					PrimaryDomain: "example.com",
-					VIP:    "192.168.1.100",
+					VIP:           "192.168.1.100",
 				},
 				Components: config.ComponentMap{
 					"k3s": config.ComponentConfig{},
@@ -93,7 +93,7 @@ func TestValidateIPs(t *testing.T) {
 				Cluster: config.ClusterConfig{
 					Name:          "test",
 					PrimaryDomain: "example.com",
-					VIP:    "10.0.0.100", // Completely different network
+					VIP:           "10.0.0.100", // Completely different network
 				},
 				Components: config.ComponentMap{
 					"k3s": config.ComponentConfig{},
@@ -129,7 +129,7 @@ func TestValidateIPs(t *testing.T) {
 				Cluster: config.ClusterConfig{
 					Name:          "test",
 					PrimaryDomain: "example.com",
-					VIP:    "192.168.1.100",
+					VIP:           "192.168.1.100",
 				},
 				Components: config.ComponentMap{
 					"k3s": config.ComponentConfig{},
@@ -159,7 +159,7 @@ func TestValidateIPs(t *testing.T) {
 				Cluster: config.ClusterConfig{
 					Name:          "test",
 					PrimaryDomain: "example.com",
-					VIP:    "192.168.1.100",
+					VIP:           "192.168.1.100",
 				},
 				Components: config.ComponentMap{
 					"k3s": config.ComponentConfig{},
@@ -277,7 +277,7 @@ func TestCheckDHCPConflicts(t *testing.T) {
 				Cluster: config.ClusterConfig{
 					Name:          "test",
 					PrimaryDomain: "example.com",
-					VIP:    "192.168.1.100",
+					VIP:           "192.168.1.100",
 				},
 				Components: config.ComponentMap{
 					"k3s": config.ComponentConfig{},
@@ -316,7 +316,7 @@ func TestCheckDHCPConflicts(t *testing.T) {
 				Cluster: config.ClusterConfig{
 					Name:          "test",
 					PrimaryDomain: "example.com",
-					VIP:    "192.168.1.100",
+					VIP:           "192.168.1.100",
 				},
 				Components: config.ComponentMap{
 					"k3s": config.ComponentConfig{},
@@ -345,7 +345,7 @@ func TestCheckDHCPConflicts(t *testing.T) {
 				Cluster: config.ClusterConfig{
 					Name:          "test",
 					PrimaryDomain: "example.com",
-					VIP:    "192.168.1.75", // Inside DHCP range
+					VIP:           "192.168.1.75", // Inside DHCP range
 				},
 				Components: config.ComponentMap{
 					"k3s": config.ComponentConfig{},
@@ -375,7 +375,7 @@ func TestCheckDHCPConflicts(t *testing.T) {
 				Cluster: config.ClusterConfig{
 					Name:          "test",
 					PrimaryDomain: "example.com",
-					VIP:    "192.168.1.100",
+					VIP:           "192.168.1.100",
 				},
 				Components: config.ComponentMap{
 					"k3s": config.ComponentConfig{},
@@ -415,7 +415,7 @@ func TestCheckDHCPConflicts(t *testing.T) {
 				Cluster: config.ClusterConfig{
 					Name:          "test",
 					PrimaryDomain: "example.com",
-					VIP:    "192.168.1.100",
+					VIP:           "192.168.1.100",
 				},
 				Components: config.ComponentMap{
 					"k3s": config.ComponentConfig{},
@@ -445,7 +445,7 @@ func TestCheckDHCPConflicts(t *testing.T) {
 				Cluster: config.ClusterConfig{
 					Name:          "test",
 					PrimaryDomain: "example.com",
-					VIP:    "192.168.1.100",
+					VIP:           "192.168.1.100",
 				},
 				Components: config.ComponentMap{
 					"k3s": config.ComponentConfig{},
@@ -475,7 +475,7 @@ func TestCheckDHCPConflicts(t *testing.T) {
 				Cluster: config.ClusterConfig{
 					Name:          "test",
 					PrimaryDomain: "example.com",
-					VIP:    "192.168.1.99", // Exactly at end
+					VIP:           "192.168.1.99", // Exactly at end
 				},
 				Components: config.ComponentMap{
 					"k3s": config.ComponentConfig{},
@@ -505,7 +505,7 @@ func TestCheckDHCPConflicts(t *testing.T) {
 				Cluster: config.ClusterConfig{
 					Name:          "test",
 					PrimaryDomain: "example.com",
-					VIP:    "192.168.1.100",
+					VIP:           "192.168.1.100",
 				},
 				Components: config.ComponentMap{
 					"k3s": config.ComponentConfig{},

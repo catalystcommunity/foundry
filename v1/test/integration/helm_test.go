@@ -11,8 +11,8 @@ import (
 	"github.com/catalystcommunity/foundry/v1/internal/helm"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"sigs.k8s.io/kind/pkg/cluster"
 	kindconfig "sigs.k8s.io/kind/pkg/apis/config/v1alpha4"
+	"sigs.k8s.io/kind/pkg/cluster"
 )
 
 // TestHelmIntegration tests Helm operations against a real Kind cluster

@@ -356,28 +356,28 @@ func TestOpenBAOKeyStorage_parsePath(t *testing.T) {
 	require.NoError(t, err)
 
 	tests := []struct {
-		name         string
-		host         string
+		name          string
+		host          string
 		expectedMount string
-		expectedPath string
+		expectedPath  string
 	}{
 		{
-			name:         "simple hostname",
-			host:         "example.com",
+			name:          "simple hostname",
+			host:          "example.com",
 			expectedMount: "foundry-core",
-			expectedPath: "ssh-keys/example.com",
+			expectedPath:  "ssh-keys/example.com",
 		},
 		{
-			name:         "IP address",
-			host:         "192.168.1.100",
+			name:          "IP address",
+			host:          "192.168.1.100",
 			expectedMount: "foundry-core",
-			expectedPath: "ssh-keys/192.168.1.100",
+			expectedPath:  "ssh-keys/192.168.1.100",
 		},
 		{
-			name:         "hostname with subdomain",
-			host:         "server1.internal.example.com",
+			name:          "hostname with subdomain",
+			host:          "server1.internal.example.com",
 			expectedMount: "foundry-core",
-			expectedPath: "ssh-keys/server1.internal.example.com",
+			expectedPath:  "ssh-keys/server1.internal.example.com",
 		},
 	}
 

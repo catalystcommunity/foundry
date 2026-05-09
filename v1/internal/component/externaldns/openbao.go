@@ -7,8 +7,8 @@ import (
 
 const (
 	// OpenBAO path constants for External-DNS secrets
-	openBAOMount      = "foundry-core"
-	openBAOBasePath   = "external-dns"
+	openBAOMount    = "foundry-core"
+	openBAOBasePath = "external-dns"
 )
 
 // OpenBAOClient defines the interface for storing/retrieving secrets in OpenBAO

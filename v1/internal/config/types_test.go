@@ -70,10 +70,9 @@ func TestComponentConfig_Validate(t *testing.T) {
 		errMsg    string
 	}{
 		{
-			name: "valid component with version",
-			component: ComponentConfig{
-			},
-			wantErr: false,
+			name:      "valid component with version",
+			component: ComponentConfig{},
+			wantErr:   false,
 		},
 		{
 			name: "valid component without version",

@@ -57,9 +57,9 @@ func ValidateVIP(vip string, allowCGNAT bool) error {
 // isPrivateIP checks if an IP is in private ranges (RFC1918) or optionally shared address space (RFC6598)
 func isPrivateIP(ip net.IP, allowCGNAT bool) bool {
 	private := []string{
-		"10.0.0.0/8",        // RFC1918 - Private-Use
-		"172.16.0.0/12",     // RFC1918 - Private-Use
-		"192.168.0.0/16",    // RFC1918 - Private-Use
+		"10.0.0.0/8",     // RFC1918 - Private-Use
+		"172.16.0.0/12",  // RFC1918 - Private-Use
+		"192.168.0.0/16", // RFC1918 - Private-Use
 	}
 
 	// Optionally include CGNAT range (RFC6598) used by Tailscale and similar overlay networks
