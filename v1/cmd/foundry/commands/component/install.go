@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/catalystcommunity/foundry/v1/internal/component"
 	"github.com/catalystcommunity/foundry/v1/internal/component/certmanager"
@@ -17,9 +18,9 @@ import (
 	"github.com/catalystcommunity/foundry/v1/internal/component/gatewayapi"
 	"github.com/catalystcommunity/foundry/v1/internal/component/grafana"
 	"github.com/catalystcommunity/foundry/v1/internal/component/loki"
-	"github.com/catalystcommunity/foundry/v1/internal/component/seaweedfs"
 	"github.com/catalystcommunity/foundry/v1/internal/component/openbao"
 	"github.com/catalystcommunity/foundry/v1/internal/component/prometheus"
+	"github.com/catalystcommunity/foundry/v1/internal/component/seaweedfs"
 	componentStorage "github.com/catalystcommunity/foundry/v1/internal/component/storage"
 	"github.com/catalystcommunity/foundry/v1/internal/component/tailscale"
 	"github.com/catalystcommunity/foundry/v1/internal/component/velero"
@@ -102,17 +103,17 @@ Examples:
 
 // k8sComponents lists all components that are installed via kubeconfig (Helm/K8s)
 var k8sComponents = map[string]bool{
-	"gateway-api":   true,
-	"contour":       true,
-	"cert-manager":  true,
-	"storage":       true,
-	"seaweedfs":     true,
-	"prometheus":    true,
-	"loki":          true,
-	"grafana":       true,
-	"external-dns":  true,
-	"velero":        true,
-	"tailscale":     true,
+	"gateway-api":  true,
+	"contour":      true,
+	"cert-manager": true,
+	"storage":      true,
+	"seaweedfs":    true,
+	"prometheus":   true,
+	"loki":         true,
+	"grafana":      true,
+	"external-dns": true,
+	"velero":       true,
+	"tailscale":    true,
 }
 
 func runInstall(ctx context.Context, cmd *cli.Command) error {
@@ -1110,6 +1111,12 @@ func isHelmReleaseInstalled(componentName string) bool {
 	}
 	defer helmClient.Close()
 
+	// Create K8s client for CR checks
+	k8sClient, err := k8s.NewClientFromKubeconfig(kubeconfigBytes)
+	if err != nil {
+		return false
+	}
+
 	// Map component names to release names and namespaces
 	releaseInfo := map[string]struct {
 		name      string
@@ -1118,8 +1125,8 @@ func isHelmReleaseInstalled(componentName string) bool {
 		"storage":      {"local-path-provisioner", "kube-system"},
 		"seaweedfs":    {"seaweedfs", "seaweedfs"},
 		"prometheus":   {"kube-prometheus-stack", "monitoring"},
-		"loki":         {"loki", "loki"},
-		"grafana":      {"grafana", "grafana"},
+		"loki":         {"loki", "monitoring"},
+		"grafana":      {"grafana", "monitoring"},
 		"external-dns": {"external-dns", "external-dns"},
 		"velero":       {"velero", "velero"},
 		"gateway-api":  {"gateway-api", "gateway-system"},
@@ -1138,6 +1145,11 @@ func isHelmReleaseInstalled(componentName string) bool {
 		return true
 	}
 
+	// Special case for prometheus - check for Prometheus CR (deployed via kube-prometheus-stack operator)
+	if componentName == "prometheus" {
+		return isPrometheusCRInstalled(k8sClient)
+	}
+
 	// Check for Helm release
 	releases, err := helmClient.List(context.Background(), info.namespace)
 	if err != nil {
@@ -1150,6 +1162,24 @@ func isHelmReleaseInstalled(componentName string) bool {
 		}
 	}
 
+	return false
+}
+
+// isPrometheusCRInstalled checks if Prometheus CR exists (for kube-prometheus-stack operator deployments)
+func isPrometheusCRInstalled(k8sClient *k8s.Client) bool {
+	ctx := context.Background()
+
+	// Check for prometheus operator pods - if they're running, prometheus is installed
+	pods, err := k8sClient.GetPods(ctx, "monitoring")
+	if err != nil {
+		return false
+	}
+
+	for _, pod := range pods {
+		if strings.Contains(pod.Name, "kube-prometheus-stack") {
+			return true
+		}
+	}
 	return false
 }
 
