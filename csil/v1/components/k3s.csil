@@ -22,6 +22,7 @@ Config = {
     server_url: text @go_name("ServerURL"),
     dns_servers: [* text] @go_name("DNSServers"),
     ? additional_registries: [* AdditionalRegistry] @go_name("AdditionalRegistries"),
+? etcd_args: [* text] @go_name("EtcdArgs"),
     ? allow_cgnat_vip: bool @go_name("AllowCGNATVIP"),
 }
 
