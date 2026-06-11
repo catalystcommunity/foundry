@@ -167,6 +167,11 @@ func buildHelmValues(cfg *Config) map[string]interface{} {
 	datasources := buildDatasources(cfg)
 	values["datasources"] = datasources
 
+	// Alerting: pass Grafana's native provisioning through verbatim.
+	if len(cfg.Alerting) > 0 {
+		values["alerting"] = cfg.Alerting
+	}
+
 	// Sidecar configuration for dynamic dashboard/datasource discovery
 	if cfg.SidecarEnabled {
 		values["sidecar"] = map[string]interface{}{

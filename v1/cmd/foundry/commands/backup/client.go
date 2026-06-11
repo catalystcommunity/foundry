@@ -133,6 +133,9 @@ func (c *VeleroClient) CreateBackup(ctx context.Context, name string, opts Backu
 	if opts.SnapshotVolumes != nil {
 		spec["snapshotVolumes"] = *opts.SnapshotVolumes
 	}
+	if opts.DefaultVolumesToFsBackup != nil {
+		spec["defaultVolumesToFsBackup"] = *opts.DefaultVolumesToFsBackup
+	}
 	if opts.StorageLocation != "" {
 		spec["storageLocation"] = opts.StorageLocation
 	}
@@ -164,7 +167,10 @@ type BackupOptions struct {
 	ExcludedNamespaces []string
 	TTL                string
 	SnapshotVolumes    *bool
-	StorageLocation    string
+	// DefaultVolumesToFsBackup enables Velero File System Backup (kopia) of all pod
+	// volumes — capturing PersistentVolume *contents*. Requires the node-agent.
+	DefaultVolumesToFsBackup *bool
+	StorageLocation          string
 }
 
 // ListBackups lists all Velero backups

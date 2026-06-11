@@ -182,8 +182,19 @@ func buildHelmValues(cfg *Config) map[string]interface{} {
 		},
 	}
 
-	// Deployment configuration
-	values["deployNodeAgent"] = false // Disabled by default, enable for file-level backups
+	// Deployment configuration: the node-agent DaemonSet enables File System Backup
+	// (kopia) of PersistentVolume contents. Disabled by default; enable via
+	// deploy_node_agent for clusters without CSI volume snapshot support.
+	values["deployNodeAgent"] = cfg.DeployNodeAgent
+	if cfg.DeployNodeAgent {
+		values["nodeAgent"] = map[string]interface{}{
+			"resources": map[string]interface{}{
+				"requests": map[string]interface{}{
+					"memory": "256Mi",
+				},
+			},
+		}
+	}
 
 	// Override kubectl image for upgrade jobs (chart default uses version that may not exist)
 	values["kubectl"] = map[string]interface{}{

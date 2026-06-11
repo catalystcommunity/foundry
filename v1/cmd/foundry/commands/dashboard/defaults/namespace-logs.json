@@ -1,0 +1,78 @@
+{
+  "uid": "foundry-namespace-logs",
+  "title": "Foundry / Namespace — Logs & Errors",
+  "tags": ["foundry", "namespace", "logs"],
+  "editable": true,
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "loki_datasource",
+        "label": "Loki",
+        "type": "datasource",
+        "query": "loki",
+        "refresh": 1,
+        "hide": 0,
+        "current": {}
+      },
+      {
+        "name": "namespace",
+        "label": "Namespace",
+        "type": "query",
+        "datasource": { "type": "loki", "uid": "${loki_datasource}" },
+        "definition": "label_values(namespace)",
+        "query": { "label": "namespace", "type": 1, "stream": "", "refId": "LokiVariableQueryEditor-VariableQuery" },
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": false,
+        "multi": false,
+        "current": {}
+      },
+      {
+        "name": "search",
+        "label": "Filter (regex)",
+        "type": "textbox",
+        "query": "",
+        "current": { "text": "", "value": "" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Error Log Rate by Pod",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 0 },
+      "datasource": { "type": "loki", "uid": "${loki_datasource}" },
+      "fieldConfig": { "defaults": { "unit": "logs", "custom": { "fillOpacity": 20, "showPoints": "never", "drawStyle": "bars", "stacking": { "mode": "normal" } } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["sum", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "datasource": { "type": "loki", "uid": "${loki_datasource}" }, "expr": "sum by (pod)(rate({namespace=\"$namespace\"} |~ \"(?i)(error|fatal|panic|exception|traceback|fail)\" [5m]))", "legendFormat": "{{pod}}", "refId": "A" }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "logs",
+      "title": "Errors (namespace)",
+      "gridPos": { "h": 11, "w": 24, "x": 0, "y": 8 },
+      "datasource": { "type": "loki", "uid": "${loki_datasource}" },
+      "options": { "showTime": true, "wrapLogMessage": true, "enableLogDetails": true, "prettifyLogMessage": false, "dedupStrategy": "none", "sortOrder": "Descending" },
+      "targets": [
+        { "datasource": { "type": "loki", "uid": "${loki_datasource}" }, "expr": "{namespace=\"$namespace\"} |~ \"(?i)(error|fatal|panic|exception|traceback|fail)\"", "refId": "A" }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "logs",
+      "title": "All Logs (filtered by $search)",
+      "gridPos": { "h": 11, "w": 24, "x": 0, "y": 19 },
+      "datasource": { "type": "loki", "uid": "${loki_datasource}" },
+      "options": { "showTime": true, "wrapLogMessage": true, "enableLogDetails": true, "prettifyLogMessage": false, "dedupStrategy": "none", "sortOrder": "Descending" },
+      "targets": [
+        { "datasource": { "type": "loki", "uid": "${loki_datasource}" }, "expr": "{namespace=\"$namespace\"} |~ \"(?i)$search\"", "refId": "A" }
+      ]
+    }
+  ]
+}

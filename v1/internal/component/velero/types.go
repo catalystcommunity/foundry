@@ -76,6 +76,11 @@ type Config struct {
 	// SnapshotsEnabled enables volume snapshots (requires CSI driver support)
 	SnapshotsEnabled bool `json:"snapshots_enabled" yaml:"snapshots_enabled"`
 
+	// DeployNodeAgent deploys the Velero node-agent DaemonSet, enabling File System
+	// Backup (kopia) of PersistentVolume contents. Required for capturing volume data
+	// on clusters without CSI volume snapshot support.
+	DeployNodeAgent bool `json:"deploy_node_agent" yaml:"deploy_node_agent"`
+
 	// CSISnapshotTimeout is the timeout for CSI volume snapshots
 	CSISnapshotTimeout string `json:"csi_snapshot_timeout" yaml:"csi_snapshot_timeout"`
 
@@ -289,6 +294,10 @@ func ParseConfig(cfg component.ComponentConfig) (*Config, error) {
 
 	if snapshotsEnabled, ok := cfg.GetBool("snapshots_enabled"); ok {
 		config.SnapshotsEnabled = snapshotsEnabled
+	}
+
+	if deployNodeAgent, ok := cfg.GetBool("deploy_node_agent"); ok {
+		config.DeployNodeAgent = deployNodeAgent
 	}
 
 	if csiSnapshotTimeout, ok := cfg.GetString("csi_snapshot_timeout"); ok {

@@ -267,13 +267,41 @@ func (c *Client) doInstall(ctx context.Context, opts InstallOptions, namespace s
 		return fmt.Errorf("failed to load chart: %w", err)
 	}
 
+	// Normalize values so chart templates see generic types ([]interface{},
+	// map[string]interface{}) rather than concrete Go types.
+	values, err := normalizeValues(opts.Values)
+	if err != nil {
+		return err
+	}
+
 	// Install the chart
-	_, err = installAction.RunWithContext(ctx, chart, opts.Values)
+	_, err = installAction.RunWithContext(ctx, chart, values)
 	if err != nil {
 		return fmt.Errorf("failed to install chart: %w", err)
 	}
 
 	return nil
+}
+
+// normalizeValues round-trips Helm values through YAML so that nested Go types
+// (e.g. []map[string]interface{}) become the generic types Helm's template engine
+// expects ([]interface{}, map[string]interface{}). Without this, chart templates
+// that branch on `typeIs "[]interface {}"` — such as Velero's BackupStorageLocation —
+// silently fail to render because they see the concrete Go slice type. This mirrors
+// how the Helm CLI parses values from YAML files.
+func normalizeValues(values map[string]interface{}) (map[string]interface{}, error) {
+	if len(values) == 0 {
+		return values, nil
+	}
+	data, err := yaml.Marshal(values)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal helm values: %w", err)
+	}
+	normalized := map[string]interface{}{}
+	if err := yaml.Unmarshal(data, &normalized); err != nil {
+		return nil, fmt.Errorf("failed to normalize helm values: %w", err)
+	}
+	return normalized, nil
 }
 
 // Upgrade upgrades a Helm release with retry logic for transient errors
@@ -349,8 +377,15 @@ func (c *Client) doUpgrade(ctx context.Context, opts UpgradeOptions, namespace s
 		return fmt.Errorf("failed to load chart: %w", err)
 	}
 
+	// Normalize values so chart templates see generic types ([]interface{},
+	// map[string]interface{}) rather than concrete Go types.
+	values, err := normalizeValues(opts.Values)
+	if err != nil {
+		return err
+	}
+
 	// Upgrade the release
-	_, err = upgradeAction.RunWithContext(ctx, opts.ReleaseName, chart, opts.Values)
+	_, err = upgradeAction.RunWithContext(ctx, opts.ReleaseName, chart, values)
 	if err != nil {
 		return fmt.Errorf("failed to upgrade release: %w", err)
 	}

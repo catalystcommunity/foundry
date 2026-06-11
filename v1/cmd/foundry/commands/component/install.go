@@ -251,8 +251,8 @@ func installK8sComponent(ctx context.Context, cmd *cli.Command, name string, sta
 		}
 		componentWithClients = prometheus.NewComponent(helmClient, k8sClient)
 	case "loki":
-		// Get SeaweedFS credentials from the SeaweedFS secret
-		seaweedfsKey, seaweedfsSecret, err := getSeaweedFSCredentials(k8sClient)
+		// Get SeaweedFS credentials (from stack config, falling back to a k8s secret)
+		seaweedfsKey, seaweedfsSecret, err := getSeaweedFSCredentials(stackConfig, k8sClient)
 		if err != nil {
 			return fmt.Errorf("failed to get SeaweedFS credentials: %w", err)
 		}
@@ -263,9 +263,35 @@ func installK8sComponent(ctx context.Context, cmd *cli.Command, name string, sta
 		cfg["s3_region"] = "us-east-1"
 		componentWithClients = loki.NewComponent(helmClient, k8sClient)
 	case "grafana":
-		// Get Prometheus and Loki endpoints for data sources
-		cfg["prometheus_url"] = "http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090"
-		cfg["loki_url"] = "http://loki.loki.svc.cluster.local:3100"
+		// Honor the grafana settings from the stack config (values, ingress,
+		// alerting contact points, etc.) so this path doesn't fall back to bare
+		// defaults.
+		if comp, ok := stackConfig.Components["grafana"]; ok {
+			for k, v := range comp.Config {
+				if _, present := cfg[k]; !present {
+					cfg[k] = v
+				}
+			}
+		}
+		// Default datasource endpoints only where the stack config hasn't set them.
+		if !hasNonEmptyString(cfg, "prometheus_url") {
+			cfg["prometheus_url"] = "http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090"
+		}
+		if !hasNonEmptyString(cfg, "loki_url") {
+			cfg["loki_url"] = "http://loki-gateway.monitoring.svc.cluster.local:80"
+		}
+		// Resolve ${secret:...} references in alerting contact points (e.g. an
+		// Opsgenie API key stored in OpenBAO) so the real value reaches Grafana and
+		// is never persisted in the stack config.
+		if alerting, ok := cfg["alerting"]; ok {
+			resolver, resCtx, rerr := buildSecretResolver(stackConfig)
+			if rerr != nil {
+				return fmt.Errorf("failed to set up secret resolver for alerting: %w", rerr)
+			}
+			if err := resolveSecretRefs(alerting, resolver, resCtx); err != nil {
+				return fmt.Errorf("failed to resolve alerting secrets: %w", err)
+			}
+		}
 		componentWithClients = grafana.NewComponent(helmClient, k8sClient)
 	case "external-dns":
 		// Get PowerDNS configuration if available
@@ -287,16 +313,36 @@ func installK8sComponent(ctx context.Context, cmd *cli.Command, name string, sta
 		}
 		componentWithClients = externaldns.NewComponent(helmClient, k8sClient)
 	case "velero":
-		// Get SeaweedFS credentials from the SeaweedFS secret
-		seaweedfsKey, seaweedfsSecret, err := getSeaweedFSCredentials(k8sClient)
-		if err != nil {
-			return fmt.Errorf("failed to get SeaweedFS credentials: %w", err)
+		// Honor the velero settings from the stack config (values block, schedule,
+		// off-cluster S3 target, deploy_node_agent, etc.) so this path doesn't silently
+		// fall back to bare defaults.
+		if comp, ok := stackConfig.Components["velero"]; ok {
+			for k, v := range comp.Config {
+				if _, present := cfg[k]; !present {
+					cfg[k] = v
+				}
+			}
 		}
-		cfg["s3_endpoint"] = "http://seaweedfs-s3.seaweedfs.svc.cluster.local:8333"
-		cfg["s3_access_key"] = seaweedfsKey
-		cfg["s3_secret_key"] = seaweedfsSecret
-		cfg["s3_bucket"] = "velero"
-		cfg["s3_region"] = "us-east-1"
+		// Default the S3 target to in-cluster SeaweedFS, but only where the stack config
+		// hasn't specified one (e.g. an off-cluster local backup target).
+		if !hasNonEmptyString(cfg, "s3_endpoint") {
+			cfg["s3_endpoint"] = "http://seaweedfs-s3.seaweedfs.svc.cluster.local:8333"
+		}
+		if !hasNonEmptyString(cfg, "s3_bucket") {
+			cfg["s3_bucket"] = "velero"
+		}
+		if !hasNonEmptyString(cfg, "s3_region") {
+			cfg["s3_region"] = "us-east-1"
+		}
+		// Resolve credentials from SeaweedFS only when not explicitly provided.
+		if !hasNonEmptyString(cfg, "s3_access_key") || !hasNonEmptyString(cfg, "s3_secret_key") {
+			seaweedfsKey, seaweedfsSecret, err := getSeaweedFSCredentials(stackConfig, k8sClient)
+			if err != nil {
+				return fmt.Errorf("failed to get SeaweedFS credentials: %w", err)
+			}
+			cfg["s3_access_key"] = seaweedfsKey
+			cfg["s3_secret_key"] = seaweedfsSecret
+		}
 		componentWithClients = velero.NewComponent(helmClient, k8sClient)
 	case "openbao-injector":
 		// Inject the OpenBao address so the webhook knows where to reach it
@@ -333,28 +379,83 @@ func installK8sComponent(ctx context.Context, cmd *cli.Command, name string, sta
 	return nil
 }
 
-// getSeaweedFSCredentials retrieves SeaweedFS credentials from the seaweedfs secret
-func getSeaweedFSCredentials(k8sClient *k8s.Client) (string, string, error) {
-	if k8sClient == nil {
-		return "", "", fmt.Errorf("k8s client is nil")
+// resolveSecretRefs walks a nested config value and replaces any string that is a
+// ${secret:path:key} reference with its resolved value. Used to pull alerting
+// credentials (API keys/tokens) from OpenBAO at install time.
+func resolveSecretRefs(v interface{}, resolver *secrets.ChainResolver, resCtx *secrets.ResolutionContext) error {
+	switch t := v.(type) {
+	case map[string]interface{}:
+		for k, val := range t {
+			if s, ok := val.(string); ok {
+				ref, err := secrets.ParseSecretRef(s)
+				if err != nil {
+					return fmt.Errorf("invalid secret reference %q: %w", s, err)
+				}
+				if ref == nil {
+					continue // not a secret reference; leave as-is
+				}
+				resolved, rerr := resolver.Resolve(resCtx, *ref)
+				if rerr != nil {
+					return fmt.Errorf("resolve %s: %w", s, rerr)
+				}
+				t[k] = resolved
+			} else if err := resolveSecretRefs(val, resolver, resCtx); err != nil {
+				return err
+			}
+		}
+	case []interface{}:
+		for _, item := range t {
+			if err := resolveSecretRefs(item, resolver, resCtx); err != nil {
+				return err
+			}
+		}
 	}
+	return nil
+}
 
-	secret, err := k8sClient.GetSecret(context.Background(), "seaweedfs", "seaweedfs")
-	if err != nil {
-		return "", "", fmt.Errorf("failed to get seaweedfs secret: %w", err)
-	}
-
-	accessKey, ok := secret.Data["accessKey"]
+// hasNonEmptyString reports whether the config map holds a non-empty string at key.
+func hasNonEmptyString(cfg component.ComponentConfig, key string) bool {
+	v, ok := cfg[key]
 	if !ok {
-		return "", "", fmt.Errorf("accessKey not found in seaweedfs secret")
+		return false
+	}
+	s, ok := v.(string)
+	return ok && s != ""
+}
+
+// getSeaweedFSCredentials resolves the SeaweedFS S3 access/secret keys.
+//
+// The authoritative source is the stack config's seaweedfs component
+// (components.seaweedfs.access_key / secret_key) — these are the keys that
+// Loki and Velero are wired to use, and SeaweedFS S3 runs with auth disabled
+// by default so there is no dedicated S3-credentials secret to read. For older
+// or custom setups that do publish a "seaweedfs" secret (keys accessKey/secretKey),
+// we fall back to it.
+func getSeaweedFSCredentials(stackConfig *config.Config, k8sClient *k8s.Client) (string, string, error) {
+	// Primary: stack config seaweedfs component.
+	if stackConfig != nil {
+		if swfs, ok := stackConfig.Components["seaweedfs"]; ok {
+			accessKey, _ := swfs.Config["access_key"].(string)
+			secretKey, _ := swfs.Config["secret_key"].(string)
+			if accessKey != "" && secretKey != "" {
+				return accessKey, secretKey, nil
+			}
+		}
 	}
 
-	secretKey, ok := secret.Data["secretKey"]
-	if !ok {
-		return "", "", fmt.Errorf("secretKey not found in seaweedfs secret")
+	// Fallback: legacy k8s secret named "seaweedfs" with accessKey/secretKey.
+	if k8sClient != nil {
+		secret, err := k8sClient.GetSecret(context.Background(), "seaweedfs", "seaweedfs")
+		if err == nil {
+			accessKey, okA := secret.Data["accessKey"]
+			secretKey, okS := secret.Data["secretKey"]
+			if okA && okS {
+				return string(accessKey), string(secretKey), nil
+			}
+		}
 	}
 
-	return string(accessKey), string(secretKey), nil
+	return "", "", fmt.Errorf("could not resolve SeaweedFS S3 credentials: set components.seaweedfs.access_key and secret_key in the stack config")
 }
 
 // getDNSAPIKey retrieves the DNS API key from OpenBAO

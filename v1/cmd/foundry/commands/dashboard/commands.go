@@ -18,7 +18,7 @@ import (
 // Command is the top-level dashboard command
 var Command = &cli.Command{
 	Name:  "dashboard",
-	Usage: "Open Grafana dashboard in browser",
+	Usage: "Open Grafana and manage Grafana dashboards",
 	Description: `Opens the Grafana dashboard in your default web browser.
 
 This command retrieves the Grafana URL from the cluster's Ingress
@@ -34,6 +34,8 @@ Examples:
 	Commands: []*cli.Command{
 		OpenCommand,
 		URLCommand,
+		SyncCommand,
+		ListCommand,
 	},
 	Action: runOpen, // Default action when just 'foundry dashboard' is run
 }

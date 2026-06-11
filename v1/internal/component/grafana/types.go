@@ -47,6 +47,25 @@ type Config struct {
 	// SidecarEnabled enables the sidecar for dashboard/datasource discovery
 	SidecarEnabled bool `json:"sidecar_enabled" yaml:"sidecar_enabled"`
 
+	// Alerting is Grafana unified-alerting provisioning, passed through verbatim to
+	// the Grafana chart's `alerting` value. It is a map of provisioning file name to
+	// its contents, exactly as Grafana's file provisioning expects, e.g.:
+	//
+	//   alerting:
+	//     contactpoints.yaml:
+	//       apiVersion: 1
+	//       contactPoints: [...]
+	//     policies.yaml:
+	//       apiVersion: 1
+	//       policies: [...]
+	//
+	// foundry does not model or validate the contents — it deploys whatever Grafana
+	// supports (contact points, notification policies, templates, mute timings, alert
+	// rules). Its only transformation is resolving `${secret:...}` references inside
+	// (e.g. a receiver's secureSettings api key) from OpenBAO at install time, so
+	// secrets never live in the stack config.
+	Alerting map[string]interface{} `json:"alerting,omitempty" yaml:"alerting,omitempty"`
+
 	// Values allows passing additional Helm values
 	Values map[string]interface{} `json:"values" yaml:",inline"`
 }
@@ -217,6 +236,10 @@ func ParseConfig(cfg component.ComponentConfig) (*Config, error) {
 
 	if sidecarEnabled, ok := cfg.GetBool("sidecar_enabled"); ok {
 		config.SidecarEnabled = sidecarEnabled
+	}
+
+	if alerting, ok := cfg.GetMap("alerting"); ok {
+		config.Alerting = alerting
 	}
 
 	if values, ok := cfg.GetMap("values"); ok {
