@@ -30,6 +30,7 @@ import (
 	"github.com/catalystcommunity/foundry/v1/internal/component/velero"
 	"github.com/catalystcommunity/foundry/v1/internal/config"
 	"github.com/catalystcommunity/foundry/v1/internal/container"
+	"github.com/catalystcommunity/foundry/v1/internal/dashboards"
 	"github.com/catalystcommunity/foundry/v1/internal/helm"
 	"github.com/catalystcommunity/foundry/v1/internal/host"
 	"github.com/catalystcommunity/foundry/v1/internal/k8s"
@@ -946,6 +947,20 @@ func installK8sComponent(ctx context.Context, cfg *config.Config, componentName 
 	saveComponentConfig(cfg, componentName, componentConfig)
 
 	fmt.Printf("  ✓ %s installed successfully\n", componentName)
+
+	// After Grafana is installed/upgraded, (re)install the bundled default dashboards
+	// plus any user dashboards, so they land on every stack install/upgrade. Non-fatal.
+	if componentName == "grafana" && k8sClient != nil {
+		namespace := "monitoring"
+		if ns, ok := componentConfig["namespace"].(string); ok && ns != "" {
+			namespace = ns
+		}
+		if seeded, res, derr := dashboards.InstallForStack(ctx, k8sClient.Clientset(), configDir, cfg.Cluster.Name, namespace); derr != nil {
+			fmt.Printf("  ⚠ Dashboards not synced (run 'foundry dashboard sync'): %v\n", derr)
+		} else {
+			fmt.Printf("  ✓ dashboards: %d default seeded, %d created, %d updated\n", seeded, res.Created, res.Updated)
+		}
+	}
 
 	// After prometheus is installed, upgrade storage to enable ServiceMonitor
 	// This solves the chicken-and-egg problem: storage needs to come before prometheus

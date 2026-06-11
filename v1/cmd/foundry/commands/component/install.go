@@ -24,6 +24,7 @@ import (
 	componentStorage "github.com/catalystcommunity/foundry/v1/internal/component/storage"
 	"github.com/catalystcommunity/foundry/v1/internal/component/velero"
 	"github.com/catalystcommunity/foundry/v1/internal/config"
+	"github.com/catalystcommunity/foundry/v1/internal/dashboards"
 	"github.com/catalystcommunity/foundry/v1/internal/helm"
 	"github.com/catalystcommunity/foundry/v1/internal/host"
 	"github.com/catalystcommunity/foundry/v1/internal/k8s"
@@ -371,6 +372,14 @@ func installK8sComponent(ctx context.Context, cmd *cli.Command, name string, sta
 
 	fmt.Printf("\n✓ Component %s installed successfully\n", name)
 
+	// After Grafana is installed/upgraded, (re)install the bundled default dashboards
+	// plus any user dashboards, so they land on every stack update. Non-fatal.
+	if name == "grafana" {
+		if err := syncGrafanaDashboards(ctx, stackConfig, k8sClient, cfg); err != nil {
+			fmt.Printf("⚠ Dashboards not synced (run 'foundry dashboard sync'): %v\n", err)
+		}
+	}
+
 	// Update setup state
 	if err := updateSetupState(cmd, stackConfig, name, cfg); err != nil {
 		fmt.Printf("\n⚠ Warning: Failed to update setup state: %v\n", err)
@@ -410,6 +419,29 @@ func resolveSecretRefs(v interface{}, resolver *secrets.ChainResolver, resCtx *s
 			}
 		}
 	}
+	return nil
+}
+
+// syncGrafanaDashboards seeds the bundled default dashboards into the stack's
+// dashboards directory and applies them (plus any user dashboards) as ConfigMaps,
+// so they are installed/refreshed whenever Grafana is installed or upgraded.
+func syncGrafanaDashboards(ctx context.Context, stackConfig *config.Config, k8sClient *k8s.Client, cfg component.ComponentConfig) error {
+	if k8sClient == nil {
+		return fmt.Errorf("kubernetes client unavailable")
+	}
+	configDir, err := config.GetConfigDir()
+	if err != nil {
+		return err
+	}
+	namespace := "monitoring"
+	if ns, ok := cfg["namespace"].(string); ok && ns != "" {
+		namespace = ns
+	}
+	seeded, res, err := dashboards.InstallForStack(ctx, k8sClient.Clientset(), configDir, stackConfig.Cluster.Name, namespace)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("  ✓ dashboards: %d default seeded, %d created, %d updated (namespace %q)\n", seeded, res.Created, res.Updated, namespace)
 	return nil
 }
 
@@ -1122,14 +1154,14 @@ func isDependencyInstalled(dep string, cfg *config.Config) bool {
 			return false
 		}
 		// Check via Helm releases directly
-		return isHelmReleaseInstalled(dep)
+		return isHelmReleaseInstalled(dep, cfg)
 	default:
 		return false
 	}
 }
 
 // isHelmReleaseInstalled checks if a Helm release is installed for a given component
-func isHelmReleaseInstalled(componentName string) bool {
+func isHelmReleaseInstalled(componentName string, cfg *config.Config) bool {
 	// Get kubeconfig
 	configDir, err := config.GetConfigDir()
 	if err != nil {
@@ -1176,8 +1208,20 @@ func isHelmReleaseInstalled(componentName string) bool {
 		return true
 	}
 
+	// Prefer the namespace from the stack config — components are often deployed in a
+	// shared namespace (e.g. loki and grafana in "monitoring") rather than the
+	// per-component default, and the hardcoded default would look in the wrong place.
+	namespace := info.namespace
+	if cfg != nil {
+		if comp, ok := cfg.Components[componentName]; ok {
+			if ns, ok := comp.Config["namespace"].(string); ok && ns != "" {
+				namespace = ns
+			}
+		}
+	}
+
 	// Check for Helm release
-	releases, err := helmClient.List(context.Background(), info.namespace)
+	releases, err := helmClient.List(context.Background(), namespace)
 	if err != nil {
 		return false
 	}
