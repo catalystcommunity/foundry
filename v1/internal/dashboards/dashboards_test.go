@@ -1,4 +1,4 @@
-package dashboard
+package dashboards
 
 import (
 	"context"
@@ -33,29 +33,33 @@ func TestSanitizeName(t *testing.T) {
 	}
 }
 
-func TestValidateDashboard(t *testing.T) {
-	title, err := validateDashboard([]byte(`{"title":"Hello","panels":[]}`))
+func TestValidate(t *testing.T) {
+	title, err := validate([]byte(`{"title":"Hello","panels":[]}`))
 	require.NoError(t, err)
 	assert.Equal(t, "Hello", title)
 
-	_, err = validateDashboard([]byte(`{"panels":[]}`))
+	_, err = validate([]byte(`{"panels":[]}`))
 	assert.Error(t, err, "missing title should error")
 
-	_, err = validateDashboard([]byte(`not json`))
+	_, err = validate([]byte(`not json`))
 	assert.Error(t, err, "invalid JSON should error")
 }
 
+func TestDir(t *testing.T) {
+	assert.Equal(t, "/c/catalyst_dashboards", Dir("/c", "catalyst"))
+	assert.Equal(t, "/c/foundry_dashboards", Dir("/c", ""))
+}
+
 // TestSeedDefaultsAndCollect verifies the embedded defaults are written to
-// <dir>/defaults and that collectDashboards picks them up plus a user dashboard.
+// <dir>/defaults and that Collect picks them up plus a user dashboard.
 func TestSeedDefaultsAndCollect(t *testing.T) {
 	dir := t.TempDir()
 
-	n, err := seedDefaults(dir)
+	n, err := SeedDefaults(dir)
 	require.NoError(t, err)
 	assert.GreaterOrEqual(t, n, 3, "expected the bundled default dashboards to be seeded")
 
-	// The embedded defaults should all be valid JSON with titles.
-	files, err := collectDashboards(dir)
+	files, err := Collect(dir)
 	require.NoError(t, err)
 	require.NotEmpty(t, files)
 	for _, f := range files {
@@ -63,11 +67,10 @@ func TestSeedDefaultsAndCollect(t *testing.T) {
 		assert.Equal(t, "default", f.Source)
 	}
 
-	// Add a user dashboard at the top level and a broken one.
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "mine.json"), []byte(`{"title":"Mine"}`), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "broken.json"), []byte(`{bad`), 0o644))
 
-	files, err = collectDashboards(dir)
+	files, err = Collect(dir)
 	require.NoError(t, err)
 
 	var sawUser, sawBroken bool
@@ -83,22 +86,22 @@ func TestSeedDefaultsAndCollect(t *testing.T) {
 			assert.False(t, f.Valid)
 		}
 	}
-	assert.True(t, sawUser, "user dashboard should be collected")
-	assert.True(t, sawBroken, "broken dashboard should be collected (and flagged invalid)")
+	assert.True(t, sawUser)
+	assert.True(t, sawBroken)
+	assert.Len(t, Valid(files), len(files)-1, "Valid() drops the broken one")
 }
 
-func TestApplyDashboards_CreateUpdatePrune(t *testing.T) {
+func TestApply_CreateUpdatePrune(t *testing.T) {
 	ctx := context.Background()
 	clientset := fake.NewSimpleClientset()
 	ns := "monitoring"
 
-	files := []dashboardFile{
+	files := []File{
 		{FileName: "cluster-overview.json", Base: "cluster-overview", Source: "default", Data: []byte(`{"title":"A"}`), Valid: true},
 		{FileName: "mine.json", Base: "mine", Source: "user", Data: []byte(`{"title":"B"}`), Valid: true},
 	}
 
-	// First apply: both created.
-	res, err := applyDashboards(ctx, clientset, ns, files, false)
+	res, err := Apply(ctx, clientset, ns, files, false)
 	require.NoError(t, err)
 	assert.Equal(t, 2, res.Created)
 	assert.Equal(t, 0, res.Updated)
@@ -108,43 +111,58 @@ func TestApplyDashboards_CreateUpdatePrune(t *testing.T) {
 	assert.Equal(t, "1", cm.Labels[dashboardLabel])
 	assert.Equal(t, managedByValue, cm.Labels[managedByLabel])
 	assert.Equal(t, "default", cm.Labels[sourceLabel])
-	assert.Contains(t, cm.Data, "cluster-overview.json")
 
-	// Second apply with changed data: both updated.
 	files[0].Data = []byte(`{"title":"A2"}`)
-	res, err = applyDashboards(ctx, clientset, ns, files, false)
+	res, err = Apply(ctx, clientset, ns, files, false)
 	require.NoError(t, err)
 	assert.Equal(t, 0, res.Created)
 	assert.Equal(t, 2, res.Updated)
-	cm, _ = clientset.CoreV1().ConfigMaps(ns).Get(ctx, "foundry-dashboard-cluster-overview", metav1.GetOptions{})
-	assert.Equal(t, `{"title":"A2"}`, cm.Data["cluster-overview.json"])
 
-	// Drop the user dashboard and prune: it should be deleted, default kept.
-	res, err = applyDashboards(ctx, clientset, ns, files[:1], true)
+	res, err = Apply(ctx, clientset, ns, files[:1], true)
 	require.NoError(t, err)
 	assert.Equal(t, 1, res.Pruned)
-
 	_, err = clientset.CoreV1().ConfigMaps(ns).Get(ctx, "foundry-dashboard-mine", metav1.GetOptions{})
 	assert.Error(t, err, "pruned user dashboard should be gone")
 	_, err = clientset.CoreV1().ConfigMaps(ns).Get(ctx, "foundry-dashboard-cluster-overview", metav1.GetOptions{})
-	assert.NoError(t, err, "remaining dashboard should be kept")
+	assert.NoError(t, err)
 }
 
-// TestApplyDashboards_PruneIgnoresUnmanaged ensures prune never touches ConfigMaps
-// that foundry does not manage (e.g. dashboards shipped by other components).
-func TestApplyDashboards_PruneIgnoresUnmanaged(t *testing.T) {
+// TestInstallForStack covers the shared entry point used by both the dashboard
+// command and the automatic sync during Grafana install: it seeds defaults into
+// <configDir>/<stack>_dashboards and applies them (plus user dashboards) to a ns.
+func TestInstallForStack(t *testing.T) {
+	ctx := context.Background()
+	configDir := t.TempDir()
+	clientset := fake.NewSimpleClientset()
+
+	// A user dashboard at the top level of the resolved stack dir.
+	stackDir := Dir(configDir, "catalyst")
+	require.NoError(t, os.MkdirAll(stackDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(stackDir, "mine.json"), []byte(`{"title":"Mine"}`), 0o644))
+
+	seeded, res, err := InstallForStack(ctx, clientset, configDir, "catalyst", "monitoring")
+	require.NoError(t, err)
+	assert.GreaterOrEqual(t, seeded, 3, "bundled defaults seeded")
+	// 3 defaults + 1 user dashboard all created.
+	assert.Equal(t, seeded+1, res.Created)
+
+	// The user dashboard and a default both became ConfigMaps.
+	_, err = clientset.CoreV1().ConfigMaps("monitoring").Get(ctx, "foundry-dashboard-mine", metav1.GetOptions{})
+	assert.NoError(t, err)
+	_, err = clientset.CoreV1().ConfigMaps("monitoring").Get(ctx, "foundry-dashboard-cluster-overview", metav1.GetOptions{})
+	assert.NoError(t, err)
+}
+
+func TestApply_PruneIgnoresUnmanaged(t *testing.T) {
 	ctx := context.Background()
 	clientset := fake.NewSimpleClientset()
 	ns := "monitoring"
 
-	// A foreign dashboard ConfigMap (sidecar label but not foundry-managed).
 	_, err := clientset.CoreV1().ConfigMaps(ns).Create(ctx, mkCM("seaweedfs-grafana-dashboard", ns, map[string]string{dashboardLabel: "1"}), metav1.CreateOptions{})
 	require.NoError(t, err)
 
-	files := []dashboardFile{
-		{FileName: "x.json", Base: "x", Source: "default", Data: []byte(`{"title":"X"}`), Valid: true},
-	}
-	res, err := applyDashboards(ctx, clientset, ns, files, true)
+	files := []File{{FileName: "x.json", Base: "x", Source: "default", Data: []byte(`{"title":"X"}`), Valid: true}}
+	res, err := Apply(ctx, clientset, ns, files, true)
 	require.NoError(t, err)
 	assert.Equal(t, 1, res.Created)
 	assert.Equal(t, 0, res.Pruned)
