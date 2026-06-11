@@ -18,6 +18,7 @@ Typical workflow:
   4. foundry backup schedule             - Configure scheduled backups`,
 	Commands: []*cli.Command{
 		CreateCommand,
+		LocalCommand,
 		ListCommand,
 		RestoreCommand,
 		ScheduleCommand,

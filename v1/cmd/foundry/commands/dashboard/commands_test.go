@@ -14,19 +14,25 @@ func TestCommand(t *testing.T) {
 		t.Errorf("Command.Name = %q, want dashboard", Command.Name)
 	}
 
-	if len(Command.Commands) != 2 {
-		t.Errorf("Command.Commands count = %d, want 2", len(Command.Commands))
+	if len(Command.Commands) != 4 {
+		t.Errorf("Command.Commands count = %d, want 4", len(Command.Commands))
 	}
 
 	// Verify subcommands
 	foundOpen := false
 	foundURL := false
+	foundSync := false
+	foundList := false
 	for _, cmd := range Command.Commands {
 		switch cmd.Name {
 		case "open":
 			foundOpen = true
 		case "url":
 			foundURL = true
+		case "sync":
+			foundSync = true
+		case "list":
+			foundList = true
 		}
 	}
 
@@ -35,6 +41,12 @@ func TestCommand(t *testing.T) {
 	}
 	if !foundURL {
 		t.Error("Should have 'url' subcommand")
+	}
+	if !foundSync {
+		t.Error("Should have 'sync' subcommand")
+	}
+	if !foundList {
+		t.Error("Should have 'list' subcommand")
 	}
 }
 

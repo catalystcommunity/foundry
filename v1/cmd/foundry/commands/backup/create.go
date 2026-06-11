@@ -42,6 +42,11 @@ Examples:
 			Usage: "Take snapshots of PersistentVolumes (requires CSI support)",
 			Value: false,
 		},
+		&cli.BoolFlag{
+			Name:  "fs-backup",
+			Usage: "Back up PersistentVolume contents via File System Backup (kopia); requires the velero node-agent (deploy_node_agent: true)",
+			Value: false,
+		},
 		&cli.StringFlag{
 			Name:  "storage-location",
 			Usage: "Backup storage location to use",
@@ -77,12 +82,16 @@ func runCreate(ctx context.Context, cmd *cli.Command) error {
 
 	// Build backup options
 	snapshotVolumes := cmd.Bool("snapshot-volumes")
+	fsBackup := cmd.Bool("fs-backup")
 	opts := BackupOptions{
 		IncludedNamespaces: cmd.StringSlice("namespace"),
 		ExcludedNamespaces: cmd.StringSlice("exclude-namespace"),
 		TTL:                cmd.String("ttl"),
 		SnapshotVolumes:    &snapshotVolumes,
 		StorageLocation:    cmd.String("storage-location"),
+	}
+	if fsBackup {
+		opts.DefaultVolumesToFsBackup = &fsBackup
 	}
 
 	// Create backup

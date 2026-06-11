@@ -68,6 +68,40 @@ components:
   zot:
     version: latest
 
+  # grafana:
+  #   # Grafana alerting, passed through to Grafana's native file-based provisioning
+  #   # verbatim (https://grafana.com/docs/grafana/latest/alerting/set-up/provision-alerting-resources/file-provisioning/).
+  #   # Keys are provisioning file names; contents are exactly what Grafana expects
+  #   # (contactPoints, policies, templates, muteTimes — anything Grafana supports).
+  #   # foundry deploys it as-is; its only transformation is resolving ${secret:...}
+  #   # references (e.g. a receiver's secureSettings) from OpenBAO at install time, so
+  #   # secrets never live in this file. Set the secret first, e.g. at OpenBAO path
+  #   # foundry-core/grafana/alerting/<name> key "api_key".
+  #   # NOTE: provisioning a policies file overwrites Grafana's entire notification
+  #   # policy tree (including the default root route).
+  #   alerting:
+  #     contactpoints.yaml:
+  #       apiVersion: 1
+  #       contactPoints:
+  #         - orgId: 1
+  #           name: ops                    # the channel name alert authors select
+  #           receivers:
+  #             - uid: ops-email
+  #               type: email              # any Grafana receiver type: webhook, slack, ntfy(via webhook), ...
+  #               settings:
+  #                 addresses: oncall@example.com
+  #             # - uid: ops-ntfy
+  #             #   type: webhook
+  #             #   settings:
+  #             #     url: https://ntfy.example.com/alerts
+  #             #   secureSettings:
+  #             #     authorization_credentials: ${secret:grafana/alerting/ntfy:token}
+  #     # policies.yaml:                    # optional: route unmatched alerts to "ops"
+  #     #   apiVersion: 1
+  #     #   policies:
+  #     #     - orgId: 1
+  #     #       receiver: ops
+
 # Optional: Observability configuration (Phase 3)
 # observability:
 #   prometheus:

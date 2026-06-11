@@ -146,7 +146,8 @@ Loki provides:
 Grafana provides:
 - Unified dashboards for metrics and logs
 - Pre-configured Prometheus and Loki data sources
-- Alerting integration
+- Alerting and notification channels (configured via the `grafana.alerting`
+  passthrough — see [Observability › Alerting](observability.md#alerting))
 
 **Deployment**: Helm chart in Kubernetes
 **Namespace**: monitoring

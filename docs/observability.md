@@ -186,29 +186,78 @@ Foundry provisions default dashboards for:
 
 ## Alerting
 
-Alertmanager handles alert routing and notification.
+There are two layers you can use:
 
-**Default Alert Rules:**
-- High CPU usage (>80% for 5 minutes)
-- High memory usage (>85% for 5 minutes)
-- Pod crash loops
-- Node not ready
-- PVC usage >85%
-- Certificate expiring soon
+- **Prometheus rules + Alertmanager** (part of kube-prometheus-stack) — evaluate
+  PromQL rules and route via Alertmanager. Configure via `PrometheusRule` resources
+  and Alertmanager config.
+- **Grafana-managed alerting** — alert rules evaluated by Grafana that route to
+  Grafana **contact points** (notification channels). This is what Foundry
+  configures declaratively, and what dashboard/alert authors select as channels.
 
-**Configure Alert Receivers:**
+### Grafana notification channels (contact points)
 
-Alert routing is configured via Alertmanager. Edit the kube-prometheus-stack Helm values to add receivers:
+Foundry configures Grafana's alerting by **passing your config straight through to
+Grafana's native [file provisioning](https://grafana.com/docs/grafana/latest/alerting/set-up/provision-alerting-resources/file-provisioning/)**.
+Under the `grafana` component, the `alerting` block is a map of provisioning **file
+name → contents**, exactly as Grafana expects (`contactPoints`, `policies`,
+`templates`, `muteTimes`, even alert-rule `groups`). Foundry does not model or
+validate the contents, so **any receiver type Grafana supports** (email, webhook,
+Slack, Telegram, PagerDuty, …) works with no Foundry changes.
+
+The only thing Foundry does to it is resolve `${secret:...}` references (e.g. inside
+a receiver's `secureSettings`) from OpenBAO at install time, so API keys and tokens
+never live in the stack config. See [Secrets](secrets.md).
 
 ```yaml
-alertmanager:
-  config:
-    receivers:
-      - name: 'slack'
-        slack_configs:
-          - api_url: 'https://hooks.slack.com/...'
-            channel: '#alerts'
+components:
+  grafana:
+    alerting:
+      contactpoints.yaml:             # any provisioning file name
+        apiVersion: 1
+        contactPoints:
+          - orgId: 1
+            name: ops                 # the channel name alert authors select
+            receivers:
+              - uid: ops-email
+                type: email
+                settings:
+                  addresses: oncall@example.com
+              - uid: ops-ntfy         # e.g. mobile push via a self-hosted ntfy webhook
+                type: webhook
+                settings:
+                  url: https://ntfy.example.com/alerts
+                secureSettings:
+                  authorization_credentials: ${secret:grafana/alerting/ntfy:token}
+      # Optional: route unmatched alerts to a default channel.
+      # NOTE: provisioning a policies file replaces Grafana's ENTIRE notification
+      # policy tree, including the default root route.
+      policies.yaml:
+        apiVersion: 1
+        policies:
+          - orgId: 1
+            receiver: ops
 ```
+
+Apply changes by (re-)installing the component:
+
+```bash
+foundry component install grafana
+```
+
+Notes:
+
+- Store secret values in OpenBAO first (e.g. path `foundry-core/grafana/alerting/ntfy`,
+  key `token`), then reference them as `${secret:grafana/alerting/ntfy:token}`.
+- Provisioned alerting resources are **read-only in the Grafana UI** — change them in
+  the stack config and re-run the install; Grafana reloads provisioning on start.
+- The contact points above are notification **destinations**. Define the alert
+  *rules* in Grafana (or via `groups:` in a provisioning file); they reference these
+  contact points by `name`.
+
+> Note on Opsgenie: Atlassian is retiring Opsgenie (EOL 2027-04-05). Because this
+> config is a pure Grafana passthrough, switching providers is config-only — point a
+> `webhook`/`email`/etc. receiver at your chosen destination; no Foundry code change.
 
 ## Troubleshooting
 
