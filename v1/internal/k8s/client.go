@@ -31,6 +31,32 @@ type SecretResolver interface {
 	ResolveSecret(ctx context.Context, path, key string) (string, error)
 }
 
+// NewClientInCluster creates a Kubernetes client from the in-cluster service
+// account configuration. Use this when foundry runs as a pod (for example, the
+// gateway controller Deployment), where there is no kubeconfig file.
+func NewClientInCluster() (*Client, error) {
+	config, err := rest.InClusterConfig()
+	if err != nil {
+		return nil, fmt.Errorf("failed to build in-cluster config: %w", err)
+	}
+
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create kubernetes clientset: %w", err)
+	}
+
+	dynamicClient, err := dynamic.NewForConfig(config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create dynamic client: %w", err)
+	}
+
+	return &Client{
+		clientset:     clientset,
+		dynamicClient: dynamicClient,
+		config:        config,
+	}, nil
+}
+
 // NewClientFromKubeconfig creates a Kubernetes client from kubeconfig bytes
 func NewClientFromKubeconfig(kubeconfig []byte) (*Client, error) {
 	if len(kubeconfig) == 0 {

@@ -1,0 +1,29 @@
+{{ include "foundry-gateway-controller.fullname" . }} is now running.
+
+It watches TLSRoute and TCPRoute resources targeting Gateway
+{{ .Values.controller.gatewayNamespace }}/{{ .Values.controller.gatewayName }} and opens the matching
+listener on the Gateway, the Envoy service ({{ .Values.controller.envoyService }}, on the cluster VIP),
+and the Envoy NetworkPolicy.
+
+To expose a service, create a route in your app's chart with a parentRef port, e.g.:
+
+  apiVersion: gateway.networking.k8s.io/v1alpha2
+  kind: TLSRoute
+  metadata:
+    name: my-app
+    namespace: my-app
+  spec:
+    parentRefs:
+      - name: {{ .Values.controller.gatewayName }}
+        namespace: {{ .Values.controller.gatewayNamespace }}
+        port: 4987
+    hostnames:
+      - my-app.example.com
+    rules:
+      - backendRefs:
+          - name: my-app
+            port: 4987
+
+Check the controller logs:
+
+  kubectl -n {{ .Release.Namespace }} logs deploy/{{ include "foundry-gateway-controller.fullname" . }} -f

@@ -1,0 +1,20 @@
+name: foundry-image-build-test
+description: "Verify the foundry container image builds on PRs that touch the build (no push)"
+triggers:
+  events:
+    - pull_request_opened
+    - pull_request_updated
+  branches:
+    - main
+paths:
+  include:
+    - "v1/**"
+    - "Dockerfile"
+    - ".dockerignore"
+job:
+  image: containers.catalystsquad.com/public/reactorcide/runnerbase:dev
+  command: "bash /job/src/.reactorcide/jobs/scripts/image-build-test.sh"
+  timeout: 1800
+  priority: 10
+  capabilities:
+    - builder

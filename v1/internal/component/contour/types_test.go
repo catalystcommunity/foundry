@@ -242,3 +242,114 @@ func TestComponent_Status_PodsFetchError(t *testing.T) {
 	assert.False(t, status.Healthy)
 	assert.Contains(t, status.Message, "failed to get pods")
 }
+
+func TestParseConfig_Listeners(t *testing.T) {
+	cfg := component.ComponentConfig{
+		"listeners": []interface{}{
+			map[string]interface{}{
+				"name":     "linkkeys-tls",
+				"protocol": "TLS",
+				"port":     4987,
+			},
+			map[string]interface{}{
+				"name":            "termd",
+				"protocol":        "TLS",
+				"port":            float64(8888), // JSON-decoded numbers arrive as float64
+				"tls_mode":        "Terminate",
+				"hostname":        "svc.example.com",
+				"certificate_ref": "my-cert",
+			},
+		},
+	}
+
+	config, err := ParseConfig(cfg)
+	require.NoError(t, err)
+	require.Len(t, config.Listeners, 2)
+
+	assert.Equal(t, "linkkeys-tls", config.Listeners[0].Name)
+	assert.Equal(t, "TLS", config.Listeners[0].Protocol)
+	assert.Equal(t, uint64(4987), config.Listeners[0].Port)
+	assert.Nil(t, config.Listeners[0].TLSMode)
+	assert.Equal(t, "Passthrough", config.Listeners[0].EffectiveTLSMode())
+
+	assert.Equal(t, uint64(8888), config.Listeners[1].Port)
+	require.NotNil(t, config.Listeners[1].TLSMode)
+	assert.Equal(t, "Terminate", *config.Listeners[1].TLSMode)
+	require.NotNil(t, config.Listeners[1].Hostname)
+	assert.Equal(t, "svc.example.com", *config.Listeners[1].Hostname)
+	require.NotNil(t, config.Listeners[1].CertificateRef)
+	assert.Equal(t, "my-cert", *config.Listeners[1].CertificateRef)
+
+	require.NoError(t, config.ValidateListeners())
+}
+
+func TestValidateListeners(t *testing.T) {
+	tests := []struct {
+		name      string
+		listeners []ContourListener
+		wantErr   string
+	}{
+		{
+			name:      "valid TLS passthrough",
+			listeners: []ContourListener{{Name: "a", Protocol: "TLS", Port: 4987}},
+		},
+		{
+			name:      "valid TCP",
+			listeners: []ContourListener{{Name: "a", Protocol: "TCP", Port: 6000}},
+		},
+		{
+			name:      "missing name",
+			listeners: []ContourListener{{Protocol: "TCP", Port: 6000}},
+			wantErr:   "name is required",
+		},
+		{
+			name:      "bad protocol",
+			listeners: []ContourListener{{Name: "a", Protocol: "UDP", Port: 6000}},
+			wantErr:   "protocol must be",
+		},
+		{
+			name:      "port out of range",
+			listeners: []ContourListener{{Name: "a", Protocol: "TCP", Port: 70000}},
+			wantErr:   "out of range",
+		},
+		{
+			name:      "reserved port 443",
+			listeners: []ContourListener{{Name: "a", Protocol: "TLS", Port: 443}},
+			wantErr:   "already in use",
+		},
+		{
+			name: "duplicate name",
+			listeners: []ContourListener{
+				{Name: "a", Protocol: "TCP", Port: 6000},
+				{Name: "a", Protocol: "TCP", Port: 6001},
+			},
+			wantErr: "duplicate name",
+		},
+		{
+			name: "duplicate port",
+			listeners: []ContourListener{
+				{Name: "a", Protocol: "TCP", Port: 6000},
+				{Name: "b", Protocol: "TCP", Port: 6000},
+			},
+			wantErr: "already in use",
+		},
+		{
+			name:      "terminate without cert",
+			listeners: []ContourListener{{Name: "a", Protocol: "TLS", Port: 4987, TLSMode: strPtr("Terminate")}},
+			wantErr:   "certificate_ref is required",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &Config{Listeners: tt.listeners}
+			err := cfg.ValidateListeners()
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantErr)
+		})
+	}
+}

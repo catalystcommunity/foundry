@@ -1,0 +1,49 @@
+name: foundry-conventional-commits
+description: "Validate PR commits follow conventional commits (semver-tags drives releases from these)"
+triggers:
+  events:
+    - pull_request_opened
+    - pull_request_updated
+  branches:
+    - main
+job:
+  image: containers.catalystsquad.com/public/reactorcide/runnerbase:dev
+  command: |
+    set -e
+    # SOURCE_URL/HEAD_URL point at the fork for cross-repo PRs; BASE_URL is the
+    # upstream, added as a second remote so `git log base..HEAD` works.
+    git clone --branch "${REACTORCIDE_HEAD_REF:-$REACTORCIDE_PR_REF}" \
+      "${REACTORCIDE_HEAD_URL:-$REACTORCIDE_SOURCE_URL}" /job/src
+    cd /job/src
+    if [ -n "${REACTORCIDE_BASE_URL}" ] && \
+       [ "${REACTORCIDE_BASE_URL}" != "${REACTORCIDE_HEAD_URL:-$REACTORCIDE_SOURCE_URL}" ]; then
+      git remote add upstream "${REACTORCIDE_BASE_URL}"
+      git fetch upstream "${REACTORCIDE_BASE_REF:-$REACTORCIDE_PR_BASE_REF}"
+    fi
+
+    echo "=== Validating Conventional Commits ==="
+    PATTERN='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert|norelease)(\(.+\))?!?: .+'
+    FAILED=0
+    git log "${REACTORCIDE_DIFF_BASE}..HEAD" --pretty=format:"%H %s" > /tmp/commits.txt
+    while IFS= read -r LINE; do
+      HASH=$(echo "${LINE}" | cut -d' ' -f1)
+      MSG=$(echo "${LINE}" | cut -d' ' -f2-)
+      if echo "${MSG}" | grep -qE "${PATTERN}"; then
+        echo "OK: ${MSG}"
+      else
+        echo "FAIL: ${MSG} (${HASH})"
+        FAILED=1
+      fi
+    done < /tmp/commits.txt
+
+    if [ "${FAILED}" = "1" ]; then
+      echo ""
+      echo "Commit messages must match: type(scope)?: description"
+      echo "Valid types: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert, norelease"
+      exit 1
+    fi
+    echo "All commits follow conventional commit format."
+  timeout: 300
+  priority: 10
+  raw_command: true
+  disable_run_local: true

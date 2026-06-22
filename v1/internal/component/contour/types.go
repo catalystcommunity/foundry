@@ -234,6 +234,41 @@ func ParseConfig(cfg component.ComponentConfig) (*Config, error) {
 		config.CreateGatewayCertificate = createGatewayCertificate
 	}
 
+	// Additional L4 (TCP/TLS) listeners
+	if raw, ok := cfg.Get("listeners"); ok {
+		if listeners, ok := raw.([]interface{}); ok {
+			for _, entry := range listeners {
+				m, ok := entry.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				l := ContourListener{}
+				if name, ok := m["name"].(string); ok {
+					l.Name = name
+				}
+				if protocol, ok := m["protocol"].(string); ok {
+					l.Protocol = protocol
+				}
+				switch port := m["port"].(type) {
+				case int:
+					l.Port = uint64(port)
+				case float64:
+					l.Port = uint64(port)
+				}
+				if tlsMode, ok := m["tls_mode"].(string); ok {
+					l.TLSMode = &tlsMode
+				}
+				if hostname, ok := m["hostname"].(string); ok {
+					l.Hostname = &hostname
+				}
+				if certRef, ok := m["certificate_ref"].(string); ok {
+					l.CertificateRef = &certRef
+				}
+				config.Listeners = append(config.Listeners, l)
+			}
+		}
+	}
+
 	if values, ok := cfg.GetMap("values"); ok {
 		config.Values = values
 	}
@@ -249,4 +284,96 @@ func ParseConfig(cfg component.ComponentConfig) (*Config, error) {
 	}
 
 	return config, nil
+}
+
+// Listener protocol values supported for custom L4 listeners.
+const (
+	ListenerProtocolTCP = "TCP"
+	ListenerProtocolTLS = "TLS"
+
+	// TLSModePassthrough routes by SNI without terminating TLS (use with TLSRoute).
+	TLSModePassthrough = "Passthrough"
+	// TLSModeTerminate terminates TLS at the Gateway (requires a certificate secret).
+	TLSModeTerminate = "Terminate"
+
+	// envoyPortOffset is the fixed offset Contour applies when mapping a Gateway
+	// listener port to the Envoy container port. See:
+	// https://projectcontour.io/docs/main/config/gateway-api/
+	envoyPortOffset = 8000
+)
+
+// EffectiveTLSMode returns the TLS mode for a listener, defaulting to
+// Passthrough when unset. Meaningless for TCP listeners.
+func (l ContourListener) EffectiveTLSMode() string {
+	if l.TLSMode != nil && *l.TLSMode != "" {
+		return *l.TLSMode
+	}
+	return TLSModePassthrough
+}
+
+// EnvoyContainerPort returns the port Envoy actually binds for this listener.
+func (l ContourListener) EnvoyContainerPort() uint64 {
+	return EnvoyContainerPort(l.Port)
+}
+
+// EnvoyContainerPort returns the port Envoy binds for a given Gateway listener
+// port. Contour maps a listener port by adding 8000, wrapping above 65535 and
+// lifting privileged results above 1023. This is the single source of truth for
+// the remap, shared by the static listener config and the gateway controller.
+func EnvoyContainerPort(listenerPort uint64) uint64 {
+	p := listenerPort + envoyPortOffset
+	if p > 65535 {
+		p -= 65535
+	}
+	if p <= 1023 {
+		p += 1023
+	}
+	return p
+}
+
+// ValidateListeners checks that each custom listener is well-formed and that
+// names and ports do not collide (including with the built-in HTTP/HTTPS ports).
+func (c *Config) ValidateListeners() error {
+	seenNames := map[string]bool{}
+	seenPorts := map[uint64]bool{
+		80:  true, // built-in HTTP listener
+		443: true, // built-in HTTPS listener
+	}
+	for i, l := range c.Listeners {
+		if l.Name == "" {
+			return fmt.Errorf("listener[%d]: name is required", i)
+		}
+		if seenNames[l.Name] {
+			return fmt.Errorf("listener %q: duplicate name", l.Name)
+		}
+		seenNames[l.Name] = true
+
+		switch l.Protocol {
+		case ListenerProtocolTCP, ListenerProtocolTLS:
+		default:
+			return fmt.Errorf("listener %q: protocol must be %q or %q, got %q",
+				l.Name, ListenerProtocolTCP, ListenerProtocolTLS, l.Protocol)
+		}
+
+		if l.Port < 1 || l.Port > 65535 {
+			return fmt.Errorf("listener %q: port %d out of range (1-65535)", l.Name, l.Port)
+		}
+		if seenPorts[l.Port] {
+			return fmt.Errorf("listener %q: port %d already in use (80/443 are reserved for the built-in HTTP/HTTPS listeners)", l.Name, l.Port)
+		}
+		seenPorts[l.Port] = true
+
+		if l.Protocol == ListenerProtocolTLS {
+			switch l.EffectiveTLSMode() {
+			case TLSModePassthrough:
+			case TLSModeTerminate:
+				if l.CertificateRef == nil || *l.CertificateRef == "" {
+					return fmt.Errorf("listener %q: certificate_ref is required for TLS Terminate mode", l.Name)
+				}
+			default:
+				return fmt.Errorf("listener %q: tls_mode must be %q or %q", l.Name, TLSModePassthrough, TLSModeTerminate)
+			}
+		}
+	}
+	return nil
 }
