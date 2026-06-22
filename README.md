@@ -83,6 +83,7 @@ foundry/
 - [Configuration](./docs/configuration.md) - Configuration file format and management
 - [Secrets](./docs/secrets.md) - Secret management with instance scoping
 - [Hosts](./docs/hosts.md) - Infrastructure host management
+- [Gateway Controller](./docs/gateway-controller.md) - Route-driven L4 (TCP/TLS) listeners on the cluster VIP
 
 ## Quick Start
 

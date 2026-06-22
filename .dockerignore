@@ -1,0 +1,20 @@
+# Keep the build context small: only v1/ source is needed by the Dockerfile.
+.git
+.github
+docs
+deploy
+.claude
+*.md
+LICENSE
+
+# Build artifacts and local files
+foundry
+v1/foundry
+**/coverage.out
+**/coverage.html
+*.test
+bin/
+dist/
+build/
+.vscode/
+.idea/

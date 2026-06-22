@@ -1,0 +1,30 @@
+name: foundry-release-helm
+description: "On merge to main touching the chart: package it and publish a GitHub release"
+triggers:
+  events:
+    - pull_request_merged
+  branches:
+    - main
+paths:
+  include:
+    - "deploy/charts/foundry-gateway-controller/**"
+job:
+  image: containers.catalystsquad.com/public/reactorcide/runnerbase:dev
+  # Clone the repo ourselves (triggered child jobs don't get /job/src populated) —
+  # the linkkeys release pattern. The authed clone gives semver-tags full history,
+  # tags, and a push-capable origin. The script operates on the current dir.
+  command: |
+    set -e
+    if [ "${REACTORCIDE_WORKER_MODE:-remote}" = "local" ]; then
+      cd /job/src
+    else
+      git clone "https://x-access-token:${GITHUB_PAT}@github.com/${REACTORCIDE_REPO}.git" /workspace
+      cd /workspace
+    fi
+    bash .reactorcide/jobs/scripts/release-helm.sh
+  timeout: 1200
+  priority: 15
+  raw_command: true
+  disable_run_local: true
+environment:
+  GITHUB_PAT: "${secret:catalystcommunity/ci:githubpat}"

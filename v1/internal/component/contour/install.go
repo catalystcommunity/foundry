@@ -3,6 +3,7 @@ package contour
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/catalystcommunity/foundry/v1/internal/helm"
@@ -24,6 +25,11 @@ func Install(ctx context.Context, helmClient HelmClient, k8sClient K8sClient, cf
 	}
 	if cfg == nil {
 		cfg = DefaultConfig()
+	}
+
+	// Validate custom L4 listeners before touching the cluster
+	if err := cfg.ValidateListeners(); err != nil {
+		return fmt.Errorf("invalid listener configuration: %w", err)
 	}
 
 	// Check for ServiceMonitor CRD if ServiceMonitor is enabled
@@ -187,11 +193,8 @@ func buildHelmValues(cfg *Config) map[string]interface{} {
 	values["contour"] = contourConfig
 
 	// Configure Envoy
-	envoyConfig := map[string]interface{}{
-		"replicas": cfg.EnvoyReplicaCount,
-		"service": map[string]interface{}{
-			"type": "LoadBalancer",
-		},
+	serviceConfig := map[string]interface{}{
+		"type": "LoadBalancer",
 	}
 
 	// Configure for bare metal with kube-vip
@@ -204,15 +207,54 @@ func buildHelmValues(cfg *Config) map[string]interface{} {
 			// and service leader advertise the same IP on different nodes.
 			// See: https://github.com/kube-vip/kube-vip/issues/665
 			//
-			// With externalIPs, Kubernetes routes traffic to the VIP (ports 80/443) directly
-			// to envoy pods via kube-proxy, while kube-vip manages only the CP VIP (port 6443).
-			envoyConfig["service"] = map[string]interface{}{
+			// With externalIPs, Kubernetes routes traffic to the VIP directly to envoy
+			// pods via kube-proxy (for every port on the service, including extraPorts),
+			// while kube-vip manages only the CP VIP (port 6443).
+			serviceConfig = map[string]interface{}{
 				"type":        "ClusterIP",
 				"externalIPs": []string{vip},
 			}
 		}
 		// If no VIP is set, keep default LoadBalancer type for kube-vip to auto-assign
 	}
+
+	envoyConfig := map[string]interface{}{
+		"replicas": cfg.EnvoyReplicaCount,
+		"service":  serviceConfig,
+	}
+
+	// Expose any custom L4 listeners. Each needs three things wired up:
+	//   1. service.extraPorts so the port is reachable on the service/VIP. The
+	//      targetPort is the remapped Envoy container port (listener port + 8000).
+	//   2. networkPolicy.extraIngress so the default policy (which only admits
+	//      8080/8443/8002) doesn't drop traffic to the remapped port.
+	// The Gateway listener itself is created separately (see generateGatewayManifest).
+	if len(cfg.Listeners) > 0 {
+		extraPorts := make([]interface{}, 0, len(cfg.Listeners))
+		extraIngress := make([]interface{}, 0, len(cfg.Listeners))
+		for _, l := range cfg.Listeners {
+			targetPort := l.EnvoyContainerPort()
+			extraPorts = append(extraPorts, map[string]interface{}{
+				"name":       l.Name,
+				"port":       l.Port,
+				"targetPort": targetPort,
+				"protocol":   "TCP",
+			})
+			extraIngress = append(extraIngress, map[string]interface{}{
+				"ports": []interface{}{
+					map[string]interface{}{
+						"port":     targetPort,
+						"protocol": "TCP",
+					},
+				},
+			})
+		}
+		serviceConfig["extraPorts"] = extraPorts
+		envoyConfig["networkPolicy"] = map[string]interface{}{
+			"extraIngress": extraIngress,
+		}
+	}
+
 	values["envoy"] = envoyConfig
 
 	// Gateway API CRDs are managed by our gateway-api component, not the Contour chart
@@ -319,12 +361,15 @@ func createGatewayResources(ctx context.Context, k8sClient K8sClient, cfg *Confi
 		fmt.Println("    Re-run 'foundry stack install' after cert-manager is installed to add HTTPS support")
 	}
 
-	// Create Gateway (with HTTPS only if certificate was created)
-	gatewayManifest := generateGatewayManifest(cfg.Namespace, domain, createTLS)
+	// Create Gateway (with HTTPS only if certificate was created, plus any custom L4 listeners)
+	gatewayManifest := generateGatewayManifest(cfg.Namespace, domain, createTLS, cfg.Listeners)
 	if err := k8sClient.ApplyManifest(ctx, gatewayManifest); err != nil {
 		return fmt.Errorf("failed to create Gateway: %w", err)
 	}
 	fmt.Println("  ✓ Gateway 'contour' created")
+	for _, l := range cfg.Listeners {
+		fmt.Printf("    • listener %q (%s) on port %d\n", l.Name, l.Protocol, l.Port)
+	}
 
 	return nil
 }
@@ -377,8 +422,9 @@ spec:
 `, namespace, domain, domain)
 }
 
-// generateGatewayManifest generates the Gateway manifest with HTTP and HTTPS listeners
-func generateGatewayManifest(namespace, domain string, withTLS bool) string {
+// generateGatewayManifest generates the Gateway manifest with HTTP and HTTPS
+// listeners, plus any custom L4 (TCP/TLS) listeners.
+func generateGatewayManifest(namespace, domain string, withTLS bool, listeners []ContourListener) string {
 	// Base Gateway with HTTP listener
 	manifest := fmt.Sprintf(`apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway
@@ -412,5 +458,43 @@ spec:
 `, domain)
 	}
 
+	// Add custom L4 listeners
+	for _, l := range listeners {
+		manifest += generateCustomListener(l)
+	}
+
 	return manifest
+}
+
+// generateCustomListener generates a single Gateway listener block for a
+// custom TCP or TLS listener. TLS listeners default to Passthrough mode and
+// allow TLSRoute (for SNI-based routing); TCP listeners allow TCPRoute.
+func generateCustomListener(l ContourListener) string {
+	b := &strings.Builder{}
+	fmt.Fprintf(b, "  - name: %s\n", l.Name)
+	fmt.Fprintf(b, "    port: %d\n", l.Port)
+
+	if l.Protocol == ListenerProtocolTLS {
+		b.WriteString("    protocol: TLS\n")
+		if l.Hostname != nil && *l.Hostname != "" {
+			fmt.Fprintf(b, "    hostname: %q\n", *l.Hostname)
+		}
+		b.WriteString("    tls:\n")
+		fmt.Fprintf(b, "      mode: %s\n", l.EffectiveTLSMode())
+		if l.EffectiveTLSMode() == TLSModeTerminate && l.CertificateRef != nil {
+			b.WriteString("      certificateRefs:\n")
+			fmt.Fprintf(b, "      - name: %s\n", *l.CertificateRef)
+		}
+		b.WriteString("    allowedRoutes:\n")
+		b.WriteString("      kinds:\n")
+		b.WriteString("      - kind: TLSRoute\n")
+	} else {
+		b.WriteString("    protocol: TCP\n")
+		b.WriteString("    allowedRoutes:\n")
+		b.WriteString("      kinds:\n")
+		b.WriteString("      - kind: TCPRoute\n")
+	}
+	b.WriteString("      namespaces:\n")
+	b.WriteString("        from: All\n")
+	return b.String()
 }

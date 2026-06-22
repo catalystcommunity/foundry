@@ -1,0 +1,40 @@
+{{- if .Values.rbac.create }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "foundry-gateway-controller.fullname" . }}
+  labels:
+    {{- include "foundry-gateway-controller.labels" . | nindent 4 }}
+rules:
+  # Discover the routes that declare desired listeners (cluster-wide).
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources: ["tlsroutes", "tcproutes"]
+    verbs: ["get", "list", "watch"]
+  # Program listeners on the shared Gateway.
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources: ["gateways"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+  # Open the matching port on the Envoy service (the cluster VIP).
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+  # Admit the remapped Envoy port through the Envoy NetworkPolicy.
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "foundry-gateway-controller.fullname" . }}
+  labels:
+    {{- include "foundry-gateway-controller.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "foundry-gateway-controller.fullname" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "foundry-gateway-controller.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

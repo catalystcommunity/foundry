@@ -21,5 +21,20 @@ Config = {
     service_monitor_enabled: bool @go_name("ServiceMonitorEnabled"),  ; Enable ServiceMonitor for Prometheus, default: true (requires CRD)
     create_gateway: bool @go_name("CreateGateway"),             ; Create GatewayClass and Gateway resources, default: true
     create_gateway_certificate: bool @go_name("CreateGatewayCertificate"), ; Create TLS Certificate for HTTPS listener, default: true
+    ? listeners: [* ContourListener] @go_name("Listeners"),     ; Additional L4 (TCP/TLS) listeners to add to the Gateway and expose on the Envoy service
     values: {* text => any},            ; Additional Helm values to pass to the chart
+}
+
+; A custom L4 listener added to the Contour Gateway and exposed on the Envoy
+; service (and thus the cluster VIP). Use protocol TLS (Passthrough) for
+; SNI-based routing via TLSRoute, or TCP for raw routing via TCPRoute.
+; Contour binds Envoy to (port + 8000) internally; Foundry handles the
+; service targetPort and NetworkPolicy mapping automatically.
+ContourListener = {
+    name: text @go_name("Name"),                    ; Unique listener name (also used for the service port name)
+    protocol: text @go_name("Protocol"),            ; "TLS" (Passthrough, for TLSRoute/SNI) or "TCP" (for TCPRoute)
+    port: uint @go_name("Port"),                    ; External port exposed on the VIP (e.g. 4987)
+    ? tls_mode: text @go_name("TLSMode"),           ; TLS listeners only: "Passthrough" (default) or "Terminate"
+    ? hostname: text @go_name("Hostname"),          ; Optional SNI hostname filter on the listener (TLS only)
+    ? certificate_ref: text @go_name("CertificateRef"), ; Secret name for TLS Terminate mode (ignored for Passthrough/TCP)
 }

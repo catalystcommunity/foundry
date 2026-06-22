@@ -552,7 +552,7 @@ func TestGenerateGatewayCertificateManifest(t *testing.T) {
 }
 
 func TestGenerateGatewayManifest_HTTPOnly(t *testing.T) {
-	manifest := generateGatewayManifest("projectcontour", "", false)
+	manifest := generateGatewayManifest("projectcontour", "", false, nil)
 
 	assert.Contains(t, manifest, "apiVersion: gateway.networking.k8s.io/v1")
 	assert.Contains(t, manifest, "kind: Gateway")
@@ -566,7 +566,7 @@ func TestGenerateGatewayManifest_HTTPOnly(t *testing.T) {
 }
 
 func TestGenerateGatewayManifest_WithHTTPS(t *testing.T) {
-	manifest := generateGatewayManifest("projectcontour", "catalyst.local", true)
+	manifest := generateGatewayManifest("projectcontour", "catalyst.local", true, nil)
 
 	assert.Contains(t, manifest, "name: http")
 	assert.Contains(t, manifest, "port: 80")
@@ -577,4 +577,109 @@ func TestGenerateGatewayManifest_WithHTTPS(t *testing.T) {
 	assert.Contains(t, manifest, "hostname: \"*.catalyst.local\"")
 	assert.Contains(t, manifest, "gateway-wildcard-tls")
 	assert.Contains(t, manifest, "mode: Terminate")
+}
+
+func strPtr(s string) *string { return &s }
+
+func TestGenerateGatewayManifest_TLSPassthroughListener(t *testing.T) {
+	listeners := []ContourListener{
+		{Name: "linkkeys-tls", Protocol: ListenerProtocolTLS, Port: 4987},
+	}
+	manifest := generateGatewayManifest("projectcontour", "", false, listeners)
+
+	assert.Contains(t, manifest, "name: linkkeys-tls")
+	assert.Contains(t, manifest, "port: 4987")
+	assert.Contains(t, manifest, "protocol: TLS")
+	assert.Contains(t, manifest, "mode: Passthrough")
+	assert.Contains(t, manifest, "kind: TLSRoute")
+	assert.Contains(t, manifest, "from: All")
+	// Passthrough must not emit certificateRefs
+	assert.NotContains(t, manifest, "certificateRefs")
+}
+
+func TestGenerateGatewayManifest_TCPListener(t *testing.T) {
+	listeners := []ContourListener{
+		{Name: "raw-tcp", Protocol: ListenerProtocolTCP, Port: 6000},
+	}
+	manifest := generateGatewayManifest("projectcontour", "", false, listeners)
+
+	assert.Contains(t, manifest, "name: raw-tcp")
+	assert.Contains(t, manifest, "port: 6000")
+	assert.Contains(t, manifest, "kind: TCPRoute")
+	// TCP listener has no tls block
+	assert.NotContains(t, manifest, "mode: Passthrough")
+}
+
+func TestGenerateGatewayManifest_TLSWithHostnameAndTerminate(t *testing.T) {
+	listeners := []ContourListener{
+		{
+			Name:           "termd",
+			Protocol:       ListenerProtocolTLS,
+			Port:           8888,
+			TLSMode:        strPtr(TLSModeTerminate),
+			Hostname:       strPtr("svc.example.com"),
+			CertificateRef: strPtr("my-cert"),
+		},
+	}
+	manifest := generateGatewayManifest("projectcontour", "", false, listeners)
+
+	assert.Contains(t, manifest, "hostname: \"svc.example.com\"")
+	assert.Contains(t, manifest, "mode: Terminate")
+	assert.Contains(t, manifest, "certificateRefs")
+	assert.Contains(t, manifest, "name: my-cert")
+}
+
+func TestBuildHelmValues_ListenersExtraPortsAndNetworkPolicy(t *testing.T) {
+	SetClusterVIP("10.16.0.30")
+	defer SetClusterVIP("")
+
+	cfg := DefaultConfig()
+	cfg.Listeners = []ContourListener{
+		{Name: "linkkeys-tls", Protocol: ListenerProtocolTLS, Port: 4987},
+	}
+	values := buildHelmValues(cfg)
+
+	envoy := values["envoy"].(map[string]interface{})
+	service := envoy["service"].(map[string]interface{})
+
+	// VIP still wired via externalIPs
+	assert.Equal(t, "ClusterIP", service["type"])
+	assert.Equal(t, []string{"10.16.0.30"}, service["externalIPs"])
+
+	// extraPorts: external 4987 -> remapped envoy target 12987
+	extraPorts := service["extraPorts"].([]interface{})
+	require.Len(t, extraPorts, 1)
+	port := extraPorts[0].(map[string]interface{})
+	assert.Equal(t, "linkkeys-tls", port["name"])
+	assert.Equal(t, uint64(4987), port["port"])
+	assert.Equal(t, uint64(12987), port["targetPort"])
+	assert.Equal(t, "TCP", port["protocol"])
+
+	// networkPolicy must admit the remapped port or traffic is dropped
+	np := envoy["networkPolicy"].(map[string]interface{})
+	extraIngress := np["extraIngress"].([]interface{})
+	require.Len(t, extraIngress, 1)
+	rule := extraIngress[0].(map[string]interface{})
+	rulePorts := rule["ports"].([]interface{})
+	require.Len(t, rulePorts, 1)
+	assert.Equal(t, uint64(12987), rulePorts[0].(map[string]interface{})["port"])
+}
+
+func TestBuildHelmValues_NoListeners_NoExtraPorts(t *testing.T) {
+	SetClusterVIP("")
+	cfg := DefaultConfig()
+	values := buildHelmValues(cfg)
+
+	envoy := values["envoy"].(map[string]interface{})
+	service := envoy["service"].(map[string]interface{})
+	_, hasExtraPorts := service["extraPorts"]
+	assert.False(t, hasExtraPorts)
+	_, hasNetPol := envoy["networkPolicy"]
+	assert.False(t, hasNetPol)
+}
+
+func TestEnvoyContainerPort_Remap(t *testing.T) {
+	assert.Equal(t, uint64(8080), ContourListener{Port: 80}.EnvoyContainerPort())
+	assert.Equal(t, uint64(8443), ContourListener{Port: 443}.EnvoyContainerPort())
+	assert.Equal(t, uint64(12987), ContourListener{Port: 4987}.EnvoyContainerPort())
 }

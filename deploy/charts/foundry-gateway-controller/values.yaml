@@ -1,0 +1,63 @@
+# Default values for foundry-gateway-controller.
+
+replicaCount: 1
+
+image:
+  repository: containers.catalystsquad.com/public/catalystcommunity/foundry
+  # Defaults to the chart appVersion when empty.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+# Controller behavior. These map directly to the `foundry gateway controller`
+# flags. The defaults match a Foundry-installed Contour.
+controller:
+  gatewayName: contour
+  gatewayNamespace: projectcontour
+  envoyService: contour-envoy
+  # Set to "" to skip NetworkPolicy reconciliation.
+  networkPolicy: contour-envoy
+  # Resync interval for the watch loop (Go duration).
+  interval: 15s
+  # Extra raw args appended to the controller command.
+  extraArgs: []
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+rbac:
+  # Create the ClusterRole and ClusterRoleBinding the controller needs.
+  create: true
+
+# Pod-level security context. The image runs as a non-root distroless binary.
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+resources:
+  requests:
+    cpu: 10m
+    memory: 32Mi
+  limits:
+    cpu: 100m
+    memory: 128Mi
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+podAnnotations: {}
+podLabels: {}

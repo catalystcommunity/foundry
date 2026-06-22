@@ -1,0 +1,56 @@
+name: foundry-test
+description: "Build and run the Go unit tests (some use testcontainers, hence the docker capability)"
+triggers:
+  events:
+    - pull_request_opened
+    - pull_request_updated
+  branches:
+    - main
+paths:
+  include:
+    - "v1/**"
+    - "csil/**"        # a CSIL/contract change must still build + pass the suite
+job:
+  image: golang:1.25-bookworm
+  command: |
+    set -e
+    # Keep all writes in /tmp so the job runs identically under any uid (the
+    # worker's runner uid and `reactorcide run-local`'s host uid).
+    export HOME=/tmp/home GOCACHE=/tmp/gocache GOMODCACHE=/tmp/gomod GOPATH=/tmp/gopath
+    mkdir -p "$HOME" "$GOCACHE" "$GOMODCACHE" "$GOPATH"
+
+    # Several unit tests spin up containers via testcontainers-go, which talks to
+    # the Docker daemon exposed by the 'docker' capability. Disable Ryuk: the
+    # reaper does not behave well against a remote daemon in CI.
+    export TESTCONTAINERS_RYUK_DISABLED=true
+
+    if [ "${REACTORCIDE_WORKER_MODE:-remote}" = "local" ]; then
+      cd /job/src
+    else
+      git clone --branch "${REACTORCIDE_HEAD_REF:-$REACTORCIDE_PR_REF}" \
+        "${REACTORCIDE_HEAD_URL:-$REACTORCIDE_SOURCE_URL}" /job/src
+      cd /job/src
+    fi
+    cd v1
+
+    echo "=== gofmt check ==="
+    UNFORMATTED=$(gofmt -l .)
+    if [ -n "${UNFORMATTED}" ]; then
+      echo "These files are not gofmt-clean:"
+      echo "${UNFORMATTED}"
+      exit 1
+    fi
+
+    echo "=== go vet ==="
+    go vet ./...
+
+    echo "=== build ==="
+    go build ./...
+
+    echo "=== test ==="
+    go test ./...
+  timeout: 1800
+  priority: 10
+  capabilities:
+    - docker          # testcontainers-go needs a daemon (DOCKER_HOST)
+  raw_command: true

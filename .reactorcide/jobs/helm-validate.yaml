@@ -1,0 +1,29 @@
+name: foundry-helm-validate
+description: "Lint and template the gateway-controller helm chart on PRs that touch it"
+triggers:
+  events:
+    - pull_request_opened
+    - pull_request_updated
+  branches:
+    - main
+paths:
+  include:
+    - "deploy/charts/**"
+job:
+  image: alpine/helm:3.14.0
+  command: |
+    set -e
+    if [ "${REACTORCIDE_WORKER_MODE:-remote}" = "local" ]; then
+      cd /job/src
+    else
+      git clone --branch "${REACTORCIDE_HEAD_REF:-$REACTORCIDE_PR_REF}" \
+        "${REACTORCIDE_HEAD_URL:-$REACTORCIDE_SOURCE_URL}" /job/src
+      cd /job/src
+    fi
+    CHART=./deploy/charts/foundry-gateway-controller
+    helm lint "${CHART}"
+    helm template "${CHART}" >/dev/null
+    echo "helm chart OK"
+  timeout: 600
+  priority: 10
+  raw_command: true
