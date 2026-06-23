@@ -35,9 +35,13 @@ rbac:
   # Create the ClusterRole and ClusterRoleBinding the controller needs.
   create: true
 
-# Pod-level security context. The image runs as a non-root distroless binary.
+# Pod-level security context. The image is distroless:nonroot, whose user is the
+# symbolic name "nonroot" — Kubernetes can't verify a non-numeric user is
+# non-root, so we pin the numeric uid/gid (65532 = distroless nonroot).
 podSecurityContext:
   runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
   seccompProfile:
     type: RuntimeDefault
 
