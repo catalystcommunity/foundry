@@ -104,9 +104,10 @@ Examples:
 
 // k8sComponents lists all components that are installed via kubeconfig (Helm/K8s)
 var k8sComponents = map[string]bool{
-	"gateway-api":      true,
-	"contour":          true,
-	"cert-manager":     true,
+	"gateway-api":        true,
+	"contour":            true,
+	"gateway-controller": true,
+	"cert-manager":       true,
 	"storage":          true,
 	"seaweedfs":        true,
 	"prometheus":       true,
