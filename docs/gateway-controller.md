@@ -96,29 +96,71 @@ Flags: `--gateway-name`, `--gateway-namespace`, `--envoy-service`,
 Client config resolves in order: `--kubeconfig` → in-cluster service account (when
 running as a pod) → `~/.foundry/kubeconfig`.
 
-### In-cluster (Helm chart)
+### In-cluster (foundry component — recommended)
 
-A container image and chart are provided. Build and push the image, then install:
+foundry ships the chart embedded in the binary and installs it as the
+`gateway-controller` component (single-replica Deployment + ServiceAccount +
+ClusterRole/Binding in `foundry-system`, pointing at the published image).
+
+**As part of `foundry stack install` — opt-in.** The component is in the install
+order but is **skipped unless explicitly enabled**, so a default stack install
+never depends on the controller image being present. Enable it in the stack
+config:
+
+```yaml
+components:
+  gateway-controller:
+    enabled: true
+    # optional typed shortcuts:
+    # image_tag: "0.2.0"
+    # interval: "30s"
+    # replica_count: 1
+    # raw chart values overlay (values.yaml equivalent) — deep-merged on top of
+    # the typed fields and the chart defaults; this wins:
+    values:
+      resources:
+        limits:
+          cpu: 200m
+      podAnnotations:
+        team: ingress
+      controller:
+        interval: 60s   # overrides just this leaf; siblings keep their defaults
+```
+
+Then `foundry stack install` installs (or upgrades) it; flip `enabled` back to
+`false`/remove it and it's simply skipped on the next run.
+
+The `values` map is passed through to the Helm chart exactly like a
+`-f values.yaml`: anything the chart's `values.yaml` exposes (resources,
+nodeSelector, tolerations, affinity, podAnnotations, securityContext,
+`controller.extraArgs`, …) can be set there. It is deep-merged **on top of** the
+typed fields, so `values` always wins and you can override a single nested leaf
+without restating its siblings.
+
+**On demand — any time:**
 
 ```bash
-# Build (from the repo root)
-docker build -t containers.catalystsquad.com/public/catalystcommunity/foundry:<version> \
-  --build-arg VERSION=<version> .
+foundry component install gateway-controller
+```
 
-# Deploy
+### In-cluster (Helm directly)
+
+The same chart can be installed with helm (it lives in the module at
+`v1/charts/foundry-gateway-controller`):
+
+```bash
 helm install gateway-controller \
-  deploy/charts/foundry-gateway-controller \
+  v1/charts/foundry-gateway-controller \
   --namespace foundry-system --create-namespace \
   --set image.tag=<version>
 ```
 
-The chart creates a single-replica Deployment, a ServiceAccount, and a ClusterRole/
-Binding. See [deploy/charts/foundry-gateway-controller/README.md](../deploy/charts/foundry-gateway-controller/README.md)
+See [v1/charts/foundry-gateway-controller/README.md](../v1/charts/foundry-gateway-controller/README.md)
 for all values.
 
 CI builds and publishes both the image and the chart on merge to `main` via
-reactorcide (see `.reactorcide/jobs/`), so you normally just bump a route — the
-image/chart releases are automated.
+reactorcide (see `.reactorcide/jobs/`); because the chart is embedded in the
+binary, a chart change also produces a new image.
 
 ### RBAC
 

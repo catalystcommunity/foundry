@@ -7,7 +7,7 @@ triggers:
     - main
 paths:
   include:
-    - "deploy/charts/foundry-gateway-controller/**"
+    - "v1/charts/foundry-gateway-controller/**"
 job:
   image: containers.catalystsquad.com/public/reactorcide/runnerbase:dev
   # Clone the repo ourselves (triggered child jobs don't get /job/src populated) —

@@ -15,6 +15,7 @@ import (
 	"github.com/catalystcommunity/foundry/v1/internal/component/dns"
 	"github.com/catalystcommunity/foundry/v1/internal/component/externaldns"
 	"github.com/catalystcommunity/foundry/v1/internal/component/gatewayapi"
+	"github.com/catalystcommunity/foundry/v1/internal/component/gatewaycontroller"
 	"github.com/catalystcommunity/foundry/v1/internal/component/grafana"
 	"github.com/catalystcommunity/foundry/v1/internal/component/loki"
 	"github.com/catalystcommunity/foundry/v1/internal/component/openbao"
@@ -224,6 +225,8 @@ func installK8sComponent(ctx context.Context, cmd *cli.Command, name string, sta
 		componentWithClients = gatewayapi.NewComponent(k8sClient)
 	case "contour":
 		componentWithClients = contour.NewComponent(helmClient, k8sClient)
+	case "gateway-controller":
+		componentWithClients = gatewaycontroller.NewComponent(helmClient, k8sClient)
 	case "cert-manager":
 		componentWithClients = certmanager.NewComponent(nil)
 	case "storage":

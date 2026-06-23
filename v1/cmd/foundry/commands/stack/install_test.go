@@ -553,3 +553,40 @@ func TestRunStackInstallDryRun(t *testing.T) {
 	err = printStackPlan(loadedCfg, nextStep)
 	assert.NoError(t, err)
 }
+
+func TestComponentEnabled_GatewayController(t *testing.T) {
+	// Absent from config -> disabled
+	cfg := &config.Config{Components: config.ComponentMap{}}
+	assert.False(t, componentEnabled(cfg, "gateway-controller"))
+
+	// Present but enabled not set -> disabled
+	cfg.Components["gateway-controller"] = config.ComponentConfig{Config: map[string]any{}}
+	assert.False(t, componentEnabled(cfg, "gateway-controller"))
+
+	// enabled: false -> disabled
+	cfg.Components["gateway-controller"] = config.ComponentConfig{Config: map[string]any{"enabled": false}}
+	assert.False(t, componentEnabled(cfg, "gateway-controller"))
+
+	// enabled: true -> enabled
+	cfg.Components["gateway-controller"] = config.ComponentConfig{Config: map[string]any{"enabled": true}}
+	assert.True(t, componentEnabled(cfg, "gateway-controller"))
+
+	// gateway-controller is registered as opt-in
+	assert.True(t, optInComponents["gateway-controller"])
+}
+
+func TestBuildGatewayControllerConfig_FlowsStackKeys(t *testing.T) {
+	cfg := &config.Config{Components: config.ComponentMap{
+		"gateway-controller": config.ComponentConfig{Config: map[string]any{
+			"enabled":   true,
+			"image_tag": "1.2.3",
+			"interval":  "30s",
+		}},
+	}}
+
+	cc := buildGatewayControllerConfig(cfg)
+	tag, _ := cc.GetString("image_tag")
+	assert.Equal(t, "1.2.3", tag)
+	interval, _ := cc.GetString("interval")
+	assert.Equal(t, "30s", interval)
+}

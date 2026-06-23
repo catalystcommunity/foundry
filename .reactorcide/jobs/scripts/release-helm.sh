@@ -10,7 +10,7 @@
 # command cloned (an authed full clone of main).
 set -euo pipefail
 
-CHART_DIR="deploy/charts/foundry-gateway-controller"
+CHART_DIR="v1/charts/foundry-gateway-controller"
 SEMVER_TAGS_VERSION="${SEMVER_TAGS_VERSION:-v0.4.0}"
 GHCLI_VERSION="${GHCLI_VERSION:-2.63.2}"
 

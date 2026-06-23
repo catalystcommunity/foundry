@@ -21,6 +21,7 @@ import (
 	"github.com/catalystcommunity/foundry/v1/internal/component/dns"
 	"github.com/catalystcommunity/foundry/v1/internal/component/externaldns"
 	"github.com/catalystcommunity/foundry/v1/internal/component/gatewayapi"
+	"github.com/catalystcommunity/foundry/v1/internal/component/gatewaycontroller"
 	"github.com/catalystcommunity/foundry/v1/internal/component/grafana"
 	"github.com/catalystcommunity/foundry/v1/internal/component/loki"
 	"github.com/catalystcommunity/foundry/v1/internal/component/openbao"
@@ -564,6 +565,37 @@ func ensureNetworkPlanned(ctx context.Context, cfg *config.Config, nonInteractiv
 
 // installComponents installs all components in order with state tracking
 // If upgrade is true, K8s components will be upgraded even if already installed
+// optInComponents are not installed by a default stack install; they require
+// an explicit components.<name>.enabled: true in the stack config.
+var optInComponents = map[string]bool{
+	"gateway-controller": true,
+}
+
+// componentEnabled reports whether an opt-in component is turned on in the stack
+// config via components.<name>.enabled: true.
+func componentEnabled(cfg *config.Config, name string) bool {
+	cc, ok := cfg.Components[name]
+	if !ok {
+		return false
+	}
+	enabled, ok := cc.Config["enabled"].(bool)
+	return ok && enabled
+}
+
+// buildGatewayControllerConfig copies the user's components.gateway-controller
+// block into a ComponentConfig so keys like image_tag, gateway_name, interval,
+// and replica_count reach the component's ParseConfig (the "enabled" flag is
+// ignored there).
+func buildGatewayControllerConfig(cfg *config.Config) component.ComponentConfig {
+	cc := component.ComponentConfig{}
+	if gc, ok := cfg.Components["gateway-controller"]; ok {
+		for k, v := range gc.Config {
+			cc[k] = v
+		}
+	}
+	return cc
+}
+
 func installComponents(ctx context.Context, cfg *config.Config, configPath string, skipConfirm bool, upgrade bool) error {
 	fmt.Println("\n[3/4] Component Installation")
 	fmt.Println(strings.Repeat("-", 60))
@@ -691,6 +723,16 @@ func installComponents(ctx context.Context, cfg *config.Config, configPath strin
 				trackComponent("contour")
 			},
 		},
+		// Opt-in: only installed when components.gateway-controller.enabled is true
+		{
+			name: "gateway-controller",
+			checkFunc: func(s *setup.SetupState) bool {
+				return checkComponentStatus("gateway-controller")
+			},
+			setFunc: func(s *setup.SetupState) {
+				trackComponent("gateway-controller")
+			},
+		},
 		{
 			name: "cert-manager",
 			checkFunc: func(s *setup.SetupState) bool {
@@ -752,9 +794,18 @@ func installComponents(ctx context.Context, cfg *config.Config, configPath strin
 		"gateway-api": true, "contour": true, "cert-manager": true, "storage": true,
 		"seaweedfs": true, "prometheus": true, "external-dns": true,
 		"loki": true, "grafana": true, "velero": true,
+		"gateway-controller": true,
 	}
 
 	for i, comp := range components {
+		// Opt-in components only install when explicitly enabled in the stack
+		// config (e.g. components.gateway-controller.enabled: true).
+		if optInComponents[comp.name] && !componentEnabled(cfg, comp.name) {
+			fmt.Printf("\n[%d/%d] %s: ⊝ disabled (set components.%s.enabled: true to install)\n",
+				i+1, len(components), comp.name, comp.name)
+			continue
+		}
+
 		// Check if already installed
 		isInstalled := comp.checkFunc(cfg.SetupState)
 		isK8sComponent := k8sComponents[comp.name]
@@ -859,6 +910,8 @@ func installK8sComponent(ctx context.Context, cfg *config.Config, componentName 
 		componentWithClients = gatewayapi.NewComponent(k8sClient)
 	case "contour":
 		componentWithClients = contour.NewComponent(helmClient, k8sClient)
+	case "gateway-controller":
+		componentWithClients = gatewaycontroller.NewComponent(helmClient, k8sClient)
 	case "cert-manager":
 		// Create cert-manager with CA issuer enabled for signing TLS certificates
 		componentWithClients = certmanager.NewComponent(&certmanager.Config{
@@ -935,6 +988,12 @@ func installK8sComponent(ctx context.Context, cfg *config.Config, componentName 
 	// Pass Velero config (needs SeaweedFS connection info)
 	if componentName == "velero" {
 		componentConfig = buildVeleroConfig(cfg)
+	}
+
+	// Pass gateway-controller config (image, gateway/envoy targets, interval, …)
+	// straight from the stack config's components.gateway-controller block.
+	if componentName == "gateway-controller" {
+		componentConfig = buildGatewayControllerConfig(cfg)
 	}
 
 	// Install the component
@@ -1740,16 +1799,17 @@ func installSingleComponent(ctx context.Context, cfg *config.Config, componentNa
 
 	// Kubernetes components are installed via kubeconfig, not SSH to a host
 	k8sComponents := map[string]bool{
-		"gateway-api":  true,
-		"contour":      true,
-		"cert-manager": true,
-		"external-dns": true,
-		"storage":      true,
-		"seaweedfs":    true,
-		"prometheus":   true,
-		"loki":         true,
-		"grafana":      true,
-		"velero":       true,
+		"gateway-api":        true,
+		"contour":            true,
+		"gateway-controller": true,
+		"cert-manager":       true,
+		"external-dns":       true,
+		"storage":            true,
+		"seaweedfs":          true,
+		"prometheus":         true,
+		"loki":               true,
+		"grafana":            true,
+		"velero":             true,
 	}
 	if k8sComponents[componentName] {
 		return installK8sComponent(ctx, cfg, componentName, comp)
