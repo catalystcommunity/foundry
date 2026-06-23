@@ -14,43 +14,42 @@ job:
   image: golang:1.25-bookworm
   command: |
     set -e
-    # The worker runs this job as root (the golang image's default user), but
-    # some tests assert Unix file-permission behavior, which root bypasses. So
-    # we clone as root and run the whole Go toolchain as an unprivileged user.
-    id ci >/dev/null 2>&1 || useradd -m -d /home/ci -s /bin/bash ci
+    # The worker runs this job as a non-root uid (its runner uid), which is what
+    # we want: some tests assert Unix file-permission behavior that root would
+    # bypass. That uid has no home directory in the golang image, so point HOME
+    # and the Go caches at /tmp (writable by any uid).
+    export HOME=/tmp/home GOCACHE=/tmp/gocache GOMODCACHE=/tmp/gomod GOPATH=/tmp/gopath
+    mkdir -p "$HOME" "$GOCACHE" "$GOMODCACHE" "$GOPATH"
 
-    if [ "${REACTORCIDE_WORKER_MODE:-remote}" != "local" ]; then
+    if [ "${REACTORCIDE_WORKER_MODE:-remote}" = "local" ]; then
+      cd /job/src
+    else
       git clone --branch "${REACTORCIDE_HEAD_REF:-$REACTORCIDE_PR_REF}" \
         "${REACTORCIDE_HEAD_URL:-$REACTORCIDE_SOURCE_URL}" /job/src
+      cd /job/src
     fi
-    chown -R ci:ci /job/src
+    cd v1
 
-    runuser -u ci -- bash -euc '
-      export PATH=/usr/local/go/bin:$PATH
-      export HOME=/home/ci GOCACHE=$HOME/.cache/go GOMODCACHE=$HOME/go/pkg/mod GOPATH=$HOME/go
-      cd /job/src/v1
+    echo "=== running as uid $(id -u) ==="
 
-      echo "=== running as uid $(id -u) ==="
+    echo "=== gofmt check ==="
+    UNFORMATTED=$(gofmt -l .)
+    if [ -n "${UNFORMATTED}" ]; then
+      echo "These files are not gofmt-clean:"
+      echo "${UNFORMATTED}"
+      exit 1
+    fi
 
-      echo "=== gofmt check ==="
-      UNFORMATTED=$(gofmt -l .)
-      if [ -n "$UNFORMATTED" ]; then
-        echo "These files are not gofmt-clean:"
-        echo "$UNFORMATTED"
-        exit 1
-      fi
+    echo "=== go vet ==="
+    go vet ./...
 
-      echo "=== go vet ==="
-      go vet ./...
+    echo "=== build ==="
+    go build ./...
 
-      echo "=== build ==="
-      go build ./...
-
-      # -short skips the integration tests (test/integration/*), which spin up
-      # Kind clusters / containers and need real infra not present in this runner.
-      echo "=== test ==="
-      go test -short ./...
-    '
+    # -short skips the integration tests (test/integration/*), which spin up
+    # Kind clusters / containers and need real infra not present in this runner.
+    echo "=== test ==="
+    go test -short ./...
   timeout: 1800
   priority: 10
   raw_command: true

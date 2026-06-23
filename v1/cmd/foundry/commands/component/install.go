@@ -108,14 +108,14 @@ var k8sComponents = map[string]bool{
 	"contour":            true,
 	"gateway-controller": true,
 	"cert-manager":       true,
-	"storage":          true,
-	"seaweedfs":        true,
-	"prometheus":       true,
-	"loki":             true,
-	"grafana":          true,
-	"external-dns":     true,
-	"velero":           true,
-	"openbao-injector": true,
+	"storage":            true,
+	"seaweedfs":          true,
+	"prometheus":         true,
+	"loki":               true,
+	"grafana":            true,
+	"external-dns":       true,
+	"velero":             true,
+	"openbao-injector":   true,
 }
 
 func runInstall(ctx context.Context, cmd *cli.Command) error {
