@@ -187,11 +187,21 @@ func (m *mockConnection) Exec(cmd string) (*ssh.ExecResult, error) {
 		return result, nil
 	}
 
-	// Check for partial matches (for commands with dynamic parts)
+	// Check for partial matches; the longest (most specific) matching prefix
+	// wins so overlapping prefixes resolve deterministically (Go map iteration
+	// order is randomized, which otherwise makes this flaky).
+	var bestPattern string
+	var bestResult *ssh.ExecResult
 	for pattern, result := range m.responses {
-		if len(pattern) > 0 && len(cmd) > 0 && cmd[:min(len(cmd), len(pattern))] == pattern {
-			return result, nil
+		if len(pattern) > 0 && len(cmd) >= len(pattern) && cmd[:len(pattern)] == pattern {
+			if len(pattern) > len(bestPattern) {
+				bestPattern = pattern
+				bestResult = result
+			}
 		}
+	}
+	if bestResult != nil {
+		return bestResult, nil
 	}
 
 	// Default success

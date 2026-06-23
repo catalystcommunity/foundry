@@ -1,5 +1,5 @@
 name: foundry-test
-description: "Build and run the Go unit tests (some use testcontainers, hence the docker capability)"
+description: "Build and run the Go unit tests (go test -short; integration tests need real infra and run elsewhere)"
 triggers:
   events:
     - pull_request_opened
@@ -14,43 +14,43 @@ job:
   image: golang:1.25-bookworm
   command: |
     set -e
-    # Keep all writes in /tmp so the job runs identically under any uid (the
-    # worker's runner uid and `reactorcide run-local`'s host uid).
-    export HOME=/tmp/home GOCACHE=/tmp/gocache GOMODCACHE=/tmp/gomod GOPATH=/tmp/gopath
-    mkdir -p "$HOME" "$GOCACHE" "$GOMODCACHE" "$GOPATH"
+    # The worker runs this job as root (the golang image's default user), but
+    # some tests assert Unix file-permission behavior, which root bypasses. So
+    # we clone as root and run the whole Go toolchain as an unprivileged user.
+    id ci >/dev/null 2>&1 || useradd -m -d /home/ci -s /bin/bash ci
 
-    # Several unit tests spin up containers via testcontainers-go, which talks to
-    # the Docker daemon exposed by the 'docker' capability. Disable Ryuk: the
-    # reaper does not behave well against a remote daemon in CI.
-    export TESTCONTAINERS_RYUK_DISABLED=true
-
-    if [ "${REACTORCIDE_WORKER_MODE:-remote}" = "local" ]; then
-      cd /job/src
-    else
+    if [ "${REACTORCIDE_WORKER_MODE:-remote}" != "local" ]; then
       git clone --branch "${REACTORCIDE_HEAD_REF:-$REACTORCIDE_PR_REF}" \
         "${REACTORCIDE_HEAD_URL:-$REACTORCIDE_SOURCE_URL}" /job/src
-      cd /job/src
     fi
-    cd v1
+    chown -R ci:ci /job/src
 
-    echo "=== gofmt check ==="
-    UNFORMATTED=$(gofmt -l .)
-    if [ -n "${UNFORMATTED}" ]; then
-      echo "These files are not gofmt-clean:"
-      echo "${UNFORMATTED}"
-      exit 1
-    fi
+    runuser -u ci -- bash -euc '
+      export PATH=/usr/local/go/bin:$PATH
+      export HOME=/home/ci GOCACHE=$HOME/.cache/go GOMODCACHE=$HOME/go/pkg/mod GOPATH=$HOME/go
+      cd /job/src/v1
 
-    echo "=== go vet ==="
-    go vet ./...
+      echo "=== running as uid $(id -u) ==="
 
-    echo "=== build ==="
-    go build ./...
+      echo "=== gofmt check ==="
+      UNFORMATTED=$(gofmt -l .)
+      if [ -n "$UNFORMATTED" ]; then
+        echo "These files are not gofmt-clean:"
+        echo "$UNFORMATTED"
+        exit 1
+      fi
 
-    echo "=== test ==="
-    go test ./...
+      echo "=== go vet ==="
+      go vet ./...
+
+      echo "=== build ==="
+      go build ./...
+
+      # -short skips the integration tests (test/integration/*), which spin up
+      # Kind clusters / containers and need real infra not present in this runner.
+      echo "=== test ==="
+      go test -short ./...
+    '
   timeout: 1800
   priority: 10
-  capabilities:
-    - docker          # testcontainers-go needs a daemon (DOCKER_HOST)
   raw_command: true
