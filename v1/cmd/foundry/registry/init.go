@@ -7,6 +7,7 @@ import (
 	"github.com/catalystcommunity/foundry/v1/internal/component/dns"
 	"github.com/catalystcommunity/foundry/v1/internal/component/externaldns"
 	"github.com/catalystcommunity/foundry/v1/internal/component/gatewayapi"
+	"github.com/catalystcommunity/foundry/v1/internal/component/gatewaycontroller"
 	"github.com/catalystcommunity/foundry/v1/internal/component/grafana"
 	"github.com/catalystcommunity/foundry/v1/internal/component/k3s"
 	"github.com/catalystcommunity/foundry/v1/internal/component/loki"
@@ -63,6 +64,13 @@ func InitComponents() error {
 	// Note: Contour requires Helm and K8s clients which are initialized at runtime
 	contourComp := contour.NewComponent(nil, nil)
 	if err := component.Register(contourComp); err != nil {
+		return err
+	}
+
+	// Register gateway-controller - depends on Contour. Deploys the embedded
+	// foundry-gateway-controller Helm chart that opens route-driven L4 listeners.
+	gatewayControllerComp := gatewaycontroller.NewComponent(nil, nil)
+	if err := component.Register(gatewayControllerComp); err != nil {
 		return err
 	}
 

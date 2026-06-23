@@ -84,8 +84,8 @@ crane push /tmp/image.tar "${IMAGE}:latest"
 rm /tmp/image.tar
 
 echo "=== bump chart appVersion to ${VERSION} ==="
-sed -i "s/^appVersion: .*/appVersion: \"${VERSION}\"/" deploy/charts/foundry-gateway-controller/Chart.yaml
-git add deploy/charts/foundry-gateway-controller/Chart.yaml
+sed -i "s/^appVersion: .*/appVersion: \"${VERSION}\"/" v1/charts/foundry-gateway-controller/Chart.yaml
+git add v1/charts/foundry-gateway-controller/Chart.yaml
 if ! git diff --cached --quiet; then
   git commit -m "ci: bump foundry appVersion to ${VERSION}"
   # release-helm may also be committing Chart.yaml (a different line); rebase to

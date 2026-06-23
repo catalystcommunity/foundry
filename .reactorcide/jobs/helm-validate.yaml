@@ -8,7 +8,7 @@ triggers:
     - main
 paths:
   include:
-    - "deploy/charts/**"
+    - "v1/charts/**"
 job:
   image: alpine/helm:3.14.0
   command: |
@@ -20,7 +20,7 @@ job:
         "${REACTORCIDE_HEAD_URL:-$REACTORCIDE_SOURCE_URL}" /job/src
       cd /job/src
     fi
-    CHART=./deploy/charts/foundry-gateway-controller
+    CHART=./v1/charts/foundry-gateway-controller
     helm lint "${CHART}"
     helm template "${CHART}" >/dev/null
     echo "helm chart OK"

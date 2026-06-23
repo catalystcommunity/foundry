@@ -1,0 +1,25 @@
+; Gateway controller component configuration
+;
+; Configuration for the foundry gateway controller, deployed via an embedded
+; Helm chart. The controller watches TLSRoute/TCPRoute resources and opens the
+; matching L4 listeners on the Contour Gateway and the cluster VIP.
+
+options {
+    go_module: "github.com/catalystcommunity/foundry/v1",
+    go_package: "github.com/catalystcommunity/foundry/v1/internal/component/gatewaycontroller"
+}
+
+; Gateway controller configuration
+; Default values are set in Go code DefaultConfig().
+Config = {
+    namespace: text,                                            ; Namespace to install into, default: "foundry-system"
+    image_repository: text @go_name("ImageRepository"),        ; Controller image repo (default: containers.catalystsquad.com/public/catalystcommunity/foundry)
+    image_tag: text @go_name("ImageTag"),                      ; Image tag (empty = chart appVersion)
+    gateway_name: text @go_name("GatewayName"),                ; Gateway to manage, default: "contour"
+    gateway_namespace: text @go_name("GatewayNamespace"),      ; Gateway/Envoy namespace, default: "projectcontour"
+    envoy_service: text @go_name("EnvoyService"),              ; Envoy service holding the VIP, default: "contour-envoy"
+    network_policy: text @go_name("NetworkPolicy"),            ; Envoy NetworkPolicy ("" to skip), default: "contour-envoy"
+    interval: text,                                            ; Resync interval (Go duration), default: "15s"
+    replica_count: uint @go_name("ReplicaCount"),              ; Controller replicas, default: 1
+    values: {* text => any},                                   ; Additional Helm values to pass to the chart
+}

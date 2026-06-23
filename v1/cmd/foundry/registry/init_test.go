@@ -29,6 +29,7 @@ func TestInitComponents(t *testing.T) {
 		"k3s",
 		"gateway-api",
 		"contour",
+		"gateway-controller",
 		"cert-manager",
 		"storage",
 		"seaweedfs",
@@ -69,6 +70,7 @@ func TestInitComponents_ComponentNames(t *testing.T) {
 		{name: "k3s"},
 		{name: "gateway-api"},
 		{name: "contour"},
+		{name: "gateway-controller"},
 		{name: "cert-manager"},
 		{name: "storage"},
 		{name: "seaweedfs"},
@@ -128,6 +130,10 @@ func TestInitComponents_Dependencies(t *testing.T) {
 		{
 			name:         "contour",
 			dependencies: []string{"k3s", "gateway-api"},
+		},
+		{
+			name:         "gateway-controller",
+			dependencies: []string{"contour"},
 		},
 		{
 			name:         "cert-manager",

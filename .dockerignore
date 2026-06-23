@@ -2,7 +2,6 @@
 .git
 .github
 docs
-deploy
 .claude
 *.md
 LICENSE
