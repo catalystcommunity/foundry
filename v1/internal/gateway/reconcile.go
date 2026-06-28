@@ -1,8 +1,9 @@
 // Package gateway implements a route-driven reconciler that opens L4
 // (TCP/TLS) listeners on the shared Contour Gateway based on TLSRoute and
 // TCPRoute resources. Apps declare intent purely in their own chart by
-// creating a route whose parentRef targets the Contour Gateway with a port;
-// this reconciler programs the matching Gateway listener, the Envoy service
+// creating a route whose parentRef targets the Contour Gateway; the listener
+// port comes from the parentRef's port or, when that is omitted, the route's
+// backendRefs port. This reconciler programs the matching Gateway listener, the Envoy service
 // port (exposed on the cluster VIP via the existing externalIPs), and the
 // Envoy NetworkPolicy ingress so traffic actually flows.
 //
@@ -85,6 +86,7 @@ type DesiredListener struct {
 type Result struct {
 	Desired              []DesiredListener
 	Conflicts            []string
+	Skipped              []string // routes seen targeting the Gateway but ignored, with the reason
 	GatewayUpdated       bool
 	ServiceUpdated       bool
 	NetworkPolicyUpdated bool
@@ -106,13 +108,13 @@ type routeCandidate struct {
 // Gateway and converges the Gateway listeners, Envoy service ports, and Envoy
 // NetworkPolicy ingress to match.
 func Reconcile(ctx context.Context, dyn dynamic.Interface, kube kubernetes.Interface, opts Options) (*Result, error) {
-	candidates, err := collectCandidates(ctx, dyn, opts)
+	candidates, skipped, err := collectCandidates(ctx, dyn, opts)
 	if err != nil {
 		return nil, err
 	}
 	desired, conflicts := computeDesired(candidates)
 
-	result := &Result{Desired: desired, Conflicts: conflicts}
+	result := &Result{Desired: desired, Conflicts: conflicts, Skipped: skipped}
 
 	if result.GatewayUpdated, err = reconcileGateway(ctx, dyn, opts, desired); err != nil {
 		return nil, fmt.Errorf("reconcile gateway: %w", err)
@@ -150,8 +152,10 @@ func TargetPortFor(port int32) int32 {
 }
 
 // collectCandidates lists TLSRoutes and TCPRoutes cluster-wide and extracts the
-// (port, protocol) each one requests of the target Gateway.
-func collectCandidates(ctx context.Context, dyn dynamic.Interface, opts Options) ([]routeCandidate, error) {
+// (port, protocol) each one requests of the target Gateway. It also returns the
+// routes that target the Gateway but yield no candidate, each with a reason, so
+// the caller can surface them instead of dropping them silently.
+func collectCandidates(ctx context.Context, dyn dynamic.Interface, opts Options) ([]routeCandidate, []string, error) {
 	sources := []struct {
 		gvr      schema.GroupVersionResource
 		protocol string
@@ -161,6 +165,7 @@ func collectCandidates(ctx context.Context, dyn dynamic.Interface, opts Options)
 	}
 
 	var candidates []routeCandidate
+	var skipped []string
 	for _, s := range sources {
 		list, err := dyn.Resource(s.gvr).Namespace(metav1.NamespaceAll).List(ctx, metav1.ListOptions{})
 		if err != nil {
@@ -168,27 +173,38 @@ func collectCandidates(ctx context.Context, dyn dynamic.Interface, opts Options)
 			if apierrors.IsNotFound(err) {
 				continue
 			}
-			return nil, fmt.Errorf("list %s: %w", s.gvr.Resource, err)
+			return nil, nil, fmt.Errorf("list %s: %w", s.gvr.Resource, err)
 		}
 		for i := range list.Items {
-			candidates = append(candidates, extractCandidates(&list.Items[i], s.protocol, opts)...)
+			c, skip := extractCandidates(&list.Items[i], s.protocol, opts)
+			candidates = append(candidates, c...)
+			skipped = append(skipped, skip...)
 		}
 	}
-	return candidates, nil
+	return candidates, skipped, nil
 }
 
 // extractCandidates pulls the parentRefs that target the Gateway and returns a
-// candidate per ref that specifies a port.
-func extractCandidates(route *unstructured.Unstructured, protocol string, opts Options) []routeCandidate {
+// candidate per ref. The listener port comes from the parentRef's own `port`
+// when set; otherwise it falls back to the route's backend service port, which
+// for these L4 passthrough routes equals the desired listener port (so apps can
+// declare it once, on the backendRef). A parentRef that targets the Gateway but
+// yields no port is reported in the second return value rather than dropped.
+func extractCandidates(route *unstructured.Unstructured, protocol string, opts Options) ([]routeCandidate, []string) {
 	routeNS := route.GetNamespace()
 	source := routeNS + "/" + route.GetName()
 
 	parentRefs, found, err := unstructured.NestedSlice(route.Object, "spec", "parentRefs")
 	if !found || err != nil {
-		return nil
+		return nil, nil
 	}
 
+	// Derive the backend port once; it backs every parentRef on this route that
+	// omits an explicit port.
+	fallback, fallbackOK, fallbackReason := backendFallbackPort(route)
+
 	var out []routeCandidate
+	var skipped []string
 	for _, raw := range parentRefs {
 		ref, ok := raw.(map[string]interface{})
 		if !ok {
@@ -204,12 +220,67 @@ func extractCandidates(route *unstructured.Unstructured, protocol string, opts O
 		}
 		port, ok := toInt32(ref["port"])
 		if !ok {
-			// No port on the parentRef: the app must declare the port it wants.
-			continue
+			// No explicit parentRef port: fall back to the backend service port.
+			if !fallbackOK {
+				skipped = append(skipped, fmt.Sprintf(
+					"%s: targets Gateway %s/%s but no listener port could be derived (%s)",
+					source, opts.GatewayNamespace, opts.GatewayName, fallbackReason))
+				continue
+			}
+			port = fallback
 		}
 		out = append(out, routeCandidate{Port: port, Protocol: protocol, Source: source})
 	}
-	return out
+	return out, skipped
+}
+
+// backendFallbackPort derives a listener port from a route's backend service
+// ports. For the L4 passthrough routes this controller handles, the backend
+// port equals the desired listener port, so an app can declare the port once on
+// its `rules[].backendRefs[].port` and leave it off the parentRef. It returns
+// the single distinct backend port, or ok=false with a reason when none is set
+// or the backends disagree on the port (ambiguous — refuse to guess).
+func backendFallbackPort(route *unstructured.Unstructured) (int32, bool, string) {
+	rules, found, err := unstructured.NestedSlice(route.Object, "spec", "rules")
+	if !found || err != nil {
+		return 0, false, "no backendRefs port set"
+	}
+
+	seen := map[int32]bool{}
+	var first int32
+	for _, rawRule := range rules {
+		rule, ok := rawRule.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		backendRefs, ok := rule["backendRefs"].([]interface{})
+		if !ok {
+			continue
+		}
+		for _, rawRef := range backendRefs {
+			ref, ok := rawRef.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			port, ok := toInt32(ref["port"])
+			if !ok {
+				continue
+			}
+			if len(seen) == 0 {
+				first = port
+			}
+			seen[port] = true
+		}
+	}
+
+	switch len(seen) {
+	case 0:
+		return 0, false, "no backendRefs port set"
+	case 1:
+		return first, true, ""
+	default:
+		return 0, false, "backendRefs declare multiple distinct ports"
+	}
 }
 
 // computeDesired deduplicates candidates into a sorted set of listeners and

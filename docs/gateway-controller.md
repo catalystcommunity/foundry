@@ -27,7 +27,9 @@ routes themselves, so an app team only writes a route.
 ## The model
 
 An app declares intent with a `TLSRoute` or `TCPRoute` whose `parentRefs` target
-the Contour Gateway **with a port**:
+the Contour Gateway. The listener port can be declared just once, on the
+`backendRefs` (the natural place — it's the Service port); `parentRefs[].port` is
+optional and **overrides** the backend port when set:
 
 ```yaml
 apiVersion: gateway.networking.k8s.io/v1alpha2
@@ -39,17 +41,18 @@ spec:
   parentRefs:
     - name: contour
       namespace: projectcontour
-      port: 4987            # the port the controller opens
+      # port: 4987          # optional — overrides the backend port when present
   hostnames:
     - linkkeys.example.com  # routed by SNI (TLS passthrough)
   rules:
     - backendRefs:
         - name: linkkeys
-          port: 4987
+          port: 4987        # the port the controller opens
 ```
 
-The controller reads the `port` from `parentRefs` and the protocol from the route
-kind:
+The controller derives the listener `port` from `parentRefs[].port` when set,
+otherwise from the route's `rules[].backendRefs[].port`; the protocol comes from
+the route kind:
 
 | Route kind | Listener protocol | Routing |
 | --- | --- | --- |
@@ -79,7 +82,11 @@ touched. Deleting a route prunes its port. Because it reconciles continuously, i
 also re-applies itself after a `foundry stack install`/upgrade resets the Service.
 
 Ports **80** and **443** are reserved for the built-in listeners and are refused.
-A port requested as both TLS and TCP is skipped with a logged conflict.
+A port requested as both TLS and TCP is skipped with a logged conflict. A route
+that targets the Gateway but yields no listener port — neither a `parentRefs[].port`
+nor a single `backendRefs[].port` (none set, or backends declaring different
+ports) — is skipped and named in the resync log so it's clear what was ignored
+and why, instead of vanishing silently.
 
 ## Running it
 

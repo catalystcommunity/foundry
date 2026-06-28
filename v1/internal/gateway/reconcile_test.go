@@ -41,6 +41,86 @@ func TestComputeDesired_DedupeSortAndConflicts(t *testing.T) {
 	assert.Contains(t, conflicts[1], "7000")
 }
 
+func TestExtractCandidates_PortDerivation(t *testing.T) {
+	opts := DefaultOptions()
+	const api = "gateway.networking.k8s.io/v1alpha2"
+
+	t.Run("parentRef port only is unchanged", func(t *testing.T) {
+		route := routeWithRefs("TLSRoute", api, "lk", "linkkeys", 4987, 0)
+		got, skipped := extractCandidates(route, protocolTLS, opts)
+		require.Len(t, got, 1)
+		assert.Equal(t, int32(4987), got[0].Port)
+		assert.Empty(t, skipped)
+	})
+
+	t.Run("backendRef port fallback when parentRef omits port", func(t *testing.T) {
+		route := routeWithRefs("TLSRoute", api, "lk", "linkkeys", 0, 4987)
+		got, skipped := extractCandidates(route, protocolTLS, opts)
+		require.Len(t, got, 1)
+		assert.Equal(t, int32(4987), got[0].Port)
+		assert.Empty(t, skipped)
+	})
+
+	t.Run("parentRef port wins over backendRef port", func(t *testing.T) {
+		route := routeWithRefs("TLSRoute", api, "lk", "linkkeys", 4987, 5000)
+		got, skipped := extractCandidates(route, protocolTLS, opts)
+		require.Len(t, got, 1)
+		assert.Equal(t, int32(4987), got[0].Port)
+		assert.Empty(t, skipped)
+	})
+
+	t.Run("no derivable port is skipped with a reason", func(t *testing.T) {
+		route := routeWithRefs("TLSRoute", api, "lk", "linkkeys", 0, 0)
+		got, skipped := extractCandidates(route, protocolTLS, opts)
+		assert.Empty(t, got)
+		require.Len(t, skipped, 1)
+		assert.Contains(t, skipped[0], "linkkeys/lk")
+		assert.Contains(t, skipped[0], "no listener port could be derived")
+	})
+
+	t.Run("conflicting backendRef ports are ambiguous and skipped", func(t *testing.T) {
+		route := &unstructured.Unstructured{Object: map[string]interface{}{
+			"apiVersion": api, "kind": "TLSRoute",
+			"metadata": map[string]interface{}{"name": "lk", "namespace": "linkkeys"},
+			"spec": map[string]interface{}{
+				"parentRefs": []interface{}{
+					map[string]interface{}{"name": "contour", "namespace": "projectcontour"},
+				},
+				"rules": []interface{}{
+					map[string]interface{}{"backendRefs": []interface{}{
+						map[string]interface{}{"name": "a", "port": int64(4987)},
+						map[string]interface{}{"name": "b", "port": int64(5000)},
+					}},
+				},
+			},
+		}}
+		got, skipped := extractCandidates(route, protocolTLS, opts)
+		assert.Empty(t, got)
+		require.Len(t, skipped, 1)
+		assert.Contains(t, skipped[0], "multiple distinct ports")
+	})
+
+	t.Run("route for a different gateway is ignored without a skip", func(t *testing.T) {
+		route := &unstructured.Unstructured{Object: map[string]interface{}{
+			"apiVersion": api, "kind": "TLSRoute",
+			"metadata": map[string]interface{}{"name": "other", "namespace": "x"},
+			"spec": map[string]interface{}{
+				"parentRefs": []interface{}{
+					map[string]interface{}{"name": "someone-else", "namespace": "projectcontour"},
+				},
+				"rules": []interface{}{
+					map[string]interface{}{"backendRefs": []interface{}{
+						map[string]interface{}{"name": "a"}, // no port
+					}},
+				},
+			},
+		}}
+		got, skipped := extractCandidates(route, protocolTLS, opts)
+		assert.Empty(t, got)
+		assert.Empty(t, skipped, "non-managed gateways must not produce skip diagnostics")
+	})
+}
+
 func TestListenerNameAndTargetPort(t *testing.T) {
 	d := DesiredListener{Port: 4987, Protocol: protocolTLS}
 	assert.Equal(t, "gw-tls-4987", listenerName(d))
@@ -163,6 +243,33 @@ func routeObject(kind, apiVersion, name, ns string, port int64) *unstructured.Un
 	}}
 }
 
+// routeWithRefs builds a route with a fully-specified parentRef (port=parentPort,
+// or omitted when parentPort<=0) and a single backendRef (port=backendPort, or
+// omitted when backendPort<=0).
+func routeWithRefs(kind, apiVersion, name, ns string, parentPort, backendPort int64) *unstructured.Unstructured {
+	parentRef := map[string]interface{}{"name": "contour", "namespace": "projectcontour"}
+	if parentPort > 0 {
+		parentRef["port"] = parentPort
+	}
+	backendRef := map[string]interface{}{"name": name}
+	if backendPort > 0 {
+		backendRef["port"] = backendPort
+	}
+	return &unstructured.Unstructured{Object: map[string]interface{}{
+		"apiVersion": apiVersion,
+		"kind":       kind,
+		"metadata":   map[string]interface{}{"name": name, "namespace": ns},
+		"spec": map[string]interface{}{
+			"parentRefs": []interface{}{parentRef},
+			"rules": []interface{}{
+				map[string]interface{}{
+					"backendRefs": []interface{}{backendRef},
+				},
+			},
+		},
+	}}
+}
+
 func envoyService() *corev1.Service {
 	return &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{Name: "contour-envoy", Namespace: "projectcontour"},
@@ -253,6 +360,79 @@ func TestReconcile_OpensListenersFromRoutes(t *testing.T) {
 	result2, err := Reconcile(ctx, dyn, kube, opts)
 	require.NoError(t, err)
 	assert.False(t, result2.Changed(), "reconcile should be idempotent")
+}
+
+func TestReconcile_OpensListenerFromBackendRefPort(t *testing.T) {
+	ctx := context.Background()
+	opts := DefaultOptions()
+	const api = "gateway.networking.k8s.io/v1alpha2"
+
+	dyn := newFakeDynamic()
+	_, err := dyn.Resource(gatewayGVR).Namespace("projectcontour").Create(ctx, gatewayObject(), metav1.CreateOptions{})
+	require.NoError(t, err)
+
+	// Two TLSRoutes for distinct SNIs, both deriving 4987 from backendRefs (no
+	// parentRef port) -> one shared gw-tls-4987 listener.
+	_, err = dyn.Resource(tlsRouteGVR).Namespace("linkkeys").Create(ctx,
+		routeWithRefs("TLSRoute", api, "lk-squizzlezig", "linkkeys", 0, 4987), metav1.CreateOptions{})
+	require.NoError(t, err)
+	_, err = dyn.Resource(tlsRouteGVR).Namespace("linkkeys").Create(ctx,
+		routeWithRefs("TLSRoute", api, "lk-todandlorna", "linkkeys", 0, 4987), metav1.CreateOptions{})
+	require.NoError(t, err)
+	// A TCPRoute deriving its port from the backendRef too.
+	_, err = dyn.Resource(tcpRouteGVR).Namespace("apps").Create(ctx,
+		routeWithRefs("TCPRoute", api, "raw", "apps", 0, 6000), metav1.CreateOptions{})
+	require.NoError(t, err)
+	// A route targeting the gateway with no derivable port -> skipped + reported.
+	_, err = dyn.Resource(tlsRouteGVR).Namespace("apps").Create(ctx,
+		routeWithRefs("TLSRoute", api, "noport", "apps", 0, 0), metav1.CreateOptions{})
+	require.NoError(t, err)
+
+	kube := k8sfake.NewSimpleClientset(envoyService(), envoyNetworkPolicy())
+
+	result, err := Reconcile(ctx, dyn, kube, opts)
+	require.NoError(t, err)
+	require.True(t, result.Changed())
+	assert.Empty(t, result.Conflicts)
+
+	require.Len(t, result.Desired, 2)
+	assert.Equal(t, DesiredListener{Port: 4987, Protocol: protocolTLS}, result.Desired[0])
+	assert.Equal(t, DesiredListener{Port: 6000, Protocol: protocolTCP}, result.Desired[1])
+
+	require.Len(t, result.Skipped, 1)
+	assert.Contains(t, result.Skipped[0], "apps/noport")
+
+	gw, err := dyn.Resource(gatewayGVR).Namespace("projectcontour").Get(ctx, "contour", metav1.GetOptions{})
+	require.NoError(t, err)
+	listeners, _, _ := unstructured.NestedSlice(gw.Object, "spec", "listeners")
+	gwNames := map[string]bool{}
+	for _, raw := range listeners {
+		gwNames[raw.(map[string]interface{})["name"].(string)] = true
+	}
+	assert.True(t, gwNames["gw-tls-4987"], "shared TLS listener derived from backendRefs")
+	assert.True(t, gwNames["gw-tcp-6000"])
+}
+
+func TestReconcile_ReservedBackendPortRefused(t *testing.T) {
+	ctx := context.Background()
+	opts := DefaultOptions()
+	const api = "gateway.networking.k8s.io/v1alpha2"
+
+	dyn := newFakeDynamic()
+	_, err := dyn.Resource(gatewayGVR).Namespace("projectcontour").Create(ctx, gatewayObject(), metav1.CreateOptions{})
+	require.NoError(t, err)
+	// A reserved port (443) derived from the backendRef is still refused.
+	_, err = dyn.Resource(tlsRouteGVR).Namespace("apps").Create(ctx,
+		routeWithRefs("TLSRoute", api, "https", "apps", 0, 443), metav1.CreateOptions{})
+	require.NoError(t, err)
+
+	kube := k8sfake.NewSimpleClientset(envoyService(), envoyNetworkPolicy())
+
+	result, err := Reconcile(ctx, dyn, kube, opts)
+	require.NoError(t, err)
+	assert.Empty(t, result.Desired)
+	require.Len(t, result.Conflicts, 1)
+	assert.Contains(t, result.Conflicts[0], "443")
 }
 
 func TestReconcile_PrunesWhenRoutesRemoved(t *testing.T) {
