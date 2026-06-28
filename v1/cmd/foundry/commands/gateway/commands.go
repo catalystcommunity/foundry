@@ -30,7 +30,8 @@ var ControllerCommand = &cli.Command{
 	Usage: "Open Gateway listeners on the VIP from TLSRoute/TCPRoute resources",
 	Description: "Watches TLSRoute and TCPRoute resources that target the Contour Gateway and " +
 		"opens the matching L4 listener, Envoy service port (on the cluster VIP), and Envoy " +
-		"NetworkPolicy ingress. Apps declare a route with a parentRef port in their own chart; " +
+		"NetworkPolicy ingress. Apps declare a route in their own chart with the listener port on " +
+		"either the parentRef or the backendRefs; " +
 		"this controller handles the data-plane plumbing. Listeners it creates are named with a " +
 		"'gw-' prefix and pruned when their routes are removed; the built-in HTTP/HTTPS and any " +
 		"operator-pinned static listeners are left untouched.",
@@ -137,6 +138,9 @@ func clientFromFile(path string) (*k8s.Client, error) {
 func reportResult(result *gateway.Result) {
 	for _, conflict := range result.Conflicts {
 		fmt.Printf("  ⚠ %s\n", conflict)
+	}
+	for _, skip := range result.Skipped {
+		fmt.Printf("  ⚠ %s\n", skip)
 	}
 	if result.Changed() {
 		fmt.Printf("  ✓ reconciled (gateway=%t service=%t networkpolicy=%t)\n",
