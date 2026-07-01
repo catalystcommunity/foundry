@@ -15,6 +15,13 @@ import (
 )
 
 func TestStatusCommand(t *testing.T) {
+	// Isolate config discovery from the developer's real ~/.foundry directory.
+	// FindConfig falls back to $FOUNDRY_CONFIG_DIR/stack.yaml; pointing it at an
+	// empty temp dir makes the "no config" cases deterministically return the
+	// expected "failed to find config" error instead of picking up a real
+	// stack.yaml and panicking downstream.
+	t.Setenv("FOUNDRY_CONFIG_DIR", t.TempDir())
+
 	// Create a fresh registry for testing
 	testRegistry := component.NewRegistry()
 
