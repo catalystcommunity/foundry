@@ -107,11 +107,9 @@ func DetermineVIPConfig(vip string, conn network.SSHExecutor, allowCGNAT bool) (
 	}
 
 	cfg := &VIPConfig{
-		VIP:       vip,
-		Interface: iface,
-	}
-	if allowCGNAT {
-		cfg.AllowCGNATVIP = &allowCGNAT
+		VIP:           vip,
+		Interface:     iface,
+		AllowCGNATVIP: &allowCGNAT,
 	}
 	return cfg, nil
 }
