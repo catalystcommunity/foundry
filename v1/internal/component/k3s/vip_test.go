@@ -212,9 +212,11 @@ func TestDetermineVIPConfig(t *testing.T) {
 				}
 			},
 			want: &VIPConfig{
-				VIP:           "192.168.1.100",
-				Interface:     "eth0",
-				AllowCGNATVIP: boolPtr(false),
+				VIP:       "192.168.1.100",
+				Interface: "eth0",
+				// allowCGNAT=false is passed, so AllowCGNATVIP stays nil
+				// ("not specified") rather than pointing to false.
+				AllowCGNATVIP: nil,
 			},
 			wantErr: false,
 		},
