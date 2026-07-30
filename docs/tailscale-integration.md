@@ -55,7 +55,12 @@ Your Tailscale ACL must allow:
 
 ### Single Control Plane Setup
 
-For single control plane deployments, use a dedicated VIP address that is routable via Tailscale:
+See `validateK8sVIPUniqueness()` in v1/internal/config/types.go and "Understanding VIP Routing on Tailscale" below for details.
+
+For Tailscale deployments, use a CGNAT IP in the 100.64.0.0/10 range that:
+- Is NOT assigned to any of your cluster nodes
+- Is within your Tailscale network's IP range
+- Will be advertised as a subnet route by the Tailscale operator
 
 ```yaml
 cluster:
