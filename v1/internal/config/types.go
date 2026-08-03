@@ -26,6 +26,22 @@ const (
 
 // Validate performs validation on the Config struct
 func (c *Config) Validate() error {
+	applyHostDefaults(c.Hosts)
+
+	seenHosts := make(map[string]struct{}, len(c.Hosts))
+	for i, configuredHost := range c.Hosts {
+		if configuredHost == nil {
+			return fmt.Errorf("host %d cannot be null", i)
+		}
+		if err := configuredHost.Validate(); err != nil {
+			return fmt.Errorf("host %q validation failed: %w", configuredHost.Hostname, err)
+		}
+		if _, exists := seenHosts[configuredHost.Hostname]; exists {
+			return fmt.Errorf("host %q is defined more than once", configuredHost.Hostname)
+		}
+		seenHosts[configuredHost.Hostname] = struct{}{}
+	}
+
 	if c.Network != nil {
 		if err := c.Network.Validate(); err != nil {
 			return fmt.Errorf("network validation failed: %w", err)
@@ -62,6 +78,12 @@ func (c *Config) Validate() error {
 		}
 	}
 
+	if c.Management != nil {
+		if err := c.Management.Validate(c.Hosts); err != nil {
+			return fmt.Errorf("management validation failed: %w", err)
+		}
+	}
+
 	// Cross-validation: K8s VIP must be unique (not in any host list)
 	if c.Network != nil && c.Cluster.VIP != "" {
 		if err := c.validateK8sVIPUniqueness(); err != nil {
@@ -70,6 +92,53 @@ func (c *Config) Validate() error {
 	}
 
 	return nil
+}
+
+// applyHostDefaults preserves the defaults used by configurations that were
+// created before hosts were validated as part of the top-level configuration.
+func applyHostDefaults(hosts []*host.Host) {
+	for _, configuredHost := range hosts {
+		if configuredHost == nil {
+			continue
+		}
+		if configuredHost.Port == 0 {
+			configuredHost.Port = 22
+		}
+		if configuredHost.User == "" {
+			configuredHost.User = "root"
+		}
+	}
+}
+
+// Validate checks the optional external management service configuration.
+func (m *ManagementConfig) Validate(hosts []*host.Host) error {
+	if strings.TrimSpace(m.Host) == "" {
+		return fmt.Errorf("host is required")
+	}
+	if m.Port < 1 || m.Port > 65535 {
+		return fmt.Errorf("port must be between 1 and 65535, got %d", m.Port)
+	}
+	if strings.TrimSpace(m.Image) == "" {
+		return fmt.Errorf("image is required")
+	}
+	if strings.TrimSpace(m.Version) == "" {
+		return fmt.Errorf("version is required")
+	}
+	if !strings.HasPrefix(m.DataPath, "/") {
+		return fmt.Errorf("data_path must be an absolute path")
+	}
+
+	for _, configuredHost := range hosts {
+		if configuredHost.Hostname != m.Host {
+			continue
+		}
+		if !configuredHost.HasRole(host.RoleManagement) {
+			return fmt.Errorf("host %q must have the management role", m.Host)
+		}
+		return nil
+	}
+
+	return fmt.Errorf("host %q does not exist in hosts", m.Host)
 }
 
 // validateK8sVIPUniqueness ensures the K8s VIP is not used by any infrastructure host

@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Foundry</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <div id="login" class="center-panel" hidden>
+    <div class="brand-mark">F</div>
+    <h1>Foundry manager</h1>
+    <p>This manager requires an access token.</p>
+    <form id="login-form">
+      <label>Access token<input id="access-token" type="password" autocomplete="current-password" required></label>
+      <button type="submit">Sign in</button>
+    </form>
+    <p id="login-error" class="error" role="alert"></p>
+  </div>
+
+  <div id="app" hidden>
+    <header>
+      <div class="brand"><span class="brand-mark small">F</span><span>Foundry</span></div>
+      <nav aria-label="Primary">
+        <button class="nav-button active" data-view="dashboard">State</button>
+        <button class="nav-button" data-view="setup">Setup</button>
+      </nav>
+      <div id="connection-state" class="connection">Manager connected</div>
+    </header>
+
+    <main>
+      <section id="dashboard-view" class="view">
+        <div class="page-heading">
+          <div><p class="eyebrow">Current state</p><h1 id="dashboard-title">Stack topology</h1></div>
+          <button id="refresh-state" class="secondary">Refresh</button>
+        </div>
+        <div class="panel graph-panel">
+          <div id="state-graph" class="graph" aria-label="Foundry network topology"></div>
+          <div id="network-guidance" class="guidance"></div>
+        </div>
+        <div id="health-list" class="health-grid"></div>
+      </section>
+
+      <section id="setup-view" class="view" hidden>
+        <div class="page-heading">
+          <div><p class="eyebrow">Setup wizard</p><h1>Design the stack</h1></div>
+          <div class="step-state"><span class="active">1 Configure</span><span>2 Review</span><span>3 Apply</span></div>
+        </div>
+
+        <form id="wizard-form">
+          <div class="two-column">
+            <section class="panel">
+              <h2>Cluster and network</h2>
+              <div class="form-grid">
+                <label>Cluster name<input id="cluster-name" required></label>
+                <label>Primary domain<input id="primary-domain" required></label>
+                <label>Router or gateway<input id="gateway" inputmode="decimal" required></label>
+                <label>Netmask<input id="netmask" inputmode="decimal" required></label>
+                <label>Kubernetes VIP<input id="vip" inputmode="decimal" required></label>
+                <label class="check-row"><input id="allow-cgnat" type="checkbox"> Allow a CGNAT or Tailscale VIP</label>
+              </div>
+            </section>
+
+            <section class="panel">
+              <h2>Optional external manager</h2>
+              <p class="muted">The manager runs outside Kubernetes and can continue diagnostics when the cluster is unavailable.</p>
+              <div class="form-grid">
+                <label>Management host<select id="management-host"><option value="">Do not install a manager</option></select></label>
+                <label>Manager port<input id="management-port" type="number" min="1" max="65535" value="9080"></label>
+                <label class="wide">Container image<input id="management-image" value="ghcr.io/catalystcommunity/foundry"></label>
+              </div>
+            </section>
+          </div>
+
+          <section class="panel hosts-panel">
+            <div class="section-heading"><div><h2>Hosts and roles</h2><p class="muted">Add each machine, then select the work that it performs.</p></div><button id="add-host" type="button" class="secondary">Add host</button></div>
+            <div id="hosts"></div>
+          </section>
+
+          <section class="panel preview-panel">
+            <div class="section-heading"><div><h2>Network preview</h2><p class="muted">The VIP can move between control-plane hosts.</p></div><button id="review-plan" type="button">Review plan</button></div>
+            <div id="preview-graph" class="graph compact"></div>
+            <div id="plan-summary" class="plan-summary" hidden></div>
+          </section>
+
+          <div class="apply-bar">
+            <span id="apply-message">Review the plan before you apply it.</span>
+            <button id="apply" type="button" disabled>Apply configuration</button>
+          </div>
+        </form>
+      </section>
+    </main>
+  </div>
+
+  <template id="host-template">
+    <article class="host-editor">
+      <div class="host-fields">
+        <label>Hostname<input data-field="hostname" required></label>
+        <label>Address<input data-field="address" required></label>
+        <label>SSH user<input data-field="user" value="root" required></label>
+        <label>Port<input data-field="port" type="number" min="1" max="65535" value="22" required></label>
+        <button type="button" class="remove-host danger">Remove</button>
+      </div>
+      <fieldset class="roles"><legend>Roles</legend></fieldset>
+    </article>
+  </template>
+  <script src="/app.js" defer></script>
+</body>
+</html>

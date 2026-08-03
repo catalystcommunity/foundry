@@ -56,6 +56,29 @@ func TestConfig_Validate(t *testing.T) {
 	}
 }
 
+func TestManagementConfigValidation(t *testing.T) {
+	base := Config{
+		Hosts:      []*host.Host{{Hostname: "manager", Address: "192.0.2.11", Roles: []string{host.RoleManagement}}},
+		Components: ComponentMap{"k3s": {}},
+		Management: &ManagementConfig{Host: "manager", Port: 9080, Image: "foundry", Version: "latest", DataPath: "/var/lib/foundry"},
+	}
+	require.NoError(t, base.Validate())
+
+	missingRole := base
+	missingRole.Hosts = []*host.Host{{Hostname: "manager", Address: "192.0.2.11"}}
+	err := missingRole.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "must have the management role")
+
+	missingHost := base
+	copyManagement := *base.Management
+	copyManagement.Host = "other"
+	missingHost.Management = &copyManagement
+	err = missingHost.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "does not exist")
+}
+
 // NOTE: TestClusterConfig_Validate removed - ClusterConfig.Validate() no longer exists
 // Cluster validation moved to role-based host validation in host package
 

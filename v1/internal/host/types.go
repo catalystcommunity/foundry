@@ -12,6 +12,7 @@ const (
 	RoleOpenBAO             = "openbao"
 	RoleDNS                 = "dns"
 	RoleZot                 = "zot"
+	RoleManagement          = "management"
 	RoleClusterControlPlane = "cluster-control-plane"
 	RoleClusterWorker       = "cluster-worker"
 )
@@ -29,6 +30,7 @@ func ValidRoles() []string {
 		RoleOpenBAO,
 		RoleDNS,
 		RoleZot,
+		RoleManagement,
 		RoleClusterControlPlane,
 		RoleClusterWorker,
 	}
@@ -109,6 +111,7 @@ func (h *Host) Validate() error {
 		RoleOpenBAO:             true,
 		RoleDNS:                 true,
 		RoleZot:                 true,
+		RoleManagement:          true,
 		RoleClusterControlPlane: true,
 		RoleClusterWorker:       true,
 	}

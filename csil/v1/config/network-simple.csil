@@ -94,6 +94,16 @@ StorageConfig = {
     ? truenas: TrueNASConfig @go_name("TrueNAS")
 }
 
+; Optional external Foundry management service. The host references an entry in
+; Config.hosts and runs the manager as a systemd-managed container outside K3s.
+ManagementConfig = {
+    host: text,
+    port: int .default 9080,
+    image: text .default "ghcr.io/catalystcommunity/foundry",
+    version: text .default "latest",
+    data_path: text .default "/var/lib/foundry"
+}
+
 ; TrueNAS-specific settings
 TrueNASConfig = {
     api_url: text @go_name("APIURL"),
@@ -109,6 +119,7 @@ Config = {
     components: ComponentMap,
     ? observability: ObsConfig,
     ? storage: StorageConfig,
+    ? management: ManagementConfig,
     hosts: [* any] .size(1..) @go_type("[]*host.Host") @go_name("Hosts"),
     setup_state: any @go_type("*setup.SetupState") @go_name("SetupState")
 }

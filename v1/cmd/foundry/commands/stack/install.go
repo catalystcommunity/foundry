@@ -2,6 +2,7 @@ package stack
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -35,6 +36,7 @@ import (
 	"github.com/catalystcommunity/foundry/v1/internal/helm"
 	"github.com/catalystcommunity/foundry/v1/internal/host"
 	"github.com/catalystcommunity/foundry/v1/internal/k8s"
+	"github.com/catalystcommunity/foundry/v1/internal/manager"
 	"github.com/catalystcommunity/foundry/v1/internal/setup"
 	"github.com/catalystcommunity/foundry/v1/internal/ssh"
 	"github.com/catalystcommunity/foundry/v1/internal/sudo"
@@ -179,15 +181,52 @@ func NewStackInstaller(registry *component.Registry, installer ComponentInstalle
 }
 
 func runStackInstall(ctx context.Context, cmd *cli.Command) error {
+	return RunInstall(ctx, InstallOptions{
+		ConfigPath:     cmd.String("config"),
+		ClusterName:    cmd.String("cluster-name"),
+		Domain:         cmd.String("domain"),
+		Hosts:          cmd.StringSlice("host"),
+		VIP:            cmd.String("vip"),
+		Forwarders:     cmd.StringSlice("forwarder"),
+		SSHUser:        cmd.String("user"),
+		DryRun:         cmd.Bool("dry-run"),
+		Yes:            cmd.Bool("yes"),
+		NonInteractive: cmd.Bool("non-interactive"),
+		Upgrade:        cmd.Bool("upgrade"),
+	})
+}
+
+// InstallOptions contains the interface-neutral stack installation options.
+type InstallOptions struct {
+	ConfigPath     string
+	ClusterName    string
+	Domain         string
+	Hosts          []string
+	VIP            string
+	Forwarders     []string
+	SSHUser        string
+	DryRun         bool
+	Yes            bool
+	NonInteractive bool
+	Upgrade        bool
+}
+
+// RunInstall runs the stack installation without depending on a CLI command.
+// The CLI and the web manager both use this entry point.
+func RunInstall(ctx context.Context, options InstallOptions) error {
 	// Determine config path (--config flag inherited from root command)
-	configPath, err := config.FindConfig(cmd.String("config"))
+	configPath, err := config.FindConfig(options.ConfigPath)
 	if err != nil {
 		// For install, missing config is OK - we'll create one
-		configPath = config.DefaultConfigPath()
+		if options.ConfigPath != "" && filepath.IsAbs(options.ConfigPath) {
+			configPath = options.ConfigPath
+		} else {
+			configPath = config.DefaultConfigPath()
+		}
 	}
 
 	// Step 1: Load or create configuration
-	cfg, isNewConfig, err := loadOrCreateConfig(ctx, cmd, configPath)
+	cfg, isNewConfig, err := loadOrCreateConfig(ctx, options, configPath)
 	if err != nil {
 		return err
 	}
@@ -205,7 +244,7 @@ func runStackInstall(ctx context.Context, cmd *cli.Command) error {
 
 	// Check if all components are actually installed (don't rely solely on StackComplete flag)
 	allComponentsInstalled := checkAllComponentsInstalled(ctx, cfg.SetupState)
-	upgradeMode := cmd.Bool("upgrade")
+	upgradeMode := options.Upgrade
 	if allComponentsInstalled && !upgradeMode {
 		fmt.Println("\n✓ Stack is already complete!")
 		fmt.Println("\nTo upgrade components with new configuration, use: foundry stack install --upgrade")
@@ -217,7 +256,7 @@ func runStackInstall(ctx context.Context, cmd *cli.Command) error {
 	fmt.Printf("\nCurrent checkpoint: %s\n", nextStep)
 
 	// Dry-run mode
-	if cmd.Bool("dry-run") {
+	if options.DryRun {
 		return printStackPlan(cfg, nextStep)
 	}
 
@@ -226,18 +265,58 @@ func runStackInstall(ctx context.Context, cmd *cli.Command) error {
 	fmt.Println("  FOUNDRY STACK INSTALLATION")
 	fmt.Println(strings.Repeat("=", 60))
 
+	// Install the optional external manager before any cluster-dependent work.
+	// The manager runs the remaining installation through its own copy of this
+	// binary. FOUNDRY_MANAGER prevents a recursive handoff inside the container.
+	if cfg.Management != nil && os.Getenv("FOUNDRY_MANAGER") != "1" {
+		if err := bootstrapExternalManager(cfg, options.NonInteractive); err != nil {
+			return fmt.Errorf("management bootstrap failed: %w", err)
+		}
+		markHostsSSHConfigured(cfg)
+		if err := config.Save(cfg, configPath); err != nil {
+			return fmt.Errorf("save host access state: %w", err)
+		}
+		fmt.Println("\nInstalling the external Foundry manager before the stack...")
+		managerConnection, token, err := installExternalManager(cfg, configPath)
+		if err != nil {
+			return fmt.Errorf("management service installation failed: %w", err)
+		}
+		defer managerConnection.Close()
+		fmt.Println("✓ External manager installed; handing off stack installation")
+		if err := manager.Apply(ctx, managerConnection.Client(), int(cfg.Management.Port), token); err != nil {
+			return fmt.Errorf("external manager apply failed: %w", err)
+		}
+		managerYAML, err := manager.ReadStack(&sshExecutorAdapter{conn: managerConnection}, cfg.Management.DataPath)
+		if err != nil {
+			return fmt.Errorf("synchronize external manager state: %w", err)
+		}
+		managerConfig, err := config.LoadFromReader(bytes.NewReader(managerYAML))
+		if err != nil {
+			return fmt.Errorf("validate external manager state: %w", err)
+		}
+		if err := config.Save(managerConfig, configPath); err != nil {
+			return fmt.Errorf("save external manager state: %w", err)
+		}
+		fmt.Println("✓ External manager completed the stack installation")
+		return nil
+	}
+
 	// Phase 1: Host Configuration
-	if err := ensureHostsConfigured(ctx, cfg, cmd.Bool("non-interactive")); err != nil {
+	if err := ensureHostsConfigured(ctx, cfg, options.NonInteractive); err != nil {
 		return fmt.Errorf("host configuration failed: %w", err)
+	}
+	markHostsSSHConfigured(cfg)
+	if err := config.Save(cfg, configPath); err != nil {
+		return fmt.Errorf("save host configuration state: %w", err)
 	}
 
 	// Phase 2: Network Planning and Validation
-	if err := ensureNetworkPlanned(ctx, cfg, cmd.Bool("non-interactive")); err != nil {
+	if err := ensureNetworkPlanned(ctx, cfg, options.NonInteractive); err != nil {
 		return fmt.Errorf("network planning failed: %w", err)
 	}
 
 	// Phase 3: Component Installation
-	if err := installComponents(ctx, cfg, configPath, cmd.Bool("yes"), upgradeMode); err != nil {
+	if err := installComponents(ctx, cfg, configPath, options.Yes, upgradeMode); err != nil {
 		return fmt.Errorf("component installation failed: %w", err)
 	}
 
@@ -268,8 +347,64 @@ func runStackInstall(ctx context.Context, cmd *cli.Command) error {
 	return nil
 }
 
+func markHostsSSHConfigured(cfg *config.Config) {
+	for _, configuredHost := range cfg.Hosts {
+		if configuredHost.State == "" || configuredHost.State == host.StateAdded {
+			configuredHost.State = host.StateSSHConfigured
+		}
+	}
+}
+
+func installExternalManager(cfg *config.Config, configPath string) (*ssh.Connection, string, error) {
+	var managementHost *config.Host
+	for _, configuredHost := range cfg.Hosts {
+		if configuredHost != nil && configuredHost.Hostname == cfg.Management.Host {
+			managementHost = configuredHost
+			break
+		}
+	}
+	if managementHost == nil {
+		return nil, "", fmt.Errorf("management host %q not found", cfg.Management.Host)
+	}
+	keysDir, err := config.GetKeysDir()
+	if err != nil {
+		return nil, "", err
+	}
+	connection, err := connectToHostForSetup(managementHost, keysDir)
+	if err != nil {
+		return nil, "", err
+	}
+	stackYAML, err := os.ReadFile(configPath)
+	if err != nil {
+		connection.Close()
+		return nil, "", fmt.Errorf("read stack configuration: %w", err)
+	}
+	storage, err := ssh.NewFilesystemKeyStorage(keysDir)
+	if err != nil {
+		connection.Close()
+		return nil, "", err
+	}
+	keys := make(map[string]*ssh.KeyPair, len(cfg.Hosts))
+	for _, configuredHost := range cfg.Hosts {
+		key, loadErr := storage.Load(configuredHost.Hostname)
+		if loadErr != nil {
+			connection.Close()
+			return nil, "", fmt.Errorf("load SSH key for %s: %w", configuredHost.Hostname, loadErr)
+		}
+		keys[configuredHost.Hostname] = key
+	}
+	token, err := manager.Install(&sshExecutorAdapter{conn: connection}, manager.InstallInput{
+		Config: cfg.Management, StackYAML: stackYAML, SSHKeys: keys,
+	})
+	if err != nil {
+		connection.Close()
+		return nil, "", err
+	}
+	return connection, token, nil
+}
+
 // loadOrCreateConfig loads existing config or creates a new one from flags/prompts
-func loadOrCreateConfig(ctx context.Context, cmd *cli.Command, configPath string) (*config.Config, bool, error) {
+func loadOrCreateConfig(ctx context.Context, options InstallOptions, configPath string) (*config.Config, bool, error) {
 	// Try to load existing config
 	cfg, err := config.Load(configPath)
 	if err == nil {
@@ -290,15 +425,15 @@ func loadOrCreateConfig(ctx context.Context, cmd *cli.Command, configPath string
 	fmt.Println("No configuration found. Creating new configuration...")
 
 	// Check if we have flags for non-interactive creation
-	clusterName := cmd.String("cluster-name")
-	domain := cmd.String("domain")
-	hosts := cmd.StringSlice("host")
-	vip := cmd.String("vip")
-	nonInteractive := cmd.Bool("non-interactive")
+	clusterName := options.ClusterName
+	domain := options.Domain
+	hosts := options.Hosts
+	vip := options.VIP
+	nonInteractive := options.NonInteractive
 
 	// If we have all required flags, create config non-interactively
 	if clusterName != "" && domain != "" && len(hosts) > 0 && vip != "" {
-		cfg, err = createConfigFromFlags(clusterName, domain, hosts, vip, cmd.StringSlice("forwarder"), cmd.String("user"))
+		cfg, err = createConfigFromFlags(clusterName, domain, hosts, vip, options.Forwarders, options.SSHUser)
 		if err != nil {
 			return nil, false, fmt.Errorf("failed to create config from flags: %w", err)
 		}
@@ -530,6 +665,62 @@ func ensureHostsConfigured(ctx context.Context, cfg *config.Config, nonInteracti
 	}
 
 	fmt.Println("\n✓ All hosts configured")
+	return nil
+}
+
+// bootstrapExternalManager establishes unattended access to every host. It
+// then prepares only the management host to run the manager container.
+func bootstrapExternalManager(cfg *config.Config, nonInteractive bool) error {
+	if len(cfg.Hosts) == 0 {
+		return fmt.Errorf("no hosts defined in configuration")
+	}
+	keysDir, err := config.GetKeysDir()
+	if err != nil {
+		return fmt.Errorf("get SSH keys directory: %w", err)
+	}
+	keyStorage, err := ssh.NewFilesystemKeyStorage(keysDir)
+	if err != nil {
+		return fmt.Errorf("open SSH key storage: %w", err)
+	}
+
+	fmt.Println("\n[1/4] Manager trust bootstrap")
+	fmt.Println(strings.Repeat("-", 60))
+	var cachedRootPassword string
+	var managementHost *config.Host
+	for _, configuredHost := range cfg.Hosts {
+		if configuredHost.Hostname == cfg.Management.Host {
+			managementHost = configuredHost
+		}
+		if _, err := keyStorage.Load(configuredHost.Hostname); err != nil {
+			fmt.Printf("  Setting up SSH key access for %s...\n", configuredHost.Hostname)
+			if err := setupHostSSHKey(configuredHost, nonInteractive); err != nil {
+				return fmt.Errorf("set up SSH key for %s: %w", configuredHost.Hostname, err)
+			}
+		}
+		connection, err := connectToHostForSetup(configuredHost, keysDir)
+		if err != nil {
+			return fmt.Errorf("connect to %s: %w", configuredHost.Hostname, err)
+		}
+		err = ensurePasswordlessSudo(connection, configuredHost, nonInteractive, &cachedRootPassword)
+		connection.Close()
+		if err != nil {
+			return fmt.Errorf("prepare unattended access to %s: %w", configuredHost.Hostname, err)
+		}
+		fmt.Printf("  ✓ Unattended access ready for %s\n", configuredHost.Hostname)
+	}
+	if managementHost == nil {
+		return fmt.Errorf("management host %q not found", cfg.Management.Host)
+	}
+
+	fmt.Printf("\nPreparing manager host %s...\n", managementHost.Hostname)
+	connection, err := connectToHostForSetup(managementHost, keysDir)
+	if err != nil {
+		return fmt.Errorf("connect to management host: %w", err)
+	}
+	defer connection.Close()
+	if err := configureHost(connection, managementHost, true, &cachedRootPassword); err != nil {
+		return fmt.Errorf("prepare management host: %w", err)
+	}
 	return nil
 }
 
@@ -2649,13 +2840,7 @@ func connectToHostForSetup(h *config.Host, keysDir string) (*ssh.Connection, err
 	return ssh.Connect(connOpts)
 }
 
-// configureHost runs host configuration steps
-// cachedRootPassword is used to avoid prompting for root password on every host
-// if hosts share the same root password
-func configureHost(conn *ssh.Connection, h *config.Host, nonInteractive bool, cachedRootPassword *string) error {
-	fmt.Println("  Configuring host...")
-
-	// Step 1: Check and setup sudo
+func ensurePasswordlessSudo(conn *ssh.Connection, h *config.Host, nonInteractive bool, cachedRootPassword *string) error {
 	fmt.Println("    Checking sudo access...")
 	sudoStatus, err := sudo.GetSudoStatus(adaptToSudoExec(conn))
 	if err != nil {
@@ -2665,51 +2850,51 @@ func configureHost(conn *ssh.Connection, h *config.Host, nonInteractive bool, ca
 	switch sudoStatus {
 	case sudo.SudoPasswordless:
 		fmt.Println("    ✓ Passwordless sudo already configured")
-
 	case sudo.SudoRequiresPassword:
 		if nonInteractive {
 			return fmt.Errorf("user %s has sudo but requires a password; non-interactive mode cannot configure passwordless sudo", h.User)
 		}
-
 		fmt.Printf("    User %s has sudo access but requires a password\n", h.User)
 		fmt.Println("    Foundry requires passwordless sudo for automated operations")
-		fmt.Println()
-		fmt.Println("    To configure passwordless sudo, we need to run commands as root.")
-		_, err := getRootPasswordWithCache(adaptToSudoExec(conn), h.User, cachedRootPassword, "    Enter root password: ")
-		if err != nil {
+		fmt.Println("    To configure passwordless sudo, Foundry needs root access.")
+		if _, err := getRootPasswordWithCache(adaptToSudoExec(conn), h.User, cachedRootPassword, "    Enter root password: "); err != nil {
 			return fmt.Errorf("failed to setup sudo: %w", err)
 		}
 		fmt.Println("    ✓ Passwordless sudo configured")
-
 	case sudo.SudoNoAccess:
 		if nonInteractive {
 			return fmt.Errorf("user %s is not in sudoers and non-interactive mode is enabled", h.User)
 		}
-
 		fmt.Printf("    User %s is not in the sudoers file\n", h.User)
 		fmt.Println("    Foundry requires passwordless sudo for automated operations")
-		fmt.Println()
-		fmt.Println("    To add user to sudoers, we need to run commands as root.")
-		_, err := getRootPasswordWithCache(adaptToSudoExec(conn), h.User, cachedRootPassword, "    Enter root password: ")
-		if err != nil {
+		fmt.Println("    To add the user to sudoers, Foundry needs root access.")
+		if _, err := getRootPasswordWithCache(adaptToSudoExec(conn), h.User, cachedRootPassword, "    Enter root password: "); err != nil {
 			return fmt.Errorf("failed to setup sudo: %w", err)
 		}
 		fmt.Println("    ✓ Passwordless sudo configured")
-
 	case sudo.SudoNotInstalled:
 		if nonInteractive {
 			return fmt.Errorf("sudo is not installed on host and non-interactive mode is enabled")
 		}
-
 		fmt.Println("    sudo is not installed on this host")
-		fmt.Println("    Foundry requires passwordless sudo for automated operations")
-		fmt.Println()
-		fmt.Println("    To install sudo and configure access, we need to run commands as root.")
-		_, err := getRootPasswordWithCache(adaptToSudoExec(conn), h.User, cachedRootPassword, "    Enter root password: ")
-		if err != nil {
+		fmt.Println("    To install sudo and configure access, Foundry needs root access.")
+		if _, err := getRootPasswordWithCache(adaptToSudoExec(conn), h.User, cachedRootPassword, "    Enter root password: "); err != nil {
 			return fmt.Errorf("failed to setup sudo: %w", err)
 		}
 		fmt.Println("    ✓ sudo installed and passwordless access configured")
+	}
+	return nil
+}
+
+// configureHost runs host configuration steps
+// cachedRootPassword is used to avoid prompting for root password on every host
+// if hosts share the same root password
+func configureHost(conn *ssh.Connection, h *config.Host, nonInteractive bool, cachedRootPassword *string) error {
+	fmt.Println("  Configuring host...")
+
+	// Step 1: Check and setup sudo
+	if err := ensurePasswordlessSudo(conn, h, nonInteractive, cachedRootPassword); err != nil {
+		return err
 	}
 
 	// Step 2: Update package lists and fix any broken packages

@@ -47,10 +47,27 @@ func LoadFromReader(r io.Reader) (*Config, error) {
 
 // migrateConfig applies backwards compatibility migrations to the config
 func migrateConfig(cfg *Config) {
+	applyHostDefaults(cfg.Hosts)
+
 	// Migration: cluster.domain -> cluster.primary_domain
 	// If domain is set (deprecated) and primary_domain is empty, copy domain to primary_domain
 	if cfg.Cluster.Domain != nil && *cfg.Cluster.Domain != "" && cfg.Cluster.PrimaryDomain == "" {
 		cfg.Cluster.PrimaryDomain = *cfg.Cluster.Domain
+	}
+
+	if cfg.Management != nil {
+		if cfg.Management.Port == 0 {
+			cfg.Management.Port = 9080
+		}
+		if cfg.Management.Image == "" {
+			cfg.Management.Image = "ghcr.io/catalystcommunity/foundry"
+		}
+		if cfg.Management.Version == "" {
+			cfg.Management.Version = "latest"
+		}
+		if cfg.Management.DataPath == "" {
+			cfg.Management.DataPath = "/var/lib/foundry"
+		}
 	}
 }
 
