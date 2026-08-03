@@ -25,7 +25,7 @@
         <button class="nav-button active" data-view="dashboard">State</button>
         <button class="nav-button" data-view="setup">Setup</button>
       </nav>
-      <div id="connection-state" class="connection">Manager connected</div>
+      <div id="connection-state" class="connection">Connecting</div>
     </header>
 
     <main>
@@ -39,6 +39,19 @@
           <div id="network-guidance" class="guidance"></div>
         </div>
         <div id="health-list" class="health-grid"></div>
+
+        <div class="dashboard-columns">
+          <section class="panel">
+            <div class="section-heading"><div><h2>Stack services</h2><p class="muted">Open configured and cluster-discovered services.</p></div><button id="refresh-overview" class="secondary">Refresh</button></div>
+            <div id="service-links" class="service-grid"></div>
+          </section>
+          <section class="panel">
+            <h2>Gateway API exposure</h2>
+            <p class="muted">Listeners and routes currently published through Kubernetes Gateway API.</p>
+            <div id="gateway-list"></div>
+          </section>
+        </div>
+        <div id="discovery-warnings" class="warning-list" role="status"></div>
       </section>
 
       <section id="setup-view" class="view" hidden>
