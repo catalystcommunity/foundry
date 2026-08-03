@@ -84,6 +84,15 @@ type StorageConfig struct {
 	TrueNAS *TrueNASConfig `json:"truenas,omitempty" yaml:"truenas,omitempty"`
 }
 
+// ManagementConfig represents a structured data type
+type ManagementConfig struct {
+	Host     string `json:"host" yaml:"host"`
+	Port     int64  `json:"port" yaml:"port"`
+	Image    string `json:"image" yaml:"image"`
+	Version  string `json:"version" yaml:"version"`
+	DataPath string `json:"data_path" yaml:"data_path"`
+}
+
 // TrueNASConfig represents a structured data type
 type TrueNASConfig struct {
 	APIURL string `json:"api_url" yaml:"api_url"`
@@ -98,6 +107,7 @@ type Config struct {
 	Components    ComponentMap      `json:"components" yaml:"components"`
 	Observability *ObsConfig        `json:"observability,omitempty" yaml:"observability,omitempty"`
 	Storage       *StorageConfig    `json:"storage,omitempty" yaml:"storage,omitempty"`
+	Management    *ManagementConfig `json:"management,omitempty" yaml:"management,omitempty"`
 	Hosts         []*host.Host      `json:"hosts" yaml:"hosts"`
 	SetupState    *setup.SetupState `json:"setup_state" yaml:"setup_state"`
 }

@@ -114,6 +114,53 @@ cluster:
 	}
 }
 
+func TestLoadAppliesLegacyHostAndManagementDefaults(t *testing.T) {
+	cfg, err := LoadFromReader(strings.NewReader(`
+cluster:
+  name: test
+  primary_domain: example.test
+hosts:
+  - hostname: manager
+    address: 192.0.2.11
+    roles: [management]
+management:
+  host: manager
+components:
+  k3s: {}
+`))
+	require.NoError(t, err)
+	require.Len(t, cfg.Hosts, 1)
+	assert.Equal(t, 22, cfg.Hosts[0].Port)
+	assert.Equal(t, "root", cfg.Hosts[0].User)
+	require.NotNil(t, cfg.Management)
+	assert.EqualValues(t, 9080, cfg.Management.Port)
+	assert.Equal(t, "ghcr.io/catalystcommunity/foundry", cfg.Management.Image)
+	assert.Equal(t, "latest", cfg.Management.Version)
+	assert.Equal(t, "/var/lib/foundry", cfg.Management.DataPath)
+}
+
+func TestLegacyConfigRoundTripFromProtectedCopies(t *testing.T) {
+	paths := strings.Fields(os.Getenv("FOUNDRY_COMPAT_CONFIGS"))
+	if len(paths) == 0 {
+		t.Skip("FOUNDRY_COMPAT_CONFIGS is not set")
+	}
+	for _, source := range paths {
+		t.Run(filepath.Base(source), func(t *testing.T) {
+			cfg, err := Load(source)
+			require.NoError(t, err)
+			assert.Nil(t, cfg.Management, "legacy configuration must not enable the optional manager")
+			output := filepath.Join(t.TempDir(), filepath.Base(source))
+			require.NoError(t, Save(cfg, output))
+			reloaded, err := Load(output)
+			require.NoError(t, err)
+			assert.Equal(t, cfg.Cluster.Name, reloaded.Cluster.Name)
+			assert.Len(t, reloaded.Hosts, len(cfg.Hosts))
+			assert.Len(t, reloaded.Components, len(cfg.Components))
+			assert.Nil(t, reloaded.Management)
+		})
+	}
+}
+
 func TestLoad_ValidConfigFile(t *testing.T) {
 	// Test that we can load and validate the actual valid-config.yaml fixture
 	fixturesDir, err := filepath.Abs("../../test/fixtures")

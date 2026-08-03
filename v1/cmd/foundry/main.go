@@ -13,6 +13,7 @@ import (
 	dnscmd "github.com/catalystcommunity/foundry/v1/cmd/foundry/commands/dns"
 	gatewaycmd "github.com/catalystcommunity/foundry/v1/cmd/foundry/commands/gateway"
 	grafanacmd "github.com/catalystcommunity/foundry/v1/cmd/foundry/commands/grafana"
+	guicmd "github.com/catalystcommunity/foundry/v1/cmd/foundry/commands/gui"
 	hostcmd "github.com/catalystcommunity/foundry/v1/cmd/foundry/commands/host"
 	logscmd "github.com/catalystcommunity/foundry/v1/cmd/foundry/commands/logs"
 	metricscmd "github.com/catalystcommunity/foundry/v1/cmd/foundry/commands/metrics"
@@ -76,6 +77,7 @@ func main() {
 			dnscmd.Command,
 			gatewaycmd.Command,
 			grafanacmd.Command,
+			guicmd.Command,
 			hostcmd.Command,
 			logscmd.Command,
 			metricscmd.Command,
@@ -84,6 +86,7 @@ func main() {
 			setupcmd.Commands(),
 			stackcmd.Command,
 			storagecmd.Command,
+			guicmd.ServeCommand,
 		},
 	}
 
