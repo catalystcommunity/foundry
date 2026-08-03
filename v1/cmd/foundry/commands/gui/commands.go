@@ -15,6 +15,7 @@ import (
 
 	stackcmd "github.com/catalystcommunity/foundry/v1/cmd/foundry/commands/stack"
 	"github.com/catalystcommunity/foundry/v1/internal/config"
+	"github.com/catalystcommunity/foundry/v1/internal/discovery"
 	"github.com/catalystcommunity/foundry/v1/internal/manager"
 	foundryssh "github.com/catalystcommunity/foundry/v1/internal/ssh"
 	"github.com/catalystcommunity/foundry/v1/internal/webui"
@@ -29,6 +30,7 @@ var Command = &cli.Command{
 		&cli.StringFlag{Name: "listen", Usage: "loopback listen address", Value: "127.0.0.1:0"},
 		&cli.BoolFlag{Name: "no-open", Usage: "print the URL without opening a browser"},
 		&cli.BoolFlag{Name: "manager", Usage: "forward the installed external manager over SSH"},
+		&cli.BoolFlag{Name: "local", Usage: "run the local manager even when an external manager is configured"},
 	},
 	Action: runGUI,
 }
@@ -47,15 +49,25 @@ var ServeCommand = &cli.Command{
 
 func runGUI(ctx context.Context, cmd *cli.Command) error {
 	configPath := resolveConfigPath(cmd.String("config"))
-	if cmd.Bool("manager") {
-		return runManagerProxy(ctx, cmd, configPath)
+	localMode := "local"
+	if cmd.Bool("manager") && cmd.Bool("local") {
+		return fmt.Errorf("--manager and --local cannot be used together")
+	}
+	useManager := shouldUseManager(configPath, cmd.Bool("manager"), cmd.Bool("local"))
+	if useManager {
+		if err := runManagerProxy(ctx, cmd, configPath); err == nil || cmd.Bool("manager") {
+			return err
+		} else {
+			fmt.Printf("External manager is unavailable; starting the local manager: %v\n", err)
+			localMode = "local-fallback"
+		}
 	}
 	auth := webui.NewAuthStore()
 	token, err := auth.NewToken("local-cli", 15*time.Minute)
 	if err != nil {
 		return err
 	}
-	server, err := newServer(configPath, auth)
+	server, err := newServer(configPath, auth, localMode)
 	if err != nil {
 		return err
 	}
@@ -76,6 +88,17 @@ func runGUI(ctx context.Context, cmd *cli.Command) error {
 		}
 	}
 	return serve(ctx, listener, server.Handler())
+}
+
+func shouldUseManager(configPath string, forceManager, forceLocal bool) bool {
+	if forceManager {
+		return true
+	}
+	if forceLocal {
+		return false
+	}
+	cfg, err := config.Load(configPath)
+	return err == nil && cfg.Management != nil
 }
 
 func runManagerProxy(ctx context.Context, cmd *cli.Command, configPath string) error {
@@ -114,7 +137,7 @@ func runManagerProxy(ctx context.Context, cmd *cli.Command, configPath string) e
 	}
 	connection, err := foundryssh.Connect(&foundryssh.ConnectionOptions{
 		Host: configuredManager.Address, Port: configuredManager.Port, User: configuredManager.User,
-		AuthMethod: authMethod, Timeout: 30,
+		AuthMethod: authMethod, Timeout: 8,
 	})
 	if err != nil {
 		return fmt.Errorf("connect to external manager: %w", err)
@@ -123,6 +146,11 @@ func runManagerProxy(ctx context.Context, cmd *cli.Command, configPath string) e
 	token, err := manager.ReadToken(&connectionExecutor{connection: connection}, cfg.Management.DataPath)
 	if err != nil {
 		return err
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	if err := manager.Probe(probeCtx, connection.Client(), int(cfg.Management.Port), token); err != nil {
+		return fmt.Errorf("external manager is not running: %w", err)
 	}
 	listener, err := net.Listen("tcp", cmd.String("listen"))
 	if err != nil {
@@ -192,7 +220,7 @@ func runServe(ctx context.Context, cmd *cli.Command) error {
 	}
 	auth := webui.NewAuthStore()
 	auth.AddToken("manager-admin", token, 365*24*time.Hour)
-	server, err := newServer(resolveConfigPath(cmd.String("config")), auth)
+	server, err := newServer(resolveConfigPath(cmd.String("config")), auth, "external")
 	if err != nil {
 		return err
 	}
@@ -205,10 +233,19 @@ func runServe(ctx context.Context, cmd *cli.Command) error {
 	return serve(ctx, listener, server.Handler())
 }
 
-func newServer(configPath string, auth *webui.AuthStore) (*webui.Server, error) {
+func newServer(configPath string, auth *webui.AuthStore, mode string) (*webui.Server, error) {
+	configDir, err := config.GetConfigDir()
+	if err != nil {
+		return nil, err
+	}
+	kubeconfigPath := filepath.Join(configDir, "kubeconfig")
 	return webui.New(webui.Options{
 		ConfigPath: configPath,
 		Auth:       auth,
+		Mode:       mode,
+		Inspect: func(ctx context.Context, cfg *config.Config) discovery.Snapshot {
+			return discovery.Inspect(ctx, cfg, kubeconfigPath)
+		},
 		Apply: func(ctx context.Context, path string) error {
 			return stackcmd.RunInstall(ctx, stackcmd.InstallOptions{
 				ConfigPath: path,

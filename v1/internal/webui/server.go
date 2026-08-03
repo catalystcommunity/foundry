@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/catalystcommunity/foundry/v1/internal/config"
+	"github.com/catalystcommunity/foundry/v1/internal/discovery"
 	"github.com/catalystcommunity/foundry/v1/internal/host"
 	"github.com/catalystcommunity/foundry/v1/internal/setup"
 	"github.com/catalystcommunity/foundry/v1/internal/topology"
@@ -34,11 +35,16 @@ const (
 // ApplyFunc applies the configuration at configPath.
 type ApplyFunc func(ctx context.Context, configPath string) error
 
+// InspectFunc discovers stack service links and Gateway API exposure.
+type InspectFunc func(ctx context.Context, cfg *config.Config) discovery.Snapshot
+
 // Options configures a web UI server.
 type Options struct {
 	ConfigPath string
 	Auth       *AuthStore
 	Apply      ApplyFunc
+	Inspect    InspectFunc
+	Mode       string
 }
 
 // Server serves the Foundry UI and API.
@@ -46,6 +52,8 @@ type Server struct {
 	configPath string
 	auth       *AuthStore
 	apply      ApplyFunc
+	inspect    InspectFunc
+	mode       string
 	jobsMu     sync.RWMutex
 	jobs       map[string]*Job
 	applyMu    sync.Mutex
@@ -105,7 +113,12 @@ func New(options Options) (*Server, error) {
 		configPath: options.ConfigPath,
 		auth:       options.Auth,
 		apply:      options.Apply,
+		inspect:    options.Inspect,
+		mode:       options.Mode,
 		jobs:       make(map[string]*Job),
+	}
+	if server.mode == "" {
+		server.mode = "local"
 	}
 	server.handler = server.routes()
 	return server, nil
@@ -119,6 +132,8 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/v1/session", s.handleSession)
 	mux.Handle("GET /api/v1/config", s.requireAuth(http.HandlerFunc(s.handleConfig)))
 	mux.Handle("GET /api/v1/state", s.requireAuth(http.HandlerFunc(s.handleState)))
+	mux.Handle("GET /api/v1/runtime", s.requireAuth(http.HandlerFunc(s.handleRuntime)))
+	mux.Handle("GET /api/v1/overview", s.requireAuth(http.HandlerFunc(s.handleOverview)))
 	mux.Handle("POST /api/v1/plan", s.requireAuth(http.HandlerFunc(s.handlePlan)))
 	mux.Handle("POST /api/v1/apply", s.requireAuth(http.HandlerFunc(s.handleApply)))
 	mux.Handle("POST /api/v1/apply/current", s.requireAuth(http.HandlerFunc(s.handleApplyCurrent)))
@@ -208,6 +223,32 @@ func (s *Server) handleState(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, topology.Build(cfg))
+}
+
+func (s *Server) handleRuntime(w http.ResponseWriter, _ *http.Request) {
+	cfg, err := s.loadConfig()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"mode": s.mode, "external_manager_configured": cfg.Management != nil,
+	})
+}
+
+func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
+	cfg, err := s.loadConfig()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if s.inspect == nil {
+		writeJSON(w, http.StatusOK, discovery.Snapshot{})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	writeJSON(w, http.StatusOK, s.inspect(ctx, cfg))
 }
 
 func (s *Server) handlePlan(w http.ResponseWriter, r *http.Request) {

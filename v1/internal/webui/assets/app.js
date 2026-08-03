@@ -35,7 +35,7 @@ async function start() {
   byId("login").hidden = true;
   byId("app").hidden = false;
   populateWizard(currentConfig);
-  await loadState();
+  await Promise.all([loadRuntime(), loadState(), loadOverview()]);
 }
 
 function showLogin(message) {
@@ -66,7 +66,66 @@ async function loadState() {
   } catch (error) { byId("connection-state").textContent = error.message; }
 }
 
+async function loadRuntime() {
+  try {
+    const runtime = await request("/api/v1/runtime");
+    const label = runtime.mode === "external" ? "External manager" : "Local manager";
+    byId("connection-state").textContent = runtime.mode === "local-fallback" ? `${label} · external unavailable` : label;
+  } catch (error) { byId("connection-state").textContent = error.message; }
+}
+
+async function loadOverview() {
+  try {
+    const overview = await request("/api/v1/overview");
+    renderServices(overview.services || []);
+    renderGateways(overview.gateways || []);
+    const warnings = byId("discovery-warnings"); warnings.replaceChildren();
+    (overview.warnings || []).forEach((message) => { const row = document.createElement("p"); row.textContent = message; warnings.append(row); });
+  } catch (error) {
+    byId("discovery-warnings").textContent = error.message;
+  }
+}
+
+function renderServices(services) {
+  const container = byId("service-links"); container.replaceChildren();
+  if (!services.length) { const empty = document.createElement("div"); empty.className = "empty-state"; empty.textContent = "No browser-accessible services were found."; container.append(empty); return; }
+  services.forEach((service) => {
+    const link = document.createElement("a"); link.className = "service-link"; link.href = service.url; link.target = "_blank"; link.rel = "noopener noreferrer";
+    const name = document.createElement("strong"); name.textContent = service.name;
+    const detail = document.createElement("span"); detail.textContent = `${service.url} · ${service.source}${service.namespace ? ` · ${service.namespace}` : ""}`;
+    link.append(name, detail); container.append(link);
+  });
+}
+
+function renderGateways(gateways) {
+  const container = byId("gateway-list"); container.replaceChildren();
+  if (!gateways.length) { const empty = document.createElement("div"); empty.className = "empty-state"; empty.textContent = "No Gateway API resources were found."; container.append(empty); return; }
+  gateways.forEach((gateway) => {
+    const card = document.createElement("article"); card.className = "gateway-card";
+    const heading = document.createElement("div"); heading.className = "gateway-title";
+    const title = document.createElement("strong"); title.textContent = `${gateway.namespace}/${gateway.name}`;
+    const badge = document.createElement("span"); badge.className = `badge${gateway.programmed ? " good" : ""}`; badge.textContent = gateway.programmed ? "Programmed" : "Not programmed";
+    heading.append(title, badge); card.append(heading);
+    const address = document.createElement("div"); address.className = "route-detail"; address.textContent = `Class ${gateway.class_name || "unknown"} · ${(gateway.addresses || []).join(", ") || "No assigned address"}`; card.append(address);
+    const listeners = document.createElement("div"); listeners.className = "listener-list";
+    (gateway.listeners || []).forEach((listener) => { const row = document.createElement("div"); row.className = "listener-row"; row.textContent = `${listener.name}: ${listener.protocol}/${listener.port}${listener.hostname ? ` · ${listener.hostname}` : ""} · ${listener.attached_routes} attached route(s)`; listeners.append(row); });
+    card.append(listeners);
+    const routes = document.createElement("div"); routes.className = "route-list";
+    (gateway.routes || []).forEach((route) => {
+      const row = document.createElement("div"); row.className = "route-row";
+      const title = document.createElement("strong"); title.textContent = `${route.kind} ${route.namespace}/${route.name}`;
+      const status = document.createElement("span"); status.className = `badge${route.accepted ? " good" : ""}`; status.textContent = route.accepted ? "Accepted" : "Pending"; title.append(" ", status); row.append(title);
+      const detail = document.createElement("div"); detail.className = "route-detail"; detail.textContent = `Backends: ${(route.backends || []).join(", ") || "none reported"}`; row.append(detail);
+      (route.urls || []).forEach((url) => { const link = document.createElement("a"); link.href = url; link.target = "_blank"; link.rel = "noopener noreferrer"; link.textContent = url; row.append(document.createElement("br"), link); });
+      routes.append(row);
+    });
+    if (!(gateway.routes || []).length) { const empty = document.createElement("div"); empty.className = "route-detail"; empty.textContent = "No routes target this Gateway."; routes.append(empty); }
+    card.append(routes); container.append(card);
+  });
+}
+
 byId("refresh-state").addEventListener("click", loadState);
+byId("refresh-overview").addEventListener("click", loadOverview);
 
 function populateWizard(config) {
   byId("cluster-name").value = config.cluster_name || "";
@@ -183,7 +242,7 @@ async function pollJob(id) {
     const job = await request(`/api/v1/jobs/${encodeURIComponent(id)}`);
     byId("apply-message").textContent = job.message;
     if (["queued", "running"].includes(job.state)) return setTimeout(() => pollJob(id), 1000);
-    if (job.state === "complete") { currentConfig = reviewedConfig; await loadState(); }
+    if (job.state === "complete") { currentConfig = reviewedConfig; await Promise.all([loadState(), loadOverview(), loadRuntime()]); }
   } catch (error) { byId("apply-message").textContent = error.message; }
 }
 

@@ -144,12 +144,7 @@ func findRuntime(executor Executor, requested string) (string, error) {
 // Apply asks the installed manager to apply its current configuration and
 // waits for the job to finish. All HTTP traffic stays inside the SSH channel.
 func Apply(ctx context.Context, client *gossh.Client, port int, token string) error {
-	transport := &http.Transport{
-		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-			return client.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", port))
-		},
-	}
-	httpClient := &http.Client{Transport: transport, Timeout: 30 * time.Second}
+	httpClient, transport := sshHTTPClient(client, port)
 	defer transport.CloseIdleConnections()
 
 	var job struct {
@@ -176,6 +171,26 @@ func Apply(ctx context.Context, client *gossh.Client, port int, token string) er
 			return err
 		}
 	}
+}
+
+// Probe verifies that the authenticated manager API is running through SSH.
+func Probe(ctx context.Context, client *gossh.Client, port int, token string) error {
+	httpClient, transport := sshHTTPClient(client, port)
+	defer transport.CloseIdleConnections()
+	var runtimeInfo map[string]interface{}
+	if err := managerRequest(ctx, httpClient, http.MethodGet, "/api/v1/runtime", token, &runtimeInfo); err != nil {
+		return fmt.Errorf("probe manager: %w", err)
+	}
+	return nil
+}
+
+func sshHTTPClient(client *gossh.Client, port int) (*http.Client, *http.Transport) {
+	transport := &http.Transport{
+		DialContext: func(context.Context, string, string) (net.Conn, error) {
+			return client.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+		},
+	}
+	return &http.Client{Transport: transport, Timeout: 30 * time.Second}, transport
 }
 
 // ReadStack returns the manager's current stack configuration.

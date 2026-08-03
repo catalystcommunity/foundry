@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/catalystcommunity/foundry/v1/internal/config"
+	"github.com/catalystcommunity/foundry/v1/internal/discovery"
 	"github.com/catalystcommunity/foundry/v1/internal/host"
 	"github.com/catalystcommunity/foundry/v1/internal/topology"
 	"github.com/stretchr/testify/assert"
@@ -121,6 +122,25 @@ func TestStaticAssetsHaveSecurityHeaders(t *testing.T) {
 	assert.Contains(t, response.Header().Get("Content-Security-Policy"), "default-src 'self'")
 	assert.Equal(t, "DENY", response.Header().Get("X-Frame-Options"))
 	assert.Equal(t, "no-store", response.Header().Get("Cache-Control"))
+}
+
+func TestRuntimeAndOverviewAreAuthenticated(t *testing.T) {
+	server, token, _ := newTestServer(t, nil)
+	server.mode = "external"
+	server.inspect = func(_ context.Context, _ *config.Config) discovery.Snapshot {
+		return discovery.Snapshot{ClusterAvailable: true, Services: []discovery.ServiceLink{{Name: "Grafana", URL: "https://grafana.example.test"}}}
+	}
+
+	response := performRequest(server.Handler(), http.MethodGet, "/api/v1/runtime", nil, token, "")
+	require.Equal(t, http.StatusOK, response.Code)
+	assert.Contains(t, response.Body.String(), `"mode":"external"`)
+
+	response = performRequest(server.Handler(), http.MethodGet, "/api/v1/overview", nil, token, "")
+	require.Equal(t, http.StatusOK, response.Code)
+	assert.Contains(t, response.Body.String(), "https://grafana.example.test")
+
+	response = performRequest(server.Handler(), http.MethodGet, "/api/v1/overview", nil, "", "")
+	assert.Equal(t, http.StatusUnauthorized, response.Code)
 }
 
 func newTestServer(t *testing.T, apply ApplyFunc) (*Server, string, string) {

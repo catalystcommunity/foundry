@@ -83,6 +83,23 @@ main { max-width: 1320px; margin: 0 auto; padding: 2.5rem 2.2rem 6rem; }
 .health-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: .8rem; }
 .health-card { padding: 1rem; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
 .health-card .status { color: var(--muted); font-size: .8rem; }
+.dashboard-columns { display: grid; grid-template-columns: .8fr 1.2fr; gap: 1rem; margin-top: 1rem; }
+.service-grid { display: grid; gap: .65rem; }
+.service-link { display: block; padding: .85rem; color: var(--text); text-decoration: none; background: #0d151c; border: 1px solid var(--line); border-radius: 9px; }
+.service-link:hover { border-color: var(--accent); background: #102019; }
+.service-link strong, .service-link span { display: block; }
+.service-link span { margin-top: .24rem; color: var(--muted); font-size: .75rem; overflow-wrap: anywhere; }
+.empty-state { padding: 1rem; color: var(--muted); text-align: center; border: 1px dashed var(--line); border-radius: 9px; }
+.gateway-card { margin-top: .75rem; padding: 1rem; background: #0d151c; border: 1px solid var(--line); border-radius: 9px; }
+.gateway-title { display: flex; justify-content: space-between; gap: 1rem; }
+.badge { padding: .18rem .48rem; color: var(--muted); background: #1b2832; border-radius: 999px; font-size: .7rem; }
+.badge.good { color: var(--accent); background: #123025; }
+.listener-list, .route-list { display: grid; gap: .45rem; margin-top: .7rem; }
+.listener-row, .route-row { padding: .65rem; background: #111d26; border-radius: 7px; font-size: .78rem; }
+.route-row a { color: var(--blue); }
+.route-detail { margin-top: .22rem; color: var(--muted); overflow-wrap: anywhere; }
+.warning-list { color: var(--warning); font-size: .8rem; }
+.warning-list p { margin: .4rem 0; }
 
 .plan-summary { margin-top: 1rem; padding: 1rem; background: #101b18; border-left: 3px solid var(--accent); border-radius: 6px; }
 .plan-summary ul { margin-bottom: 0; }
@@ -97,7 +114,7 @@ main { max-width: 1320px; margin: 0 auto; padding: 2.5rem 2.2rem 6rem; }
   header nav { order: 3; grid-column: 1 / -1; margin-bottom: .7rem; }
   .connection { display: none; }
   main { padding: 1.6rem 1rem 5rem; }
-  .two-column, .form-grid { grid-template-columns: 1fr; }
+  .two-column, .form-grid, .dashboard-columns { grid-template-columns: 1fr; }
   .wide { grid-column: auto; }
   .host-fields { grid-template-columns: 1fr 1fr; }
   .apply-bar { align-items: stretch; flex-direction: column; }
