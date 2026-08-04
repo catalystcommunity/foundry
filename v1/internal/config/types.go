@@ -84,8 +84,11 @@ func (c *Config) Validate() error {
 		}
 	}
 
-	// Cross-validation: K8s VIP must be unique (not in any host list)
-	if c.Network != nil && c.Cluster.VIP != "" {
+	// Cross-validation: K8s VIP must be unique (not in any host list).
+	// This depends only on c.Hosts, so it applies whether or not a network
+	// block is present - a VIP that collides with a host IP breaks kube-vip
+	// ARP advertisement regardless of how the network is configured.
+	if c.Cluster.VIP != "" {
 		if err := c.validateK8sVIPUniqueness(); err != nil {
 			return err
 		}
@@ -143,10 +146,6 @@ func (m *ManagementConfig) Validate(hosts []*host.Host) error {
 
 // validateK8sVIPUniqueness ensures the K8s VIP is not used by any infrastructure host
 func (c *Config) validateK8sVIPUniqueness() error {
-	if c.Network == nil {
-		return nil
-	}
-
 	vip := c.Cluster.VIP
 
 	// Check against all host addresses
