@@ -212,6 +212,21 @@ Before deploying:
 - [ ] `allow_cgnat_vip: true` is set in cluster config
 - [ ] Workers can reach the VIP: `curl -k https://<VIP>:6443/version`
 
+## Not Implemented (Roadmap)
+
+The following Tailscale Kubernetes Operator use cases are **not yet implemented** in Foundry:
+
+| Use Case | Status | Notes |
+|----------|--------|-------|
+| **Secure API Server Access** | Not implemented | API server proxy via Tailscale Operator |
+| **Expose Services via Ingress** | Not implemented | Tailscale IngressClass |
+| **Expose Services via Funnel** | Not implemented | Public internet exposure |
+| **Pod → Tailnet Egress** | Not implemented | Pods accessing tailnet services |
+| **Subnet Routers** | Partially implemented | Manual VIP subnet route (no operator) |
+| **Exit Nodes** | Not implemented | Cluster as exit node |
+| **Multi-Cluster Connectivity** | Not implemented | Cross-cluster service communication |
+| **High Availability (Multi-Cluster)** | Not implemented | Multi-cluster load balancing |
+
 ## Roadmap
 
 Future enhancements planned for Tailscale integration:

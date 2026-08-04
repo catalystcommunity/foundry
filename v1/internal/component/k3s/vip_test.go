@@ -191,16 +191,18 @@ func TestDetectNetworkInterface(t *testing.T) {
 // TestDetermineVIPConfig tests VIP configuration determination
 func TestDetermineVIPConfig(t *testing.T) {
 	tests := []struct {
-		name      string
-		vip       string
-		setupMock func() *mockSSHExecutor
-		want      *VIPConfig
-		wantErr   bool
-		errMsg    string
+		name       string
+		vip        string
+		allowCGNAT bool
+		setupMock  func() *mockSSHExecutor
+		want       *VIPConfig
+		wantErr    bool
+		errMsg     string
 	}{
 		{
-			name: "successful VIP config determination",
-			vip:  "192.168.1.100",
+			name:       "successful VIP config determination",
+			vip:        "192.168.1.100",
+			allowCGNAT: false,
 			setupMock: func() *mockSSHExecutor {
 				return &mockSSHExecutor{
 					execFunc: func(command string) (*ssh.ExecResult, error) {
@@ -214,13 +216,14 @@ func TestDetermineVIPConfig(t *testing.T) {
 			want: &VIPConfig{
 				VIP:           "192.168.1.100",
 				Interface:     "eth0",
-				AllowCGNATVIP: boolPtr(false),
+				AllowCGNATVIP: func() *bool { v := false; return &v }(),
 			},
 			wantErr: false,
 		},
 		{
-			name: "invalid VIP",
-			vip:  "not-an-ip",
+			name:       "invalid VIP",
+			vip:        "not-an-ip",
+			allowCGNAT: false,
 			setupMock: func() *mockSSHExecutor {
 				return &mockSSHExecutor{}
 			},
@@ -228,8 +231,9 @@ func TestDetermineVIPConfig(t *testing.T) {
 			errMsg:  "VIP validation failed",
 		},
 		{
-			name: "interface detection fails",
-			vip:  "192.168.1.100",
+			name:       "interface detection fails",
+			vip:        "192.168.1.100",
+			allowCGNAT: false,
 			setupMock: func() *mockSSHExecutor {
 				return &mockSSHExecutor{
 					execFunc: func(command string) (*ssh.ExecResult, error) {
@@ -240,12 +244,33 @@ func TestDetermineVIPConfig(t *testing.T) {
 			wantErr: true,
 			errMsg:  "interface detection failed",
 		},
+		{
+			name:       "successful VIP config with allowCGNAT=true",
+			vip:        "100.64.0.1",
+			allowCGNAT: true,
+			setupMock: func() *mockSSHExecutor {
+				return &mockSSHExecutor{
+					execFunc: func(command string) (*ssh.ExecResult, error) {
+						return &ssh.ExecResult{
+							Stdout:   "eth0\n",
+							ExitCode: 0,
+						}, nil
+					},
+				}
+			},
+			want: &VIPConfig{
+				VIP:           "100.64.0.1",
+				Interface:     "eth0",
+				AllowCGNATVIP: func() *bool { v := true; return &v }(),
+			},
+			wantErr: false,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mock := tt.setupMock()
-			got, err := DetermineVIPConfig(tt.vip, mock, false)
+			got, err := DetermineVIPConfig(tt.vip, mock, tt.allowCGNAT)
 
 			if tt.wantErr {
 				require.Error(t, err)

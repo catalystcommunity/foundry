@@ -267,6 +267,49 @@ func TestConfig_ValidateVIPUniqueness(t *testing.T) {
 			wantErr: true,
 			errMsg:  "conflicts with host",
 		},
+		{
+			// Regression: uniqueness used to be gated on Network != nil, so a
+			// config with no network block skipped the check entirely and let
+			// the VIP collide with a control plane host. The check reads only
+			// Hosts, so it must apply regardless of the network block.
+			name: "VIP conflicts with control plane host when network block is absent",
+			config: Config{
+				Hosts: []*host.Host{
+					{
+						Hostname: "node1",
+						Address:  "192.168.1.20",
+						Roles:    []string{host.RoleClusterControlPlane},
+					},
+				},
+				Cluster: ClusterConfig{
+					Name:          "test",
+					PrimaryDomain: "example.com",
+					VIP:           "192.168.1.20", // Conflicts with control plane node1
+				},
+				Components: ComponentMap{"k3s": ComponentConfig{}},
+			},
+			wantErr: true,
+			errMsg:  "cannot be the same as control plane host",
+		},
+		{
+			name: "VIP is unique when network block is absent",
+			config: Config{
+				Hosts: []*host.Host{
+					{
+						Hostname: "node1",
+						Address:  "192.168.1.20",
+						Roles:    []string{host.RoleClusterControlPlane},
+					},
+				},
+				Cluster: ClusterConfig{
+					Name:          "test",
+					PrimaryDomain: "example.com",
+					VIP:           "192.168.1.100",
+				},
+				Components: ComponentMap{"k3s": ComponentConfig{}},
+			},
+			wantErr: false,
+		},
 	}
 
 	for _, tt := range tests {
