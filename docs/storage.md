@@ -129,12 +129,9 @@ foundry storage list
 
 Provision storage:
 ```bash
-foundry storage provision
-```
-
-Create PVC:
-```bash
-foundry storage pvc create --name my-data --size 10Gi
+foundry storage provision my-data --size 10Gi
+foundry storage pvc list --namespace default
+foundry storage pvc delete my-data --namespace default
 ```
 
 ## Disk Recommendations

@@ -136,25 +136,18 @@ func IsOpenBAOAvailable(configDir, clusterName string) bool {
 	return err == nil
 }
 
-// GetKeyStorage returns the appropriate key storage backend
-// Uses hybrid storage when OpenBAO is available (auto-migrates keys)
-// Falls back to filesystem-only when OpenBAO is not available
+// GetKeyStorage uses OpenBAO with a local fallback when OpenBAO is available.
 func GetKeyStorage(configDir, clusterName string) (KeyStorage, error) {
-	// Try hybrid storage (OpenBAO + filesystem with auto-migration)
 	if IsOpenBAOAvailable(configDir, clusterName) {
 		openbao, err := GetOpenBAOClient(configDir, clusterName)
 		if err == nil {
-			// Use hybrid storage for automatic migration
 			hybrid, err := NewHybridKeyStorage(openbao, configDir)
 			if err == nil {
 				return hybrid, nil
 			}
-			// If hybrid setup fails, fall through to filesystem
 		}
-		// If OpenBAO client fails, fall through to filesystem
 	}
 
-	// Fall back to filesystem-only storage
 	keysDir := filepath.Join(configDir, "keys")
 	return NewFilesystemKeyStorage(keysDir)
 }

@@ -96,7 +96,7 @@ func DefaultConfig() *Config {
 		Port:             5000,
 		ContainerRuntime: "docker",
 		PullThroughCache: true,
-		Auth:             nil, // No auth by default for Phase 2
+		Auth:             nil,
 	}
 }
 

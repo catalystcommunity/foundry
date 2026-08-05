@@ -61,12 +61,12 @@ var InstallCommand = &cli.Command{
 The component will be installed according to the configuration in ~/.foundry/stack.yaml.
 
 Examples:
-  # Phase 2 (container-based) components:
+  # Components that run on infrastructure hosts:
   foundry component install openbao
   foundry component install dns
   foundry component install zot
 
-  # Phase 3 (Kubernetes-based) components:
+  # Components that run in Kubernetes:
   foundry component install storage --backend local-path
   foundry component install seaweedfs
   foundry component install prometheus
@@ -167,7 +167,7 @@ func runInstall(ctx context.Context, cmd *cli.Command) error {
 		return installK8sComponent(ctx, cmd, name, stackConfig, dryRun, version)
 	}
 
-	// SSH-based component installation (Phase 2 components)
+	// These components run directly on infrastructure hosts.
 	return installSSHComponent(ctx, cmd, name, stackConfig, dryRun, version)
 }
 

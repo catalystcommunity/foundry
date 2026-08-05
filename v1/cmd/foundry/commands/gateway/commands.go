@@ -15,6 +15,8 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
+var defaultOptions = gateway.DefaultOptions()
+
 // Command is the top-level gateway command.
 var Command = &cli.Command{
 	Name:  "gateway",
@@ -36,10 +38,10 @@ var ControllerCommand = &cli.Command{
 		"'gw-' prefix and pruned when their routes are removed; the built-in HTTP/HTTPS and any " +
 		"operator-pinned static listeners are left untouched.",
 	Flags: []cli.Flag{
-		&cli.StringFlag{Name: "gateway-name", Value: "contour", Usage: "name of the Gateway to manage"},
-		&cli.StringFlag{Name: "gateway-namespace", Value: "projectcontour", Usage: "namespace of the Gateway and Envoy service"},
-		&cli.StringFlag{Name: "envoy-service", Value: "contour-envoy", Usage: "name of the Envoy LoadBalancer/VIP service"},
-		&cli.StringFlag{Name: "network-policy", Value: "contour-envoy", Usage: "name of the Envoy NetworkPolicy (empty to skip)"},
+		&cli.StringFlag{Name: "gateway-name", Value: defaultOptions.GatewayName, Usage: "Name of the Gateway to manage"},
+		&cli.StringFlag{Name: "gateway-namespace", Value: defaultOptions.GatewayNamespace, Usage: "Namespace of the Gateway and Envoy service"},
+		&cli.StringFlag{Name: "envoy-service", Value: defaultOptions.EnvoyService, Usage: "Name of the Envoy LoadBalancer service"},
+		&cli.StringFlag{Name: "network-policy", Value: defaultOptions.NetworkPolicy, Usage: "Name of the Envoy NetworkPolicy; use an empty value to skip it"},
 		&cli.DurationFlag{Name: "interval", Value: 15 * time.Second, Usage: "resync interval for the watch loop"},
 		&cli.BoolFlag{Name: "once", Usage: "run a single reconcile pass and exit"},
 		&cli.StringFlag{Name: "kubeconfig", Usage: "path to kubeconfig (default: in-cluster when running as a pod, else ~/.foundry/kubeconfig)"},

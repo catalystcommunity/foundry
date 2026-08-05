@@ -3,6 +3,7 @@
 ## Prerequisites
 
 ### Infrastructure Hosts
+
 - Ubuntu 22.04+ or similar Linux distribution
 - SSH access with sudo privileges
 - Docker or Podman installed
@@ -10,6 +11,7 @@
 - Network access between all hosts
 
 ### Network Requirements
+
 - Dedicated subnet for infrastructure components
 - VIP address for Kubernetes control plane
 - DNS delegation or ability to configure authoritative DNS
@@ -18,24 +20,27 @@
 
 ### 1. Network Planning
 
-Detect MAC addresses for DHCP reservations:
+Run the network planning wizard:
+
 ```bash
-foundry network detect-macs
+foundry network plan
 ```
 
 Validate network configuration:
+
 ```bash
 foundry network validate
 ```
 
-### 2. Setup Wizard
+### 2. Stack Installation
 
-Run the interactive setup wizard:
+Install the stack:
+
 ```bash
-foundry setup
+foundry stack install
 ```
 
-The wizard will guide you through:
+The installer guides you through:
 - Network and DNS configuration
 - Component selection
 - Host assignment
@@ -44,11 +49,13 @@ The wizard will guide you through:
 ### 3. Verify Installation
 
 Check stack status:
+
 ```bash
 foundry stack status
 ```
 
 Validate deployment:
+
 ```bash
 foundry stack validate
 ```
@@ -56,29 +63,31 @@ foundry stack validate
 ## Component Installation
 
 Install individual components:
+
 ```bash
 foundry component install openbao
-foundry component install powerdns
+foundry component install dns
 foundry component install zot
 ```
 
 Check component status:
+
 ```bash
 foundry component status openbao
 ```
 
 ## Troubleshooting
 
-View component logs:
+View the logs for a Kubernetes pod:
+
 ```bash
-docker logs foundry-openbao
-docker logs foundry-powerdns
-docker logs foundry-zot
+foundry logs <pod-name> --namespace <namespace>
 ```
 
 Test DNS resolution:
+
 ```bash
-foundry dns test <zone>
+foundry dns test <hostname>
 ```
 
 For detailed component configuration, see [components.md](./components.md).

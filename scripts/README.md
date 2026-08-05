@@ -26,15 +26,6 @@ The longer timeout lets the package create and remove multiple clusters.
   name is `foundry-local-test`.
 - Set `MANIFEST_DIR=/path/to/rendered/yaml` to validate generated YAML files in
   kind mode.
-- Set `FOUNDRY_CONFIG_DIR` to a temporary directory to isolate test
-  configuration from `~/.foundry`.
-
-For example:
-
-```bash
-FOUNDRY_CONFIG_DIR="$(mktemp -d)" scripts/test-local.sh
-```
-
 ## Use of kind
 
 Foundry installs software on remote hosts through SSH. A local test does not

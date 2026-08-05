@@ -332,8 +332,3 @@ func promptRoles() ([]string, error) {
 
 	return roles, nil
 }
-
-// ResetRegistry resets the global registry (for testing)
-func ResetRegistry() {
-	host.SetDefaultRegistry(host.NewMemoryRegistry())
-}

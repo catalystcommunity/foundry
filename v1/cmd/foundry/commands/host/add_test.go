@@ -8,6 +8,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func ResetRegistry() {
+	host.SetDefaultRegistry(host.NewMemoryRegistry())
+}
+
 func TestPrompt(t *testing.T) {
 	// Basic test to ensure prompt function exists and can be called
 	// Note: Full interactive testing would require mocking stdin

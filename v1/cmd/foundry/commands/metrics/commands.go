@@ -39,7 +39,8 @@ Examples:
 		ListCommand,
 		TargetsCommand,
 	},
-	Action: runQuery, // Default action
+	Flags:  queryFlags(),
+	Action: runQuery,
 }
 
 // QueryCommand queries Prometheus
@@ -53,7 +54,12 @@ Examples:
   foundry metrics query "up"
   foundry metrics query "node_memory_Active_bytes"
   foundry metrics query "rate(http_requests_total[5m])"`,
-	Flags: []cli.Flag{
+	Flags:  queryFlags(),
+	Action: runQuery,
+}
+
+func queryFlags() []cli.Flag {
+	return []cli.Flag{
 		&cli.StringFlag{
 			Name:    "namespace",
 			Aliases: []string{"n"},
@@ -85,8 +91,7 @@ Examples:
 			Name:  "json",
 			Usage: "Output raw JSON response",
 		},
-	},
-	Action: runQuery,
+	}
 }
 
 // ListCommand lists available metrics
@@ -148,7 +153,6 @@ func runQuery(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
-	// Build query URL
 	endpoint := "/api/v1/query"
 	params := url.Values{}
 	params.Set("query", query)
@@ -160,7 +164,6 @@ func runQuery(ctx context.Context, cmd *cli.Command) error {
 		step := cmd.String("step")
 
 		if start == "" {
-			// Default to 1 hour ago
 			start = time.Now().Add(-1 * time.Hour).Format(time.RFC3339)
 		}
 		if end == "" {
@@ -176,7 +179,6 @@ func runQuery(ctx context.Context, cmd *cli.Command) error {
 
 	queryURL := fmt.Sprintf("%s%s?%s", promURL, endpoint, params.Encode())
 
-	// Execute query
 	resp, err := http.Get(queryURL)
 	if err != nil {
 		return fmt.Errorf("failed to query Prometheus: %w", err)
@@ -193,7 +195,6 @@ func runQuery(ctx context.Context, cmd *cli.Command) error {
 		return nil
 	}
 
-	// Parse and format response
 	var result prometheusResponse
 	if err := json.Unmarshal(body, &result); err != nil {
 		return fmt.Errorf("failed to parse response: %w", err)
@@ -212,7 +213,6 @@ func runList(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
-	// Get list of metrics
 	resp, err := http.Get(fmt.Sprintf("%s/api/v1/label/__name__/values", promURL))
 	if err != nil {
 		return fmt.Errorf("failed to query Prometheus: %w", err)
@@ -252,7 +252,6 @@ func runTargets(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
-	// Get targets
 	resp, err := http.Get(fmt.Sprintf("%s/api/v1/targets", promURL))
 	if err != nil {
 		return fmt.Errorf("failed to query Prometheus: %w", err)

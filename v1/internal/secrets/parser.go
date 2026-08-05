@@ -20,13 +20,10 @@ var (
 	secretRefPattern = regexp.MustCompile(`^\$\{secret:([a-zA-Z0-9/_-]+):([a-zA-Z0-9_-]+)\}$`)
 )
 
-// ParseSecretRef parses a secret reference string into a SecretRef struct
-// Expected format: ${secret:path/to/secret:key}
-// Returns nil if the string is not a valid secret reference
+// ParseSecretRef parses ${secret:path:key} syntax.
 func ParseSecretRef(s string) (*SecretRef, error) {
 	s = strings.TrimSpace(s)
 
-	// Check if it's a secret reference at all
 	if !IsSecretRef(s) {
 		return nil, nil
 	}
@@ -43,12 +40,10 @@ func ParseSecretRef(s string) (*SecretRef, error) {
 	path := matches[1]
 	key := matches[2]
 
-	// Validate path is not empty
 	if path == "" {
 		return nil, fmt.Errorf("secret path cannot be empty in: %s", s)
 	}
 
-	// Validate key is not empty
 	if key == "" {
 		return nil, fmt.Errorf("secret key cannot be empty in: %s", s)
 	}
@@ -60,8 +55,7 @@ func ParseSecretRef(s string) (*SecretRef, error) {
 	}, nil
 }
 
-// IsSecretRef checks if a string appears to be a secret reference
-// This is a lightweight check - use ParseSecretRef for full validation
+// IsSecretRef reports whether a string has secret-reference delimiters.
 func IsSecretRef(s string) bool {
 	s = strings.TrimSpace(s)
 	return strings.HasPrefix(s, "${secret:") && strings.HasSuffix(s, "}")

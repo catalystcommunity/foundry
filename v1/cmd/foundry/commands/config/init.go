@@ -262,14 +262,14 @@ components:
   zot:
     version: latest
 
-# Optional: Observability configuration (Phase 3)
+# Optional: Observability configuration
 # observability:
 #   prometheus:
 #     retention: 30d
 #   loki:
 #     retention: 90d
 
-# Optional: Storage configuration (Phase 3)
+# Optional: Storage configuration
 # storage:
 #   backend: longhorn  # Options: local-path, nfs, longhorn
 #   longhorn:

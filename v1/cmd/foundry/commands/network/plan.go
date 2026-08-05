@@ -28,7 +28,7 @@ The wizard will prompt for:
   4. Kubernetes VIP (must be unique, outside DHCP range)
 
 After completing the wizard:
-  1. Add your infrastructure hosts using: foundry host add <hostname> <ip>
+  1. Add your infrastructure hosts using: foundry host add <hostname> --address <ip>
   2. Assign roles to hosts (openbao, dns, zot, cluster-control-plane, cluster-worker)
   3. Configure static IPs or DHCP reservations for your infrastructure hosts
   4. Use 'foundry network validate' to verify the configuration`,

@@ -28,7 +28,7 @@ func (c *Component) Name() string {
 
 // Upgrade upgrades the PowerDNS installation.
 func (c *Component) Upgrade(ctx context.Context, cfg component.ComponentConfig) error {
-	// Not implemented in Phase 2
+	// Upgrades currently require a new install operation.
 	return nil
 }
 
@@ -46,7 +46,7 @@ func (c *Component) Status(ctx context.Context) (*component.ComponentStatus, err
 
 // Uninstall removes the PowerDNS installation.
 func (c *Component) Uninstall(ctx context.Context) error {
-	// Not implemented in Phase 2
+	// Uninstall is not available for this component.
 	return nil
 }
 

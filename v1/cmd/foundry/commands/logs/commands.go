@@ -19,12 +19,11 @@ import (
 // Command is the top-level logs command
 var Command = &cli.Command{
 	Name:      "logs",
-	Usage:     "View logs from pods or query Loki",
+	Usage:     "View Kubernetes pod logs",
 	ArgsUsage: "[pod-name]",
-	Description: `View logs from Kubernetes pods or query Loki for historical logs.
+	Description: `View logs from Kubernetes pods.
 
-This command provides quick access to pod logs. For more advanced log queries,
-use Grafana's Explore feature.
+Use Grafana Explore to query historical logs in Loki.
 
 Examples:
   foundry logs grafana-0                    # View logs from pod
@@ -100,11 +99,9 @@ func runLogs(ctx context.Context, cmd *cli.Command) error {
 		namespace = metav1.NamespaceAll
 	}
 
-	// Find pod(s) to get logs from
 	var pods []corev1.Pod
 
 	if selector != "" {
-		// Find pods by label selector
 		podList, err := client.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
 			LabelSelector: selector,
 		})
@@ -116,7 +113,6 @@ func runLogs(ctx context.Context, cmd *cli.Command) error {
 		}
 		pods = podList.Items
 	} else {
-		// Find specific pod
 		pod, err := findPod(ctx, client, namespace, podName)
 		if err != nil {
 			return err
@@ -124,7 +120,6 @@ func runLogs(ctx context.Context, cmd *cli.Command) error {
 		pods = []corev1.Pod{*pod}
 	}
 
-	// Build log options
 	logOpts := &corev1.PodLogOptions{
 		Follow:     cmd.Bool("follow"),
 		Previous:   cmd.Bool("previous"),
@@ -149,7 +144,6 @@ func runLogs(ctx context.Context, cmd *cli.Command) error {
 		logOpts.SinceSeconds = &sinceSeconds
 	}
 
-	// Stream logs from all matching pods
 	for _, pod := range pods {
 		if len(pods) > 1 {
 			fmt.Printf("==> %s/%s <==\n", pod.Namespace, pod.Name)
@@ -185,13 +179,12 @@ func runLogs(ctx context.Context, cmd *cli.Command) error {
 
 // findPod finds a pod by name, with fuzzy matching support
 func findPod(ctx context.Context, client *kubernetes.Clientset, namespace, name string) (*corev1.Pod, error) {
-	// First try exact match
 	pod, err := client.CoreV1().Pods(namespace).Get(ctx, name, metav1.GetOptions{})
 	if err == nil {
 		return pod, nil
 	}
 
-	// If not found, try prefix match (useful for pods with generated names)
+	// Prefix matching supports pod names that include generated suffixes.
 	pods, err := client.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list pods: %w", err)
@@ -212,7 +205,6 @@ func findPod(ctx context.Context, client *kubernetes.Clientset, namespace, name 
 		return &matches[0], nil
 	}
 
-	// Multiple matches - show options
 	fmt.Printf("Multiple pods match %q:\n", name)
 	for _, p := range matches {
 		fmt.Printf("  %s\n", p.Name)
@@ -222,7 +214,6 @@ func findPod(ctx context.Context, client *kubernetes.Clientset, namespace, name 
 
 // parseDuration parses a duration string like "1h" or "30m"
 func parseDuration(s string) (duration, error) {
-	// Use time.ParseDuration for simple parsing
 	return parseSimpleDuration(s)
 }
 
@@ -240,7 +231,6 @@ func parseSimpleDuration(s string) (duration, error) {
 		return duration{}, fmt.Errorf("empty duration")
 	}
 
-	// Simple parser for common formats
 	var value int64
 	var unit string
 

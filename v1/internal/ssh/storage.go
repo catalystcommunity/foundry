@@ -179,8 +179,7 @@ func (s *OpenBAOKeyStorage) Exists(host string) (bool, error) {
 	return true, nil
 }
 
-// GetStoragePath returns the expected storage path for a given host
-// This is documented for Phase 2 implementation
+// GetStoragePath returns the OpenBAO storage path for a host.
 func (s *OpenBAOKeyStorage) GetStoragePath(host string) string {
 	return fmt.Sprintf("%s/%s", s.basePath, host)
 }

@@ -32,7 +32,7 @@ When you add a host, Foundry:
 1. ✓ Tests SSH connection with password
 2. ✓ Generates an Ed25519 SSH key pair
 3. ✓ Installs public key on the host (`~/.ssh/authorized_keys`)
-4. ✓ Stores private key in memory (for Phase 1)
+4. Stores the private key in `~/.foundry/keys/<hostname>/`.
 5. ✓ Adds host to the registry
 
 ```bash
@@ -171,16 +171,19 @@ Keys are automatically generated when adding a host.
 
 ### Key Storage
 
-**Phase 1**: Keys are stored in-memory
-- Lost when Foundry exits
-- Suitable for development/testing
-- Not persistent across sessions
+The `host add` command stores keys in this directory:
 
-**Phase 2** (planned): Keys will be stored in OpenBAO
-- Persistent storage
-- Encrypted at rest
-- Access-controlled
-- Audit logging
+```text
+~/.foundry/keys/<hostname>/
+```
+
+Use `foundry host migrate-keys` to move the keys to OpenBAO. By default, this
+command removes each local key after it verifies the copy in OpenBAO. Use
+`--keep-local` to keep the local copy.
+
+When OpenBAO is available, other host operations read OpenBAO first. If a key
+exists only in the local directory, Foundry copies it to OpenBAO and continues
+to use the local key as a fallback.
 
 ### Manual Key Installation
 
@@ -198,15 +201,9 @@ chmod 600 ~/.ssh/authorized_keys
 
 ### Registry Behavior
 
-**Phase 1**: In-memory registry
-- Hosts are stored in RAM
-- Not persistent across Foundry sessions
-- Suitable for testing and development
-
-**Phase 2** (planned): Persistent registry
-- Stored in configuration or OpenBAO
-- Survives across sessions
-- Shareable across team members
+Foundry loads hosts from the selected YAML configuration file. Use the global
+`--config` option or the `FOUNDRY_CONFIG` environment variable to select a
+file.
 
 ### Registry Operations
 
@@ -215,15 +212,8 @@ Check if a host exists:
 foundry host list | grep hostname
 ```
 
-Remove a host (Phase 2):
-```bash
-foundry host remove <hostname>
-```
-
-Update host information (Phase 2):
-```bash
-foundry host update <hostname> --address new-address
-```
+To remove or update a host, edit the selected configuration file. Then run
+`foundry config validate`.
 
 ## Best Practices
 
@@ -371,7 +361,7 @@ The configure command assumes Debian/Ubuntu. For other distributions:
 - RHEL/CentOS: Modify commands to use `yum` or `dnf`
 - Alpine: Modify commands to use `apk`
 
-Phase 2 will add distribution detection and appropriate package managers.
+The host configuration command currently supports Debian and Ubuntu systems.
 
 ## Advanced Usage
 
@@ -388,7 +378,8 @@ foundry host add custom-server \
 
 ### Jump Hosts / Bastion Hosts
 
-Phase 1 doesn't directly support jump hosts. Use SSH config as a workaround:
+Foundry does not directly support jump hosts. Use SSH configuration as a
+workaround:
 
 ```
 # ~/.ssh/config
@@ -398,11 +389,10 @@ Host internal-server
     ProxyJump bastion.example.com
 ```
 
-Phase 2 will add native jump host support.
-
 ### Using Existing Keys
 
-Phase 1 always generates new keys. Phase 2 will support:
+The `host add` command always generates a new key. It does not import an
+existing key.
 - Using existing SSH keys
 - Importing keys from files
 - Sharing keys across hosts
@@ -429,7 +419,7 @@ Foundry will use the stored SSH keys to connect to these hosts during deployment
 1. **SSH Key Security**
    - Ed25519 keys are secure and modern
    - Keys are not password-protected (for automation)
-   - Phase 2 will add key encryption
+   - Move keys to OpenBAO with `foundry host migrate-keys`
 
 2. **Password Security**
    - Passwords are used only once (for initial setup)
@@ -443,7 +433,7 @@ Foundry will use the stored SSH keys to connect to these hosts during deployment
    - Enable fail2ban for brute force protection
 
 4. **Audit Logging**
-   - Phase 2 will add audit logs for host access
+   - Use OpenBAO audit devices when you store keys in OpenBAO
    - Track who accessed which hosts
    - Monitor for suspicious activity
 

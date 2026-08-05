@@ -2,7 +2,10 @@ package dashboard
 
 import (
 	"runtime"
+	"strings"
 	"testing"
+
+	"github.com/urfave/cli/v3"
 )
 
 func TestCommand(t *testing.T) {
@@ -18,7 +21,6 @@ func TestCommand(t *testing.T) {
 		t.Errorf("Command.Commands count = %d, want 4", len(Command.Commands))
 	}
 
-	// Verify subcommands
 	foundOpen := false
 	foundURL := false
 	foundSync := false
@@ -48,6 +50,13 @@ func TestCommand(t *testing.T) {
 	if !foundList {
 		t.Error("Should have 'list' subcommand")
 	}
+
+	if !hasFlag(Command, "namespace") {
+		t.Error("Command should have --namespace flag")
+	}
+	if strings.Contains(Command.Description, "port-forward") {
+		t.Error("Command description should not claim to create a port forward")
+	}
 }
 
 func TestOpenCommand(t *testing.T) {
@@ -63,15 +72,7 @@ func TestOpenCommand(t *testing.T) {
 		t.Error("OpenCommand should have an action")
 	}
 
-	// Check for namespace flag
-	foundNamespace := false
-	for _, flag := range OpenCommand.Flags {
-		if flag.Names()[0] == "namespace" {
-			foundNamespace = true
-			break
-		}
-	}
-	if !foundNamespace {
+	if !hasFlag(OpenCommand, "namespace") {
 		t.Error("Should have --namespace flag")
 	}
 }
@@ -132,13 +133,18 @@ func TestRuntimeGOOS(t *testing.T) {
 }
 
 func TestDefaultNamespace(t *testing.T) {
-	// Verify the default namespace is "monitoring"
-	for _, flag := range OpenCommand.Flags {
-		if flag.Names()[0] == "namespace" {
-			// The default should be monitoring
-			// We can't easily check the default value without parsing,
-			// but we can verify the flag exists
-			break
+	if !hasFlag(Command, "namespace") {
+		t.Fatal("Command should have --namespace flag")
+	}
+}
+
+func hasFlag(command *cli.Command, name string) bool {
+	for _, flag := range command.Flags {
+		for _, flagName := range flag.Names() {
+			if flagName == name {
+				return true
+			}
 		}
 	}
+	return false
 }

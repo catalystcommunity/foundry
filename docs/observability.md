@@ -155,14 +155,14 @@ foundry metrics list
 ### View Logs
 
 ```bash
-# Stream logs from a pod
+# Show logs from a pod
 foundry logs my-pod
 
-# Stream logs with label filter
-foundry logs -l app=nginx
+# Follow logs from pods that match a label
+foundry logs -l app=nginx --follow
 
-# Query historical logs
-foundry logs --query '{namespace="default"}'
+# Query historical logs in the Grafana Explore view
+foundry dashboard open
 ```
 
 ### Access Dashboards

@@ -5,14 +5,13 @@ import (
 	"path/filepath"
 )
 
-// HybridKeyStorage provides automatic migration from filesystem to OpenBAO
-// It tries OpenBAO first, falls back to filesystem, and migrates keys on load
+// HybridKeyStorage keeps OpenBAO as the primary store and the file system as a fallback.
 type HybridKeyStorage struct {
 	openbao    *OpenBAOKeyStorage
 	filesystem *FilesystemKeyStorage
 }
 
-// NewHybridKeyStorage creates a hybrid storage that handles migration automatically
+// NewHybridKeyStorage creates storage that migrates a local key when it is loaded.
 func NewHybridKeyStorage(openbao *OpenBAOKeyStorage, configDir string) (*HybridKeyStorage, error) {
 	keysDir := filepath.Join(configDir, "keys")
 	filesystem, err := NewFilesystemKeyStorage(keysDir)
@@ -26,52 +25,36 @@ func NewHybridKeyStorage(openbao *OpenBAOKeyStorage, configDir string) (*HybridK
 	}, nil
 }
 
-// Store saves to both OpenBAO and filesystem for redundancy
+// Store saves to OpenBAO and keeps a best-effort local fallback.
 func (h *HybridKeyStorage) Store(host string, key *KeyPair) error {
-	// Store in OpenBAO first (primary)
 	if err := h.openbao.Store(host, key); err != nil {
 		return fmt.Errorf("failed to store in OpenBAO: %w", err)
 	}
 
-	// Also store in filesystem as backup
-	if err := h.filesystem.Store(host, key); err != nil {
-		// Non-fatal - log but continue
-		// In production, this would use a logger
-		_ = err
-	}
+	_ = h.filesystem.Store(host, key)
 
 	return nil
 }
 
-// Load attempts to load from OpenBAO, falls back to filesystem with auto-migration
+// Load reads OpenBAO first and copies a local fallback to OpenBAO when necessary.
 func (h *HybridKeyStorage) Load(host string) (*KeyPair, error) {
-	// Try OpenBAO first
 	key, err := h.openbao.Load(host)
 	if err == nil {
 		return key, nil
 	}
 
-	// OpenBAO failed, try filesystem
 	key, fsErr := h.filesystem.Load(host)
 	if fsErr != nil {
-		// Both failed - return original OpenBAO error
 		return nil, err
 	}
 
-	// Found in filesystem! Migrate to OpenBAO automatically
-	if migrateErr := h.openbao.Store(host, key); migrateErr != nil {
-		// Migration failed, but we have the key from filesystem
-		// Log the error but return the key
-		// In production, this would use a logger
-		_ = migrateErr
-	}
+	_ = h.openbao.Store(host, key)
 
 	return key, nil
 }
 
-// Delete removes from both storages
+// Delete removes a key from both stores.
 func (h *HybridKeyStorage) Delete(host string) error {
-	// Delete from both, collecting errors
 	var err1, err2 error
 
 	err1 = h.openbao.Delete(host)
@@ -90,14 +73,12 @@ func (h *HybridKeyStorage) Delete(host string) error {
 	return nil
 }
 
-// Exists checks if key exists in either storage
+// Exists reports whether either store contains the key.
 func (h *HybridKeyStorage) Exists(host string) (bool, error) {
-	// Check OpenBAO first
 	exists, err := h.openbao.Exists(host)
 	if err == nil && exists {
 		return true, nil
 	}
 
-	// Check filesystem
 	return h.filesystem.Exists(host)
 }
