@@ -1,6 +1,7 @@
 package tailscale
 
 import (
+	"slices"
 	"testing"
 )
 
@@ -98,6 +99,34 @@ func TestNewInstaller_SetsDefaults(t *testing.T) {
 	}
 	if installer.config.AdvertiseRoutes == nil {
 		t.Error("Expected AdvertiseRoutes to be initialized by defaults")
+	}
+}
+
+func TestNewInstaller_PreservesCustomSettings(t *testing.T) {
+	operatorImage := "custom/operator:v1.0.0"
+	tags := []string{"tag:custom", "tag:production"}
+	routes := []string{"10.0.0.0/8", "192.168.0.0/16"}
+	config := &Config{
+		OAuthClientID:     installerStringPtr("client-123"),
+		OAuthClientSecret: installerStringPtr("secret-456"),
+		OperatorImage:     &operatorImage,
+		Tags:              tags,
+		AdvertiseRoutes:   routes,
+	}
+
+	installer, err := NewInstaller(config, "100.81.89.100")
+	if err != nil {
+		t.Fatalf("NewInstaller() unexpected error: %v", err)
+	}
+
+	if installer.config.OperatorImage == nil || *installer.config.OperatorImage != operatorImage {
+		t.Errorf("OperatorImage = %v, want %q", installer.config.OperatorImage, operatorImage)
+	}
+	if !slices.Equal(installer.config.Tags, tags) {
+		t.Errorf("Tags = %v, want %v", installer.config.Tags, tags)
+	}
+	if !slices.Equal(installer.config.AdvertiseRoutes, routes) {
+		t.Errorf("AdvertiseRoutes = %v, want %v", installer.config.AdvertiseRoutes, routes)
 	}
 }
 

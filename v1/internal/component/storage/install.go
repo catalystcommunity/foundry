@@ -2,18 +2,19 @@ package storage
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/catalystcommunity/foundry/v1/internal/helm"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 const (
-	// Local path provisioner (cowboysysop helm chart)
-	localPathRepoName = "cowboysysop"
-	localPathRepoURL  = "https://cowboysysop.github.io/charts"
-	localPathChart    = "cowboysysop/local-path-provisioner"
+	// Rancher local-path-provisioner OCI chart
+	localPathChart = "oci://ghcr.io/rancher/local-path-provisioner/charts/local-path-provisioner"
 
 	// NFS subdir external provisioner
 	nfsRepoName = "nfs-subdir-external-provisioner"
@@ -51,12 +52,10 @@ func Install(ctx context.Context, helmClient HelmClient, k8sClient K8sClient, cf
 func installLocalPath(ctx context.Context, helmClient HelmClient, k8sClient K8sClient, cfg *Config) error {
 	fmt.Println("  Installing local-path-provisioner...")
 
-	// Check if local-path provisioner is already installed via K3s (built-in)
-	// K3s includes local-path-provisioner by default, so check for existing release
+	// Check for a release that Foundry can upgrade.
+	foundHelmRelease := false
 	releases, err := helmClient.List(ctx, "kube-system")
 	if err == nil {
-		// If no helm release exists, K3s's built-in is likely being used
-		foundHelmRelease := false
 		for _, rel := range releases {
 			if rel.Name == "local-path-provisioner" {
 				foundHelmRelease = true
@@ -73,24 +72,27 @@ func installLocalPath(ctx context.Context, helmClient HelmClient, k8sClient K8sC
 				}
 			}
 		}
-		if !foundHelmRelease {
-			// K3s likely has built-in local-path-provisioner
+	}
+
+	// K3s installs this provisioner without a Helm release. Check the cluster
+	// before Foundry installs a second provisioner with the same storage class.
+	if !foundHelmRelease {
+		foundBuiltIn, err := hasLocalPathProvisioner(ctx, k8sClient, cfg.Namespace)
+		if err != nil {
+			return err
+		}
+		if foundBuiltIn {
 			fmt.Println("  local-path-provisioner already available (K3s built-in)")
 			return nil
 		}
 	}
 
-	// Add Helm repository
-	if err := helmClient.AddRepo(ctx, helm.RepoAddOptions{
-		Name:        localPathRepoName,
-		URL:         localPathRepoURL,
-		ForceUpdate: true,
-	}); err != nil {
-		return fmt.Errorf("failed to add helm repository: %w", err)
-	}
-
 	// Build values
 	values := buildLocalPathValues(cfg)
+	version := cfg.Version
+	if version == "" || version == "0.0.28" {
+		version = "0.0.36"
+	}
 
 	// Check if helm release already exists (for upgrades when we installed via helm)
 	var releaseExists bool
@@ -113,7 +115,7 @@ func installLocalPath(ctx context.Context, helmClient HelmClient, k8sClient K8sC
 			ReleaseName: "local-path-provisioner",
 			Namespace:   cfg.Namespace,
 			Chart:       localPathChart,
-			Version:     cfg.Version,
+			Version:     version,
 			Values:      values,
 			Wait:        true,
 			Timeout:     5 * time.Minute,
@@ -134,7 +136,7 @@ func installLocalPath(ctx context.Context, helmClient HelmClient, k8sClient K8sC
 			ReleaseName:     "local-path-provisioner",
 			Namespace:       cfg.Namespace,
 			Chart:           localPathChart,
-			Version:         cfg.Version,
+			Version:         version,
 			Values:          values,
 			CreateNamespace: true,
 			Wait:            true,
@@ -146,6 +148,30 @@ func installLocalPath(ctx context.Context, helmClient HelmClient, k8sClient K8sC
 
 	fmt.Println("  local-path-provisioner installed successfully")
 	return nil
+}
+
+func hasLocalPathProvisioner(ctx context.Context, k8sClient K8sClient, targetNamespace string) (bool, error) {
+	if k8sClient == nil {
+		return false, nil
+	}
+
+	namespaces := []string{"kube-system"}
+	if targetNamespace != "" && targetNamespace != "kube-system" {
+		namespaces = append(namespaces, targetNamespace)
+	}
+	for _, namespace := range namespaces {
+		pods, err := k8sClient.GetPods(ctx, namespace)
+		if err != nil {
+			return false, fmt.Errorf("failed to check for local-path-provisioner in namespace %s: %w", namespace, err)
+		}
+		for _, pod := range pods {
+			if pod != nil && strings.Contains(pod.Name, "local-path-provisioner") {
+				return true, nil
+			}
+		}
+	}
+
+	return false, nil
 }
 
 // buildLocalPathValues constructs Helm values for local-path-provisioner
@@ -201,7 +227,7 @@ func installNFS(ctx context.Context, helmClient HelmClient, k8sClient K8sClient,
 
 	// Set default version for NFS provisioner
 	version := cfg.Version
-	if version == "" || version == "0.0.28" { // default local-path version
+	if version == "" || version == "0.0.28" || version == "0.0.36" { // local-path defaults
 		version = "4.0.18" // nfs-subdir-external-provisioner chart version
 	}
 
@@ -336,7 +362,7 @@ func installLonghorn(ctx context.Context, helmClient HelmClient, k8sClient K8sCl
 
 	// Set default version for Longhorn
 	version := cfg.Version
-	if version == "" || version == "0.0.28" { // default local-path version
+	if version == "" || version == "0.0.28" || version == "0.0.36" { // local-path defaults
 		version = "1.7.2" // Longhorn chart version
 	}
 
@@ -416,7 +442,55 @@ func installLonghorn(ctx context.Context, helmClient HelmClient, k8sClient K8sCl
 		}
 	}
 
+	if err := configureLonghornNodeDisks(ctx, k8sClient, namespace, cfg.Longhorn.NodeDisks); err != nil {
+		return err
+	}
+
 	fmt.Println("  Longhorn installed successfully")
+	return nil
+}
+
+func configureLonghornNodeDisks(ctx context.Context, k8sClient K8sClient, namespace string, nodeDisks map[string]LonghornNodeDiskConfig) error {
+	if len(nodeDisks) == 0 {
+		return nil
+	}
+	if k8sClient == nil {
+		return fmt.Errorf("kubernetes client is required to configure Longhorn node disks")
+	}
+
+	nodeNames := make([]string, 0, len(nodeDisks))
+	for nodeName := range nodeDisks {
+		nodeNames = append(nodeNames, nodeName)
+	}
+	sort.Strings(nodeNames)
+
+	gvr := schema.GroupVersionResource{Group: "longhorn.io", Version: "v1beta2", Resource: "nodes"}
+	for _, nodeName := range nodeNames {
+		disk := nodeDisks[nodeName]
+		patch := map[string]interface{}{
+			"spec": map[string]interface{}{
+				"disks": map[string]interface{}{
+					"foundry-managed": map[string]interface{}{
+						"allowScheduling":   true,
+						"diskDriver":        "",
+						"diskType":          "filesystem",
+						"evictionRequested": false,
+						"path":              disk.Path,
+						"storageReserved":   disk.StorageReserved,
+						"tags":              []string{},
+					},
+				},
+			},
+		}
+		patchBytes, err := json.Marshal(patch)
+		if err != nil {
+			return fmt.Errorf("failed to encode Longhorn disk configuration for node %s: %w", nodeName, err)
+		}
+		if err := k8sClient.MergePatchResource(ctx, gvr, namespace, nodeName, patchBytes); err != nil {
+			return fmt.Errorf("failed to configure Longhorn disk on node %s: %w", nodeName, err)
+		}
+	}
+
 	return nil
 }
 

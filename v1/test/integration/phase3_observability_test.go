@@ -341,7 +341,7 @@ func deployPrometheus(t *testing.T, ctx context.Context, helmClient *helm.Client
 		Version:                 "67.4.0",
 		Namespace:               "monitoring",
 		RetentionDays:           7,
-		RetentionSize:           "5Gi",
+		RetentionSize:           "5GB",
 		StorageClass:            "local-path",
 		StorageSize:             "5Gi",
 		AlertmanagerEnabled:     false, // Disable for faster test

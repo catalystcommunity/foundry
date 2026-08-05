@@ -223,12 +223,18 @@ func (m *mockHelmClient) Uninstall(ctx context.Context, opts helm.UninstallOptio
 
 // mockK8sClient is a mock implementation of K8sClient for testing
 type mockK8sClient struct {
-	pods    []*k8s.Pod
-	podsErr error
+	pods                    []*k8s.Pod
+	podsErr                 error
+	serviceMonitorCRDExists bool
+	serviceMonitorCRDErr    error
 }
 
 func (m *mockK8sClient) GetPods(ctx context.Context, namespace string) ([]*k8s.Pod, error) {
 	return m.pods, m.podsErr
+}
+
+func (m *mockK8sClient) ServiceMonitorCRDExists(ctx context.Context) (bool, error) {
+	return m.serviceMonitorCRDExists, m.serviceMonitorCRDErr
 }
 
 func TestComponent_Status_GrafanaInstalled(t *testing.T) {

@@ -1,28 +1,27 @@
 #!/usr/bin/env bash
 #
-# test-local.sh — local validation harness for the Tailscale integration stack.
+# Local validation for the Tailscale integration stack.
 #
-# Each PR in the stack documents which mode(s) it should be tested with.
-# By default this runs the fast checks (build + unit tests). Pass --kind to
-# additionally spin up a throwaway kind cluster and apply the component's
-# generated manifests/CRDs against a live API server.
+# Each pull request identifies the required test mode. The default mode runs
+# the build and the unit tests. Use --kind to create a temporary kind cluster.
+# The script can apply generated manifests to the cluster API server.
 #
 # Usage:
 #   scripts/test-local.sh                # build + unit tests (default, no cluster)
-#   scripts/test-local.sh --kind         # + spin up kind and smoke-test manifests
-#   scripts/test-local.sh --kind --keep  # leave the kind cluster running afterwards
-#   scripts/test-local.sh --integration  # also run the Docker/testcontainers suite
-#   PKG=./internal/component/tailscale/... scripts/test-local.sh   # narrow tests
+#   scripts/test-local.sh --kind         # test manifests in a kind cluster
+#   scripts/test-local.sh --kind --keep  # keep the kind cluster after the test
+#   scripts/test-local.sh --integration  # run the container integration tests
+#   PKG=./internal/component/tailscale/... scripts/test-local.sh   # test one package
 #
-# By default the Docker-backed integration suite under ./test/integration/... is
-# EXCLUDED — it needs a running Docker daemon and is the slow tier. Use --kind
-# (manifest smoke test) or --integration (full container suite) to opt in.
+# The default mode does not run the integration suite in ./test/integration/....
+# The integration suite requires a container runtime. Use --kind to test
+# manifests. Use --integration to run the container integration tests.
 #
-# Requirements: go. For --kind/--integration: kind/kubectl/Docker as noted.
+# Requirements: Go. The optional modes also require the tools that they use.
 set -euo pipefail
 
 CLUSTER_NAME="${CLUSTER_NAME:-foundry-local-test}"
-# Default: everything except the Docker-gated integration suite.
+# The default mode tests all packages except the integration package.
 PKG="${PKG:-}"
 DO_KIND=0
 DO_INTEGRATION=0
@@ -38,15 +37,15 @@ for arg in "$@"; do
   esac
 done
 
-# Resolve repo root and the Go module dir (module lives under v1/).
+# Find the repository root and the Go module directory.
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MODDIR="$ROOT/v1"
 
 step() { printf '\n\033[1;34m==> %s\033[0m\n' "$1"; }
 ok()   { printf '\033[1;32m✓ %s\033[0m\n' "$1"; }
 
-# Resolve the package set to test. When PKG is unset, test everything except the
-# Docker-gated integration suite (unless --integration was passed).
+# Select the test packages. PKG selects one package pattern. Integration mode
+# selects all packages. Default mode excludes the integration package.
 TEST_PKGS=()
 if [[ -n "$PKG" ]]; then
   TEST_PKGS=("$PKG")
@@ -74,14 +73,13 @@ if [[ -n "$(cd "$MODDIR" && gofmt -l .)" ]]; then
 fi
 ok "gofmt"
 
-# --integration drops -short AND sets -tags=integration. Both are required:
-# the untagged tests under ./test/integration/... (k3s, openbao, helm, powerdns,
-# zot) short-circuit on testing.Short(), while phase3_* and stack_integration
-# are behind a //go:build integration tag and are invisible without it. This
-# matches the tagged invocation documented in docs/testing.md.
+# Integration mode does not use -short. It also uses -tags=integration and a
+# 60-minute package timeout. The integration package creates multiple clusters.
+# The first change enables the untagged integration tests. The build tag enables
+# the tagged phase 3 and stack integration tests. See docs/testing.md.
 if [[ "$DO_INTEGRATION" -eq 1 ]]; then
   step "go test (integration mode, -tags=integration)"
-  ( cd "$MODDIR" && go test -tags=integration "${TEST_PKGS[@]}" )
+  ( cd "$MODDIR" && go test -timeout=60m -tags=integration "${TEST_PKGS[@]}" )
   ok "integration tests"
 else
   step "go test -short (fast mode)"
@@ -89,11 +87,10 @@ else
   ok "unit tests"
 fi
 
-# Guard against regressions the reviews found: leftover conflict markers or
-# debug prints that leak secrets. Cheap to check, worth catching in every PR.
+# Check for conflict markers and debug messages that can show secrets.
 step "hygiene checks (conflict markers / secret-leaking debug prints)"
-# Only the <<<<<<< / >>>>>>> pair is checked: a bare ^======= line is also a
-# legal Markdown setext heading underline, so matching it fails on valid docs.
+# Do not check a line that contains only equal signs. Markdown can use this line
+# below a heading.
 if git -C "$ROOT" grep -nE '^(<<<<<<<|>>>>>>>) ' -- '*.go' '*.md' >/dev/null 2>&1; then
   echo "found merge-conflict markers:" >&2
   git -C "$ROOT" grep -nE '^(<<<<<<<|>>>>>>>) ' -- '*.go' '*.md' >&2
@@ -108,11 +105,15 @@ ok "hygiene"
 
 if [[ "$DO_KIND" -eq 0 ]]; then
   echo
-  ok "all fast checks passed (run with --kind for live-cluster smoke test)"
+  if [[ "$DO_INTEGRATION" -eq 1 ]]; then
+    ok "all integration checks passed"
+  else
+    ok "all fast checks passed"
+  fi
   exit 0
 fi
 
-# ---- kind live smoke test ---------------------------------------------------
+# Run the kind cluster test.
 command -v kind >/dev/null    || { echo "kind not found on PATH" >&2; exit 1; }
 command -v kubectl >/dev/null || { echo "kubectl not found on PATH" >&2; exit 1; }
 
@@ -133,11 +134,9 @@ fi
 kubectl cluster-info --context "kind-$CLUSTER_NAME" >/dev/null
 ok "cluster up"
 
-# Per-PR manifest smoke test hook.
-# Later PRs that generate manifests/CRDs (helm values, Connector/DNSConfig CRDs,
-# CoreDNS ConfigMap patch) drop rendered YAML into a dir and set MANIFEST_DIR so
-# this loop dry-run-applies them against the live API server to catch schema
-# errors. If nothing is provided, this is a no-op and the cluster-up is the test.
+# Apply each manifest to the API server as a server-side dry run. Set
+# MANIFEST_DIR to the directory that contains the generated YAML files. If this
+# variable is empty, the script tests only the cluster.
 MANIFEST_DIR="${MANIFEST_DIR:-}"
 if [[ -n "$MANIFEST_DIR" && -d "$MANIFEST_DIR" ]]; then
   step "server-side dry-run apply of manifests in $MANIFEST_DIR"
@@ -148,7 +147,7 @@ if [[ -n "$MANIFEST_DIR" && -d "$MANIFEST_DIR" ]]; then
   done
   ok "manifests validate against live API server"
 else
-  echo "no MANIFEST_DIR set — skipping manifest apply (cluster-up smoke test only)"
+  echo "MANIFEST_DIR is not set; the manifest test is skipped"
 fi
 
 echo

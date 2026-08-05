@@ -38,6 +38,10 @@ func Install(ctx context.Context, helmClient HelmClient, k8sClient K8sClient, cf
 
 	// Build Helm values
 	values := buildHelmValues(cfg)
+	serviceMonitorAvailable := serviceMonitorCRDAvailable(ctx, k8sClient)
+	if !serviceMonitorAvailable {
+		values["monitoring"].(map[string]interface{})["serviceMonitor"].(map[string]interface{})["enabled"] = false
+	}
 
 	// Check if release already exists
 	var releaseExists bool
@@ -100,14 +104,14 @@ func Install(ctx context.Context, helmClient HelmClient, k8sClient K8sClient, cf
 
 	// Install Promtail if enabled
 	if cfg.PromtailEnabled {
-		return installPromtail(ctx, helmClient, k8sClient, cfg)
+		return installPromtail(ctx, helmClient, k8sClient, cfg, serviceMonitorAvailable)
 	}
 
 	return nil
 }
 
 // installPromtail installs Promtail for log collection
-func installPromtail(ctx context.Context, helmClient HelmClient, k8sClient K8sClient, cfg *Config) error {
+func installPromtail(ctx context.Context, helmClient HelmClient, k8sClient K8sClient, cfg *Config, serviceMonitorAvailable bool) error {
 	fmt.Println("  Installing Promtail...")
 
 	// Check if promtail release already exists
@@ -134,6 +138,9 @@ func installPromtail(ctx context.Context, helmClient HelmClient, k8sClient K8sCl
 
 	// Build Promtail values
 	promtailValues := buildPromtailValues(cfg)
+	if !serviceMonitorAvailable {
+		promtailValues["serviceMonitor"].(map[string]interface{})["enabled"] = false
+	}
 
 	// Install Promtail
 	if err := helmClient.Install(ctx, helm.InstallOptions{
@@ -151,6 +158,18 @@ func installPromtail(ctx context.Context, helmClient HelmClient, k8sClient K8sCl
 
 	fmt.Println("  Promtail installed successfully")
 	return nil
+}
+
+func serviceMonitorCRDAvailable(ctx context.Context, k8sClient K8sClient) bool {
+	if k8sClient == nil {
+		return false
+	}
+	exists, err := k8sClient.ServiceMonitorCRDExists(ctx)
+	if err != nil {
+		fmt.Printf("  Warning: could not check for the ServiceMonitor CRD: %v\n", err)
+		return false
+	}
+	return exists
 }
 
 // buildHelmValues constructs Helm values for Loki installation

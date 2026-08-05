@@ -82,6 +82,7 @@ type HelmClient interface {
 // K8sClient defines the Kubernetes operations needed for Grafana component
 type K8sClient interface {
 	GetPods(ctx context.Context, namespace string) ([]*k8s.Pod, error)
+	ServiceMonitorCRDExists(ctx context.Context) (bool, error)
 }
 
 // Component implements the component.Component interface for Grafana

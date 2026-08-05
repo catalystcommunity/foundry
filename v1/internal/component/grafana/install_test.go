@@ -36,6 +36,22 @@ func TestInstall_Success(t *testing.T) {
 	assert.True(t, helmClient.chartsInstalled[0].CreateNamespace)
 	assert.True(t, helmClient.chartsInstalled[0].Wait)
 	assert.Equal(t, 10*time.Minute, helmClient.chartsInstalled[0].Timeout)
+	serviceMonitor := helmClient.chartsInstalled[0].Values["serviceMonitor"].(map[string]interface{})
+	assert.Equal(t, false, serviceMonitor["enabled"])
+}
+
+func TestInstall_WithServiceMonitorCRD(t *testing.T) {
+	helmClient := &mockHelmClient{}
+	k8sClient := &mockK8sClient{
+		pods:                    []*k8s.Pod{{Name: "grafana-abc123", Status: "Running"}},
+		serviceMonitorCRDExists: true,
+	}
+
+	err := Install(context.Background(), helmClient, k8sClient, DefaultConfig())
+	require.NoError(t, err)
+	require.Len(t, helmClient.chartsInstalled, 1)
+	serviceMonitor := helmClient.chartsInstalled[0].Values["serviceMonitor"].(map[string]interface{})
+	assert.Equal(t, true, serviceMonitor["enabled"])
 }
 
 func TestInstall_AlreadyInstalled(t *testing.T) {

@@ -90,6 +90,7 @@ func TestNewClient(t *testing.T) {
 				}
 				assert.Equal(t, expectedNamespace, client.namespace)
 				assert.NotNil(t, client.settings)
+				assert.NotNil(t, client.registry)
 				assert.NotEmpty(t, client.settings.KubeConfig)
 
 				// Verify kubeconfig file was created

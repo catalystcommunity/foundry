@@ -3,10 +3,13 @@ package storage
 import (
 	"context"
 	"fmt"
+	"path/filepath"
+	"strings"
 
 	"github.com/catalystcommunity/foundry/v1/internal/component"
 	"github.com/catalystcommunity/foundry/v1/internal/helm"
 	"github.com/catalystcommunity/foundry/v1/internal/k8s"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 // StorageBackend represents the type of storage backend to use
@@ -99,6 +102,18 @@ type LonghornConfig struct {
 
 	// ServiceMonitorEnabled enables ServiceMonitor for Prometheus metrics (default: true, requires CRD)
 	ServiceMonitorEnabled bool `json:"service_monitor_enabled" yaml:"service_monitor_enabled"`
+
+	// NodeDisks maps each Kubernetes node name to its Foundry-managed Longhorn disk.
+	NodeDisks map[string]LonghornNodeDiskConfig `json:"node_disks,omitempty" yaml:"node_disks,omitempty"`
+}
+
+// LonghornNodeDiskConfig configures one Foundry-managed disk on a Longhorn node.
+type LonghornNodeDiskConfig struct {
+	// Path is the mounted filesystem path that Longhorn uses.
+	Path string `json:"path" yaml:"path"`
+
+	// StorageReserved is the number of bytes that Longhorn must not use.
+	StorageReserved int64 `json:"storage_reserved" yaml:"storage_reserved"`
 }
 
 // HelmClient defines the Helm operations needed for storage component
@@ -114,6 +129,7 @@ type HelmClient interface {
 type K8sClient interface {
 	GetPods(ctx context.Context, namespace string) ([]*k8s.Pod, error)
 	ApplyManifest(ctx context.Context, manifest string) error
+	MergePatchResource(ctx context.Context, gvr schema.GroupVersionResource, namespace, name string, patch []byte) error
 	ServiceMonitorCRDExists(ctx context.Context) (bool, error)
 }
 
@@ -222,7 +238,7 @@ func (c *Component) Dependencies() []string {
 func DefaultConfig() *Config {
 	return &Config{
 		Backend:          BackendLocalPath,
-		Version:          "0.0.28", // local-path-provisioner chart version
+		Version:          "0.0.36", // local-path-provisioner chart version
 		Namespace:        "kube-system",
 		StorageClassName: "local-path",
 		SetDefault:       true,
@@ -319,6 +335,27 @@ func ParseConfig(cfg component.ComponentConfig) (*Config, error) {
 		if serviceMonitorEnabled, ok := longhornCfg["service_monitor_enabled"].(bool); ok {
 			config.Longhorn.ServiceMonitorEnabled = serviceMonitorEnabled
 		}
+		if nodeDisks, ok := longhornCfg["node_disks"].(map[string]interface{}); ok {
+			config.Longhorn.NodeDisks = make(map[string]LonghornNodeDiskConfig, len(nodeDisks))
+			for nodeName, rawDisk := range nodeDisks {
+				diskMap, ok := rawDisk.(map[string]interface{})
+				if !ok {
+					return nil, fmt.Errorf("longhorn node_disks.%s must be a map", nodeName)
+				}
+				disk := LonghornNodeDiskConfig{}
+				if path, ok := diskMap["path"].(string); ok {
+					disk.Path = path
+				}
+				if rawReserved, exists := diskMap["storage_reserved"]; exists {
+					reserved, ok := integerValue(rawReserved)
+					if !ok {
+						return nil, fmt.Errorf("longhorn node_disks.%s.storage_reserved must be an integer", nodeName)
+					}
+					disk.StorageReserved = reserved
+				}
+				config.Longhorn.NodeDisks[nodeName] = disk
+			}
+		}
 	}
 
 	// Validate configuration
@@ -362,9 +399,33 @@ func (c *Config) Validate() error {
 		if c.Longhorn.ReplicaCount < 1 {
 			return fmt.Errorf("longhorn replica_count must be at least 1")
 		}
+		for nodeName, disk := range c.Longhorn.NodeDisks {
+			if strings.TrimSpace(nodeName) == "" {
+				return fmt.Errorf("longhorn node_disks contains an empty node name")
+			}
+			if disk.Path == "" || !filepath.IsAbs(disk.Path) {
+				return fmt.Errorf("longhorn node_disks.%s.path must be an absolute path", nodeName)
+			}
+			if disk.StorageReserved < 0 {
+				return fmt.Errorf("longhorn node_disks.%s.storage_reserved cannot be negative", nodeName)
+			}
+		}
 	default:
 		return fmt.Errorf("unsupported storage backend: %s", c.Backend)
 	}
 
 	return nil
+}
+
+func integerValue(value interface{}) (int64, bool) {
+	switch number := value.(type) {
+	case int:
+		return int64(number), true
+	case int64:
+		return number, true
+	case float64:
+		return int64(number), number == float64(int64(number))
+	default:
+		return 0, false
+	}
 }

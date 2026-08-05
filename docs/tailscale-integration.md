@@ -115,7 +115,7 @@ cluster:
 
 **Note:** kube-vip will manage the VIP assignment, but you need to ensure the route is advertised from whichever node currently holds the VIP.
 
-#### Option 2: Tailscale Operator (Recommended for HA)
+#### Option 2: Tailscale Operator (Not Available)
 
 The Tailscale Operator integration will be available in a future Foundry release. This will provide:
 - Automatic operator installation on control planes
@@ -123,6 +123,13 @@ The Tailscale Operator integration will be available in a future Foundry release
 - Support for cross-pod network policies via Tailscale ACLs
 
 For now, use Option 1 (Subnet Routes) for HA setups.
+
+## Tailscale Ingress
+
+Foundry does not install the Tailscale Kubernetes Operator. Thus, Foundry does
+not support the Tailscale Ingress controller. Do not set
+`ingressClassName: tailscale` in a Foundry stack. Use the current Foundry
+Contour configuration, or manage the Tailscale Operator outside Foundry.
 
 ## Network Routing Considerations
 
@@ -212,39 +219,41 @@ Before deploying:
 - [ ] `allow_cgnat_vip: true` is set in cluster config
 - [ ] Workers can reach the VIP: `curl -k https://<VIP>:6443/version`
 
-## Not Implemented (Roadmap)
+## Tailscale Operator Status
 
-The following Tailscale Kubernetes Operator use cases are **not yet implemented** in Foundry:
+Foundry does not install the Tailscale Kubernetes Operator. Foundry supports a
+manual subnet route for the cluster VIP. The following functions are not
+available:
 
-| Use Case | Status | Notes |
-|----------|--------|-------|
-| **Secure API Server Access** | Not implemented | API server proxy via Tailscale Operator |
-| **Expose Services via Ingress** | Not implemented | Tailscale IngressClass |
-| **Expose Services via Funnel** | Not implemented | Public internet exposure |
-| **Pod → Tailnet Egress** | Not implemented | Pods accessing tailnet services |
-| **Subnet Routers** | Partially implemented | Manual VIP subnet route (no operator) |
-| **Exit Nodes** | Not implemented | Cluster as exit node |
-| **Multi-Cluster Connectivity** | Not implemented | Cross-cluster service communication |
-| **High Availability (Multi-Cluster)** | Not implemented | Multi-cluster load balancing |
+| Function | Status |
+|----------|--------|
+| Access to the API server through an operator proxy | Not available |
+| Service access through a Tailscale IngressClass | Not available |
+| Public service access through Funnel | Not available |
+| Pod access to services in the tailnet | Not available |
+| Automatic subnet routes | Not available |
+| Cluster exit nodes | Not available |
+| Connections between clusters | Not available |
+| Load distribution between clusters | Not available |
 
 ## Roadmap
 
-Future enhancements planned for Tailscale integration:
+The plan includes the following work:
 
 1. **Tailscale Operator Integration**
-   - Automatic operator installation on control planes
-   - Automated VIP subnet route management
-   - Support for cross-pod network policies via Tailscale ACLs
+   - Install the operator on control-plane hosts.
+   - Manage the VIP subnet route.
+   - Apply Tailscale ACLs to traffic between pods.
 
 2. **Multi-Cluster Mesh**
-   - Connect multiple Foundry clusters via Tailscale
-   - Cross-cluster service discovery
-   - Unified network policy across clusters
+   - Connect Foundry clusters through Tailscale.
+   - Find services in other clusters.
+   - Apply one network policy to multiple clusters.
 
 3. **GitOps for Tailscale ACLs**
-   - Version control for network policies
-   - CI/CD automation for ACL updates
-   - Integration with Foundry stack management
+   - Store network policies in version control.
+   - Use CI/CD to update ACLs.
+   - Manage ACLs through Foundry stack operations.
 
 ## References
 
