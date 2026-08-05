@@ -9,13 +9,14 @@ import (
 	"github.com/catalystcommunity/foundry/v1/internal/k8s"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 func TestDefaultConfig(t *testing.T) {
 	config := DefaultConfig()
 
 	assert.Equal(t, BackendLocalPath, config.Backend)
-	assert.Equal(t, "0.0.28", config.Version)
+	assert.Equal(t, "0.0.36", config.Version)
 	assert.Equal(t, "kube-system", config.Namespace)
 	assert.Equal(t, "local-path", config.StorageClassName)
 	assert.True(t, config.SetDefault)
@@ -31,7 +32,7 @@ func TestParseConfig_Defaults(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, BackendLocalPath, config.Backend)
-	assert.Equal(t, "0.0.28", config.Version)
+	assert.Equal(t, "0.0.36", config.Version)
 	assert.Equal(t, "kube-system", config.Namespace)
 	assert.Equal(t, "local-path", config.StorageClassName)
 	assert.True(t, config.SetDefault)
@@ -96,6 +97,12 @@ func TestParseConfig_Longhorn(t *testing.T) {
 			"data_path":                       "/mnt/storage/longhorn",
 			"guaranteed_instance_manager_cpu": float64(15),
 			"default_data_locality":           "best-effort",
+			"node_disks": map[string]interface{}{
+				"refurb": map[string]interface{}{
+					"path":             "/data/persistent-storage",
+					"storage_reserved": int64(107374182400),
+				},
+			},
 		},
 	}
 
@@ -109,6 +116,28 @@ func TestParseConfig_Longhorn(t *testing.T) {
 	assert.Equal(t, "/mnt/storage/longhorn", config.Longhorn.DataPath)
 	assert.Equal(t, 15, config.Longhorn.GuaranteedInstanceManagerCPU)
 	assert.Equal(t, "best-effort", config.Longhorn.DefaultDataLocality)
+	require.Contains(t, config.Longhorn.NodeDisks, "refurb")
+	assert.Equal(t, "/data/persistent-storage", config.Longhorn.NodeDisks["refurb"].Path)
+	assert.Equal(t, int64(107374182400), config.Longhorn.NodeDisks["refurb"].StorageReserved)
+}
+
+func TestParseConfig_Longhorn_InvalidNodeDiskValue(t *testing.T) {
+	cfg := component.ComponentConfig{
+		"backend": "longhorn",
+		"longhorn": map[string]interface{}{
+			"replica_count": 3,
+			"node_disks": map[string]interface{}{
+				"worker": map[string]interface{}{
+					"path":             "/data/longhorn",
+					"storage_reserved": "100Gi",
+				},
+			},
+		},
+	}
+
+	_, err := ParseConfig(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "storage_reserved must be an integer")
 }
 
 func TestParseConfig_Longhorn_Defaults(t *testing.T) {
@@ -223,6 +252,33 @@ func TestValidate_Longhorn_InvalidReplicaCount(t *testing.T) {
 	err := config.Validate()
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "replica_count must be at least 1")
+}
+
+func TestValidate_Longhorn_InvalidNodeDisk(t *testing.T) {
+	tests := []struct {
+		name    string
+		disk    LonghornNodeDiskConfig
+		errText string
+	}{
+		{name: "relative path", disk: LonghornNodeDiskConfig{Path: "data/longhorn"}, errText: "path must be an absolute path"},
+		{name: "negative reservation", disk: LonghornNodeDiskConfig{Path: "/data/longhorn", StorageReserved: -1}, errText: "storage_reserved cannot be negative"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			config := &Config{
+				Backend: BackendLonghorn,
+				Longhorn: &LonghornConfig{
+					ReplicaCount: 3,
+					NodeDisks:    map[string]LonghornNodeDiskConfig{"worker": test.disk},
+				},
+			}
+
+			err := config.Validate()
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), test.errText)
+		})
+	}
 }
 
 func TestValidate_Longhorn_DefaultsApplied(t *testing.T) {
@@ -342,6 +398,15 @@ type mockK8sClient struct {
 	manifestsErr               error
 	serviceMonitorCRDExists    bool
 	serviceMonitorCRDExistsErr error
+	patches                    []resourcePatch
+	patchErr                   error
+}
+
+type resourcePatch struct {
+	gvr       schema.GroupVersionResource
+	namespace string
+	name      string
+	patch     []byte
 }
 
 func (m *mockK8sClient) GetPods(ctx context.Context, namespace string) ([]*k8s.Pod, error) {
@@ -351,6 +416,11 @@ func (m *mockK8sClient) GetPods(ctx context.Context, namespace string) ([]*k8s.P
 func (m *mockK8sClient) ApplyManifest(ctx context.Context, manifest string) error {
 	m.manifests = append(m.manifests, manifest)
 	return m.manifestsErr
+}
+
+func (m *mockK8sClient) MergePatchResource(ctx context.Context, gvr schema.GroupVersionResource, namespace, name string, patch []byte) error {
+	m.patches = append(m.patches, resourcePatch{gvr: gvr, namespace: namespace, name: name, patch: patch})
+	return m.patchErr
 }
 
 func (m *mockK8sClient) ServiceMonitorCRDExists(ctx context.Context) (bool, error) {

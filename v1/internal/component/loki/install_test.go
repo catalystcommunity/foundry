@@ -57,6 +57,24 @@ func TestInstall_WithPromtail(t *testing.T) {
 	assert.Equal(t, releaseName, helmClient.chartsInstalled[0].ReleaseName)
 	assert.Equal(t, "promtail", helmClient.chartsInstalled[1].ReleaseName)
 	assert.Equal(t, promtailChart, helmClient.chartsInstalled[1].Chart)
+	serviceMonitor := helmClient.chartsInstalled[1].Values["serviceMonitor"].(map[string]interface{})
+	assert.Equal(t, false, serviceMonitor["enabled"])
+}
+
+func TestInstall_WithServiceMonitorCRD(t *testing.T) {
+	helmClient := &mockHelmClient{}
+	k8sClient := &mockK8sClient{serviceMonitorCRDExists: true}
+	cfg := DefaultConfig()
+
+	err := Install(context.Background(), helmClient, k8sClient, cfg)
+	require.NoError(t, err)
+	require.Len(t, helmClient.chartsInstalled, 2)
+
+	lokiMonitoring := helmClient.chartsInstalled[0].Values["monitoring"].(map[string]interface{})
+	lokiServiceMonitor := lokiMonitoring["serviceMonitor"].(map[string]interface{})
+	assert.Equal(t, true, lokiServiceMonitor["enabled"])
+	promtailServiceMonitor := helmClient.chartsInstalled[1].Values["serviceMonitor"].(map[string]interface{})
+	assert.Equal(t, true, promtailServiceMonitor["enabled"])
 }
 
 func TestInstall_AlreadyInstalled(t *testing.T) {
@@ -467,7 +485,7 @@ func TestInstallPromtail_AlreadyInstalled(t *testing.T) {
 	k8sClient := &mockK8sClient{}
 
 	cfg := DefaultConfig()
-	err := installPromtail(context.Background(), helmClient, k8sClient, cfg)
+	err := installPromtail(context.Background(), helmClient, k8sClient, cfg, false)
 	require.NoError(t, err)
 
 	// Should not install again
@@ -487,7 +505,7 @@ func TestInstallPromtail_FailedReleaseCleanup(t *testing.T) {
 	k8sClient := &mockK8sClient{}
 
 	cfg := DefaultConfig()
-	err := installPromtail(context.Background(), helmClient, k8sClient, cfg)
+	err := installPromtail(context.Background(), helmClient, k8sClient, cfg, false)
 	require.NoError(t, err)
 
 	// Should have uninstalled failed release

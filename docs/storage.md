@@ -49,7 +49,17 @@ storage:
     replica_count: 3
     data_path: /var/lib/longhorn
     default_data_locality: best-effort
+    node_disks:
+      worker-1:
+        path: /data/persistent-storage
+        storage_reserved: 107374182400
 ```
+
+The `node_disks` map is optional. Each key is a Kubernetes node name. The
+`path` value must be an absolute path on that node. Mount the disk before you
+install Longhorn. The `storage_reserved` value is the number of bytes that
+Longhorn must not use. Foundry adds or updates the `foundry-managed` disk. It
+does not remove other Longhorn disks from the node.
 
 ### Local-Path (Simple)
 

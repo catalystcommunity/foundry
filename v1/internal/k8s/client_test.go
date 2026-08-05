@@ -9,7 +9,10 @@ import (
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	dynamicfake "k8s.io/client-go/dynamic/fake"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/rest"
 )
@@ -478,6 +481,51 @@ metadata:
 			}
 		})
 	}
+}
+
+func TestMergePatchResource(t *testing.T) {
+	gvr := schema.GroupVersionResource{Group: "longhorn.io", Version: "v1beta2", Resource: "nodes"}
+	longhornNode := &unstructured.Unstructured{Object: map[string]interface{}{
+		"apiVersion": "longhorn.io/v1beta2",
+		"kind":       "Node",
+		"metadata": map[string]interface{}{
+			"name":      "worker-a",
+			"namespace": "longhorn-system",
+		},
+		"spec": map[string]interface{}{
+			"disks": map[string]interface{}{
+				"existing": map[string]interface{}{"path": "/var/lib/longhorn"},
+			},
+		},
+	}}
+	client := &Client{dynamicClient: dynamicfake.NewSimpleDynamicClient(runtime.NewScheme(), longhornNode)}
+
+	err := client.MergePatchResource(
+		context.Background(),
+		gvr,
+		"longhorn-system",
+		"worker-a",
+		[]byte(`{"spec":{"disks":{"foundry-managed":{"path":"/data/longhorn"}}}}`),
+	)
+	require.NoError(t, err)
+
+	updated, err := client.dynamicClient.Resource(gvr).Namespace("longhorn-system").Get(context.Background(), "worker-a", metav1.GetOptions{})
+	require.NoError(t, err)
+	disks, found, err := unstructured.NestedMap(updated.Object, "spec", "disks")
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.Contains(t, disks, "existing")
+	assert.Contains(t, disks, "foundry-managed")
+}
+
+func TestMergePatchResource_ValidatesInput(t *testing.T) {
+	client := &Client{}
+	gvr := schema.GroupVersionResource{Resource: "nodes"}
+
+	err := client.MergePatchResource(context.Background(), gvr, "", "", []byte(`{}`))
+	assert.EqualError(t, err, "resource name is empty")
+	err = client.MergePatchResource(context.Background(), gvr, "", "worker", nil)
+	assert.EqualError(t, err, "resource patch is empty")
 }
 
 func TestNodeFromCoreV1(t *testing.T) {

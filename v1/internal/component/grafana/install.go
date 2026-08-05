@@ -37,6 +37,9 @@ func Install(ctx context.Context, helmClient HelmClient, k8sClient K8sClient, cf
 
 	// Build Helm values
 	values := buildHelmValues(cfg)
+	if !serviceMonitorCRDAvailable(ctx, k8sClient) {
+		values["serviceMonitor"].(map[string]interface{})["enabled"] = false
+	}
 
 	// Check if release already exists
 	var releaseExists bool
@@ -104,6 +107,18 @@ func Install(ctx context.Context, helmClient HelmClient, k8sClient K8sClient, cf
 		fmt.Printf("  Grafana URL: https://%s\n", cfg.IngressHost)
 	}
 	return nil
+}
+
+func serviceMonitorCRDAvailable(ctx context.Context, k8sClient K8sClient) bool {
+	if k8sClient == nil {
+		return false
+	}
+	exists, err := k8sClient.ServiceMonitorCRDExists(ctx)
+	if err != nil {
+		fmt.Printf("  Warning: could not check for the ServiceMonitor CRD: %v\n", err)
+		return false
+	}
+	return exists
 }
 
 // buildHelmValues constructs Helm values for Grafana installation

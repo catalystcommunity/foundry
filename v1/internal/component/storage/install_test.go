@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/catalystcommunity/foundry/v1/internal/helm"
+	"github.com/catalystcommunity/foundry/v1/internal/k8s"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -20,19 +21,29 @@ func TestInstall_LocalPath_Success(t *testing.T) {
 	err := Install(context.Background(), helmClient, k8sClient, cfg)
 	require.NoError(t, err)
 
-	// Verify repo was added
-	require.Len(t, helmClient.reposAdded, 1)
-	assert.Equal(t, localPathRepoName, helmClient.reposAdded[0].Name)
-	assert.Equal(t, localPathRepoURL, helmClient.reposAdded[0].URL)
+	// The official Rancher chart is in an OCI registry.
+	assert.Empty(t, helmClient.reposAdded)
 
 	// Verify chart was installed
 	require.Len(t, helmClient.chartsInstalled, 1)
 	assert.Equal(t, "local-path-provisioner", helmClient.chartsInstalled[0].ReleaseName)
 	assert.Equal(t, "kube-system", helmClient.chartsInstalled[0].Namespace)
 	assert.Equal(t, localPathChart, helmClient.chartsInstalled[0].Chart)
+	assert.Equal(t, "0.0.36", helmClient.chartsInstalled[0].Version)
 	assert.True(t, helmClient.chartsInstalled[0].CreateNamespace)
 	assert.True(t, helmClient.chartsInstalled[0].Wait)
 	assert.Equal(t, 5*time.Minute, helmClient.chartsInstalled[0].Timeout)
+}
+
+func TestInstall_LocalPath_MapsLegacyDefaultVersion(t *testing.T) {
+	helmClient := &mockHelmClient{listErr: assert.AnError}
+	cfg := DefaultConfig()
+	cfg.Version = "0.0.28"
+
+	err := Install(context.Background(), helmClient, &mockK8sClient{}, cfg)
+	require.NoError(t, err)
+	require.Len(t, helmClient.chartsInstalled, 1)
+	assert.Equal(t, "0.0.36", helmClient.chartsInstalled[0].Version)
 }
 
 func TestInstall_LocalPath_AlreadyInstalled(t *testing.T) {
@@ -52,6 +63,27 @@ func TestInstall_LocalPath_AlreadyInstalled(t *testing.T) {
 	require.NoError(t, err)
 
 	// Should not install again
+	assert.Empty(t, helmClient.chartsInstalled)
+}
+
+func TestInstall_LocalPath_K3sBuiltIn(t *testing.T) {
+	helmClient := &mockHelmClient{}
+	k8sClient := &mockK8sClient{pods: []*k8s.Pod{{Name: "local-path-provisioner-abc123"}}}
+
+	err := Install(context.Background(), helmClient, k8sClient, DefaultConfig())
+	require.NoError(t, err)
+
+	assert.Empty(t, helmClient.reposAdded)
+	assert.Empty(t, helmClient.chartsInstalled)
+}
+
+func TestInstall_LocalPath_PodCheckError(t *testing.T) {
+	helmClient := &mockHelmClient{}
+	k8sClient := &mockK8sClient{podsErr: assert.AnError}
+
+	err := Install(context.Background(), helmClient, k8sClient, DefaultConfig())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to check for local-path-provisioner")
 	assert.Empty(t, helmClient.chartsInstalled)
 }
 
@@ -163,19 +195,22 @@ func TestInstall_NilConfig(t *testing.T) {
 	err := Install(context.Background(), helmClient, k8sClient, nil)
 	require.NoError(t, err)
 
-	// With local-path backend and no existing helm releases found, the code
-	// assumes K3s built-in provisioner is available and skips installation
-	assert.Empty(t, helmClient.chartsInstalled)
+	// No built-in provisioner exists, so Foundry installs one.
+	require.Len(t, helmClient.chartsInstalled, 1)
 }
 
 func TestInstall_AddRepoError(t *testing.T) {
 	helmClient := &mockHelmClient{
 		addRepoErr: assert.AnError,
-		listErr:    assert.AnError, // Force List to fail so code falls through to AddRepo
 	}
 	k8sClient := &mockK8sClient{}
+	cfg := &Config{
+		Backend:   BackendNFS,
+		Namespace: "kube-system",
+		NFS:       &NFSConfig{Server: "192.0.2.1", Path: "/exports"},
+	}
 
-	err := Install(context.Background(), helmClient, k8sClient, DefaultConfig())
+	err := Install(context.Background(), helmClient, k8sClient, cfg)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to add helm repository")
 }
@@ -352,4 +387,58 @@ func TestBuildLonghornValues_CustomValues(t *testing.T) {
 	persistence, ok := values["persistence"].(map[string]interface{})
 	require.True(t, ok)
 	assert.Equal(t, false, persistence["defaultClass"])
+}
+
+func TestInstall_Longhorn_ConfiguresNodeDisks(t *testing.T) {
+	helmClient := &mockHelmClient{}
+	k8sClient := &mockK8sClient{}
+	cfg := &Config{
+		Backend:   BackendLonghorn,
+		Namespace: "longhorn-system",
+		Longhorn: &LonghornConfig{
+			ReplicaCount: 3,
+			NodeDisks: map[string]LonghornNodeDiskConfig{
+				"worker-b": {Path: "/data/b", StorageReserved: 200},
+				"worker-a": {Path: "/data/a", StorageReserved: 100},
+			},
+		},
+	}
+
+	err := Install(context.Background(), helmClient, k8sClient, cfg)
+	require.NoError(t, err)
+	require.Len(t, k8sClient.patches, 2)
+
+	assert.Equal(t, "worker-a", k8sClient.patches[0].name)
+	assert.Equal(t, "longhorn-system", k8sClient.patches[0].namespace)
+	assert.Equal(t, "longhorn.io", k8sClient.patches[0].gvr.Group)
+	assert.JSONEq(t, `{
+		"spec": {"disks": {"foundry-managed": {
+			"allowScheduling": true,
+			"diskDriver": "",
+			"diskType": "filesystem",
+			"evictionRequested": false,
+			"path": "/data/a",
+			"storageReserved": 100,
+			"tags": []
+		}}}
+	}`, string(k8sClient.patches[0].patch))
+}
+
+func TestInstall_Longhorn_NodeDiskPatchError(t *testing.T) {
+	helmClient := &mockHelmClient{}
+	k8sClient := &mockK8sClient{patchErr: assert.AnError}
+	cfg := &Config{
+		Backend:   BackendLonghorn,
+		Namespace: "longhorn-system",
+		Longhorn: &LonghornConfig{
+			ReplicaCount: 3,
+			NodeDisks: map[string]LonghornNodeDiskConfig{
+				"worker-a": {Path: "/data/a"},
+			},
+		},
+	}
+
+	err := Install(context.Background(), helmClient, k8sClient, cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to configure Longhorn disk on node worker-a")
 }

@@ -12,6 +12,7 @@ import (
 	"helm.sh/helm/v3/pkg/chart/loader"
 	"helm.sh/helm/v3/pkg/cli"
 	"helm.sh/helm/v3/pkg/getter"
+	"helm.sh/helm/v3/pkg/registry"
 	"helm.sh/helm/v3/pkg/release"
 	"helm.sh/helm/v3/pkg/repo"
 	"sigs.k8s.io/yaml"
@@ -53,6 +54,7 @@ type Client struct {
 	namespace  string
 	kubeconfig []byte
 	settings   *cli.EnvSettings
+	registry   *registry.Client
 }
 
 // NewClient creates a new Helm client
@@ -85,11 +87,17 @@ func NewClient(kubeconfig []byte, namespace string) (*Client, error) {
 	// Use isolated repository config in temp directory to avoid conflicts
 	settings.RepositoryConfig = filepath.Join(tmpDir, "repositories.yaml")
 	settings.RepositoryCache = filepath.Join(tmpDir, "cache")
+	registryClient, err := registry.NewClient()
+	if err != nil {
+		os.RemoveAll(tmpDir)
+		return nil, fmt.Errorf("failed to create Helm registry client: %w", err)
+	}
 
 	return &Client{
 		namespace:  namespace,
 		kubeconfig: kubeconfig,
 		settings:   settings,
+		registry:   registryClient,
 	}, nil
 }
 
@@ -118,6 +126,7 @@ func (c *Client) getActionConfig(namespace string) (*action.Configuration, error
 	}); err != nil {
 		return nil, fmt.Errorf("failed to initialize action config: %w", err)
 	}
+	actionConfig.RegistryClient = c.registry
 
 	return actionConfig, nil
 }

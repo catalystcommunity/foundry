@@ -1,40 +1,43 @@
-# scripts/test-local.sh
+# Local Test Script
 
-Local validation harness used to test the Tailscale integration PR stack (and
-any component work) on a developer machine before pushing.
+Use `scripts/test-local.sh` to validate Foundry changes on a development
+computer. The default mode does not require a cluster.
 
-## Modes
+## Test Modes
 
-| Command | What it does | Needs |
-|---------|--------------|-------|
-| `scripts/test-local.sh` | `go build ./...`, `go vet ./...`, `gofmt -l`, and `go test -short` for every package **except** the Docker-gated `./test/integration/...`, plus hygiene checks (no conflict markers, no secret-leaking debug prints). | go |
-| `scripts/test-local.sh --kind` | The above, then spins up a throwaway [kind](https://kind.sigs.k8s.io/) cluster and server-side dry-run-applies any rendered manifests in `$MANIFEST_DIR`. | go, kind, kubectl, Docker |
-| `scripts/test-local.sh --kind --keep` | Same, but leaves the kind cluster running for manual poking. | go, kind, kubectl, Docker |
-| `scripts/test-local.sh --integration` | Runs the full suite **including** `./test/integration/...` (testcontainers), dropping `-short` and adding `-tags=integration` so those tests actually execute. | go, container runtime |
+| Command | Action | Required tools |
+|---------|--------|----------------|
+| `scripts/test-local.sh` | Build the Go module, run `go vet`, check Go formatting, run the short tests, and run hygiene checks. This mode does not test `./test/integration/...`. | Go |
+| `scripts/test-local.sh --kind` | Run the default checks. Then, create a temporary kind cluster and validate the files in `$MANIFEST_DIR`. | Go, kind, kubectl, and Docker |
+| `scripts/test-local.sh --kind --keep` | Run the kind test and keep the cluster after the test. | Go, kind, kubectl, and Docker |
+| `scripts/test-local.sh --integration` | Build the Go module and run all integration tests. This mode uses `-tags=integration`, does not use `-short`, and uses a 60-minute package timeout. | Go and a container runtime |
 
-The default mode matches the CI contract in `.reactorcide/jobs/test.yaml`: gofmt,
-vet, build, then `go test -short`. The integration suite is excluded three ways:
-the package list skips it, `-short` trips the `testing.Short()` guards in the
-untagged tests (`k3s`, `openbao`, `helm`, `powerdns`, `zot`), and the absence of
-`-tags=integration` hides the tagged ones (`phase3_*`, `stack_integration`)
-from the build entirely. `--integration` undoes the latter two — dropping only
-`-short`, as an earlier revision of this script did, silently skips every
-build-tagged test. See `docs/testing.md` for the same distinction.
+The default mode follows the test job in `.reactorcide/jobs/test.yaml`. The
+integration package contains two types of tests. Some tests stop when Go uses
+the `-short` option. Other tests require the `integration` build tag. The
+`--integration` option enables both types.
+The longer timeout lets the package create and remove multiple clusters.
 
-## Useful env vars
+## Environment Variables
 
-- `PKG=./internal/component/tailscale/...` — narrow the test run to one package.
-- `CLUSTER_NAME=my-cluster` — name of the kind cluster (default `foundry-local-test`).
-- `MANIFEST_DIR=/path/to/rendered/yaml` — directory of manifests for `--kind` to
-  dry-run-apply against the live API server (used by the CRD/CoreDNS PRs).
-- `FOUNDRY_CONFIG_DIR=$(mktemp -d)` — isolate config discovery from your real
-  `~/.foundry` when running command tests directly.
+- Set `PKG=./internal/component/tailscale/...` to test one package pattern.
+  Build, vet, and formatting checks still apply to the complete Go module.
+- Set `CLUSTER_NAME=my-cluster` to change the kind cluster name. The default
+  name is `foundry-local-test`.
+- Set `MANIFEST_DIR=/path/to/rendered/yaml` to validate generated YAML files in
+  kind mode.
+- Set `FOUNDRY_CONFIG_DIR` to a temporary directory to isolate test
+  configuration from `~/.foundry`.
 
-## Why kind, not k3s, for local unit validation
+For example:
 
-Foundry installs against real hosts over SSH, so a full end-to-end install isn't
-what a per-PR check needs. What each PR *can* verify locally is: the code builds,
-unit tests pass, and — for PRs that generate Kubernetes manifests/CRDs — that
-those manifests are accepted by a live API server. kind gives us that live API
-server cheaply in Docker without provisioning nodes. Each PR's own "Testing"
-section says which mode to run.
+```bash
+FOUNDRY_CONFIG_DIR="$(mktemp -d)" scripts/test-local.sh
+```
+
+## Use of kind
+
+Foundry installs software on remote hosts through SSH. A local test does not
+need a complete Foundry installation. The kind test provides a Kubernetes API
+server in Docker. The script can use this API server to validate generated
+manifests.

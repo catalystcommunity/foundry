@@ -11,6 +11,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -208,6 +209,29 @@ func (c *Client) ApplyManifest(ctx context.Context, manifest string) error {
 		if err := c.applySingleManifest(ctx, doc); err != nil {
 			return err
 		}
+	}
+
+	return nil
+}
+
+// MergePatchResource applies a JSON merge patch to a Kubernetes resource.
+func (c *Client) MergePatchResource(ctx context.Context, gvr schema.GroupVersionResource, namespace, name string, patch []byte) error {
+	if name == "" {
+		return fmt.Errorf("resource name is empty")
+	}
+	if len(patch) == 0 {
+		return fmt.Errorf("resource patch is empty")
+	}
+
+	resource := c.dynamicClient.Resource(gvr)
+	var err error
+	if namespace == "" {
+		_, err = resource.Patch(ctx, name, types.MergePatchType, patch, metav1.PatchOptions{})
+	} else {
+		_, err = resource.Namespace(namespace).Patch(ctx, name, types.MergePatchType, patch, metav1.PatchOptions{})
+	}
+	if err != nil {
+		return fmt.Errorf("failed to patch resource %s/%s: %w", gvr.Resource, name, err)
 	}
 
 	return nil

@@ -115,6 +115,10 @@ components:
 #   longhorn:
 #     replica_count: 3
 #     data_path: /var/lib/longhorn
+#     node_disks:
+#       worker-1:
+#         path: /data/persistent-storage
+#         storage_reserved: 107374182400  # Bytes (100 GiB)
 
 setup_state:
   network_planned: false
