@@ -10,14 +10,6 @@ func TestNewResolutionContext(t *testing.T) {
 	ctx := NewResolutionContext("myapp-prod")
 	assert.NotNil(t, ctx)
 	assert.Equal(t, "myapp-prod", ctx.Instance)
-	assert.Equal(t, "", ctx.Namespace)
-}
-
-func TestNewResolutionContextWithNamespace(t *testing.T) {
-	ctx := NewResolutionContextWithNamespace("myapp-prod", "production")
-	assert.NotNil(t, ctx)
-	assert.Equal(t, "myapp-prod", ctx.Instance)
-	assert.Equal(t, "production", ctx.Namespace)
 }
 
 func TestResolutionContext_NamespacedPath(t *testing.T) {

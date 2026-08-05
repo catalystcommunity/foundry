@@ -19,7 +19,6 @@ import (
 	metricscmd "github.com/catalystcommunity/foundry/v1/cmd/foundry/commands/metrics"
 	networkcmd "github.com/catalystcommunity/foundry/v1/cmd/foundry/commands/network"
 	openbaocmd "github.com/catalystcommunity/foundry/v1/cmd/foundry/commands/openbao"
-	setupcmd "github.com/catalystcommunity/foundry/v1/cmd/foundry/commands/setup"
 	stackcmd "github.com/catalystcommunity/foundry/v1/cmd/foundry/commands/stack"
 	storagecmd "github.com/catalystcommunity/foundry/v1/cmd/foundry/commands/storage"
 	"github.com/catalystcommunity/foundry/v1/cmd/foundry/registry"
@@ -27,20 +26,18 @@ import (
 )
 
 var (
-	// Version information (will be set by build flags)
+	// Release builds set these values with linker flags.
 	Version   = "dev"
 	GitCommit = "unknown"
 	BuildDate = "unknown"
 )
 
 func main() {
-	// Initialize component registry
 	if err := registry.InitComponents(); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to initialize component registry: %v\n", err)
 		os.Exit(1)
 	}
 
-	// Initialize host registry
 	if err := registry.InitHostRegistry(); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to initialize host registry: %v\n", err)
 		os.Exit(1)
@@ -48,18 +45,17 @@ func main() {
 
 	cmd := &cli.Command{
 		Name:    "foundry",
-		Usage:   "A CLI for managing Catalyst Community tech stacks",
+		Usage:   "Manage Catalyst Community tech stacks",
 		Version: Version,
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:    "config",
 				Aliases: []string{"c"},
-				Usage:   "path to config file",
+				Usage:   "Path to the configuration file",
 				Sources: cli.EnvVars("FOUNDRY_CONFIG"),
 			},
 		},
 		Before: func(ctx context.Context, cmd *cli.Command) (context.Context, error) {
-			// Re-initialize host registry with the config path from --config flag
 			configFlag := cmd.String("config")
 			if configFlag != "" {
 				if err := registry.InitHostRegistryWithConfig(configFlag); err != nil {
@@ -83,7 +79,6 @@ func main() {
 			metricscmd.Command,
 			networkcmd.Command,
 			openbaocmd.Command,
-			setupcmd.Commands(),
 			stackcmd.Command,
 			storagecmd.Command,
 			guicmd.ServeCommand,

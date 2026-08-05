@@ -274,10 +274,11 @@ Foundry manages SSH keys through multiple stages:
    - Uses password authentication to bootstrap key-based auth
    - Useful for recovery scenarios
 
-3. **Migration to OpenBAO** (automatic after OpenBAO installation):
-   - Keys are migrated from filesystem to OpenBAO
-   - Future operations retrieve keys from OpenBAO
-   - Provides secure, centralized key storage
+3. **Migration to OpenBAO** (`foundry host migrate-keys`):
+   - The command copies keys from the file system to OpenBAO.
+   - The command verifies each copy before it removes the local key.
+   - Use `--keep-local` to keep local keys.
+   - Host operations also copy a local key when OpenBAO does not have it.
 
 ## Storage Components
 

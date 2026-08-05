@@ -28,31 +28,23 @@ Foundry uses PowerDNS with a **flat namespace architecture** - one DNS zone for 
 
 `cluster.local` is K8s internal DNS managed by CoreDNS. Foundry does NOT manage this - it's used for pod-to-pod communication inside Kubernetes.
 
-## Split-Horizon DNS (Phase 3 - Future)
+## Public DNS Providers
 
-PowerDNS supports split-horizon DNS for public domains:
+The `external-dns` component supports these providers:
 
-- **Internal queries** (RFC1918 IPs): Return internal IP addresses
-- **External queries**: Return CNAME to user's DDNS hostname or use third-party DNS
+- PowerDNS
+- Cloudflare
+- AWS Route 53
+- Google Cloud DNS
+- Azure DNS
+- RFC 2136
 
-**Note:** Split-horizon DNS is planned for Phase 3 with External-DNS integration. Phase 2 focuses on local network DNS resolution only.
+Set the provider and domain filters in the `external-dns` component
+configuration. Then install the component:
 
-## Public Domain Support (Phase 3 - Future)
-
-For external access to your services, you have two options:
-
-**Option 1: PowerDNS with DNS Delegation**
+```bash
+foundry component install external-dns
 ```
-; In your domain registrar or DNS provider
-mycompany.com.  NS  your-ddns-hostname.
-```
-
-**Option 2: Third-Party DNS Provider**
-- Use Cloudflare, Route53, or any DNS provider
-- External-DNS can manage records via their APIs
-- Local queries still use PowerDNS
-
-Phase 2 validation focuses on local network DNS only.
 
 ## DNS Management
 
@@ -104,7 +96,7 @@ docker logs foundry-powerdns
 
 Verify API connectivity:
 ```bash
-curl -H "X-API-Key: $(foundry config get dns.api_key)" \
+curl -H "X-API-Key: <api-key>" \
   http://dns.example.com:8081/api/v1/servers/localhost/zones
 ```
 

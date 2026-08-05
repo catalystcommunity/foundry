@@ -51,10 +51,10 @@ velero:
 foundry backup create
 
 # Create a named backup
-foundry backup create --name pre-upgrade-backup
+foundry backup create pre-upgrade-backup
 
 # Backup specific namespaces
-foundry backup create --namespaces default,production
+foundry backup create --namespace default --namespace production
 ```
 
 ### List Backups
@@ -78,23 +78,20 @@ pre-upgrade-backup            Completed   2024-11-29 14:30:00     2024-12-29
 foundry backup restore daily-backup-20241201020000
 
 # Restore specific namespaces
-foundry backup restore daily-backup-20241201020000 --namespaces default
-
-# Restore to different namespace
-foundry backup restore daily-backup-20241201020000 --namespace-mappings old-ns:new-ns
+foundry backup restore daily-backup-20241201020000 --namespace default
 ```
 
 ### Schedule Backups
 
 ```bash
 # Create a daily backup schedule
-foundry backup schedule --cron "0 2 * * *"
+foundry backup schedule daily-backup --cron "0 2 * * *"
 
 # Create weekly backup schedule
-foundry backup schedule --cron "0 3 * * 0" --name weekly-backup
+foundry backup schedule weekly-backup --cron "0 3 * * 0"
 
 # List schedules
-foundry backup schedule list
+foundry backup list --schedules
 ```
 
 ### Delete Backup

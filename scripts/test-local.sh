@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Local validation for the Tailscale integration stack.
+# Local validation for Foundry.
 #
 # Each pull request identifies the required test mode. The default mode runs
 # the build and the unit tests. Use --kind to create a temporary kind cluster.
@@ -75,8 +75,8 @@ ok "gofmt"
 
 # Integration mode does not use -short. It also uses -tags=integration and a
 # 60-minute package timeout. The integration package creates multiple clusters.
-# The first change enables the untagged integration tests. The build tag enables
-# the tagged phase 3 and stack integration tests. See docs/testing.md.
+# Omitting -short enables untagged integration tests. The build tag enables
+# tagged component and stack integration tests. See docs/testing.md.
 if [[ "$DO_INTEGRATION" -eq 1 ]]; then
   step "go test (integration mode, -tags=integration)"
   ( cd "$MODDIR" && go test -timeout=60m -tags=integration "${TEST_PKGS[@]}" )

@@ -390,8 +390,7 @@ func (k *KubernetesZoneConfig) Validate() error {
 	return nil
 }
 
-// InitializeKubernetesDNS creates the Kubernetes DNS zone with wildcard record
-// This zone will be populated by External-DNS in Phase 3
+// InitializeKubernetesDNS creates the wildcard record for a Kubernetes zone.
 func InitializeKubernetesDNS(client *Client, config KubernetesZoneConfig) error {
 	if err := config.Validate(); err != nil {
 		return fmt.Errorf("invalid kubernetes zone config: %w", err)
@@ -402,8 +401,6 @@ func InitializeKubernetesDNS(client *Client, config KubernetesZoneConfig) error 
 	if err := AddWildcardRecord(client, config.Zone, config.K8sVIP); err != nil {
 		return fmt.Errorf("failed to add wildcard record: %w", err)
 	}
-
-	// External-DNS will populate this zone with specific service records in Phase 3
 
 	return nil
 }

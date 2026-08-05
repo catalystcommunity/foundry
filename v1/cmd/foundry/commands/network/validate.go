@@ -25,8 +25,7 @@ This command performs comprehensive validation of your network configuration:
   5. Hosts are reachable via ping (requires SSH access)
   6. DNS resolution works (if PowerDNS is installed)
 
-If all checks pass, the setup state will be updated to mark network
-as validated, allowing the setup wizard to proceed.
+If all checks pass, Foundry marks the network configuration as validated.
 
 Requirements:
   - Network configuration must be present in config file
@@ -220,7 +219,7 @@ func runValidate(ctx context.Context, cmd *cli.Command) error {
 	fmt.Println("Setup state updated: network_validated = true")
 	fmt.Println()
 	fmt.Println("Next steps:")
-	fmt.Println("  - Run 'foundry setup' to continue stack installation")
+	fmt.Println("  - Run 'foundry stack install' to continue stack installation")
 	fmt.Println("  - Or install components individually with 'foundry component install <name>'")
 
 	return nil

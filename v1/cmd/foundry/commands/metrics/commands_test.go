@@ -3,6 +3,8 @@ package metrics
 import (
 	"fmt"
 	"testing"
+
+	"github.com/urfave/cli/v3"
 )
 
 func TestCommand(t *testing.T) {
@@ -42,6 +44,12 @@ func TestCommand(t *testing.T) {
 	if !foundTargets {
 		t.Error("Should have 'targets' subcommand")
 	}
+
+	for _, expected := range queryFlagNames() {
+		if !commandHasFlag(Command, expected) {
+			t.Errorf("Command missing flag: --%s", expected)
+		}
+	}
 }
 
 func TestQueryCommand(t *testing.T) {
@@ -57,27 +65,26 @@ func TestQueryCommand(t *testing.T) {
 		t.Error("QueryCommand should have an action")
 	}
 
-	// Check expected flags
-	expectedFlags := []string{
-		"namespace",
-		"time",
-		"range",
-		"start",
-		"end",
-		"step",
-		"json",
-	}
-
-	flagMap := make(map[string]bool)
-	for _, flag := range QueryCommand.Flags {
-		flagMap[flag.Names()[0]] = true
-	}
-
-	for _, expected := range expectedFlags {
-		if !flagMap[expected] {
+	for _, expected := range queryFlagNames() {
+		if !commandHasFlag(QueryCommand, expected) {
 			t.Errorf("QueryCommand missing flag: --%s", expected)
 		}
 	}
+}
+
+func queryFlagNames() []string {
+	return []string{"namespace", "time", "range", "start", "end", "step", "json"}
+}
+
+func commandHasFlag(command *cli.Command, name string) bool {
+	for _, flag := range command.Flags {
+		for _, flagName := range flag.Names() {
+			if flagName == name {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func TestListCommand(t *testing.T) {

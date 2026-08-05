@@ -4,15 +4,13 @@ A CLI for managing Catalyst Community tech stacks and workflows.
 
 ## Status
 
-**Phase 1 - Complete**: Foundation built with CLI structure, configuration management, secrets resolution, SSH operations, and host management.
-
-**Next**: Phase 2 will add stack installation (OpenBAO, K3s, Zot registry)
-
-See [implementation-tasks.md](./implementation-tasks.md) for detailed progress tracking.
+Foundry is under active development. The CLI can manage configuration, hosts,
+stack installation, Kubernetes components, storage, backups, DNS, and
+observability services.
 
 ## Development
 
-This project uses a `tools` bash script instead of Make for better portability.
+This project uses the `v1/tools` script for development commands.
 
 ### Building
 
@@ -25,10 +23,11 @@ cd v1
 ### Testing
 
 ```bash
-./tools test              # Run unit tests
-./tools test-integration  # Run integration tests (requires Docker)
-./tools coverage          # Generate coverage report
+scripts/test-local.sh               # Run fast validation
+scripts/test-local.sh --integration # Run integration tests
 ```
+
+See the [Testing Guide](./docs/testing.md) for kind and package-specific modes.
 
 ### Other Commands
 
@@ -41,9 +40,11 @@ cd v1
 
 ### Working with CSIL-Generated Types
 
-Foundry uses [CSIL](https://github.com/catalystcommunity/csilgen) to define persisted data structures. When modifying configuration types, component configs, or storage formats, you'll need to update CSIL definitions and regenerate Go code.
+Foundry uses [CSIL](https://github.com/catalystcommunity/csilgen) to define
+persistent data structures. Update the CSIL definitions before you regenerate
+Go types.
 
-See the [CSIL Workflow Guide](./docs/csil-workflow.md) for detailed instructions on:
+See the [CSIL Workflow Guide](./docs/csil-workflow.md) for these tasks:
 - Modifying existing types
 - Adding new fields (breaking vs. non-breaking)
 - Regenerating Go code
@@ -60,28 +61,29 @@ foundry/
 │   │   ├── secrets/           # Secret resolution
 │   │   ├── ssh/               # SSH operations
 │   │   └── host/              # Host management
-│   ├── pkg/                   # Public APIs (if needed)
 │   ├── test/                  # Test fixtures and integration tests
 │   └── tools                  # Development tool script
 ├── DESIGN.md                  # Architecture and design decisions
-├── implementation-tasks.md    # Implementation tracking
-└── phase-implementation-*.md  # Detailed phase breakdowns
+├── docs/                       # User and developer guides
+└── scripts/                    # Local test scripts
 ```
 
 ## Documentation
 
 ### Design & Planning
+
 - [DESIGN.md](./DESIGN.md) - Architecture, philosophy, and design decisions
-- [implementation-tasks.md](./implementation-tasks.md) - Implementation phases and status
 - [CLAUDE.md](./CLAUDE.md) - Development best practices and guidelines
 
 ### Developer Guides
+
 - [CSIL Workflow](./docs/csil-workflow.md) - Working with CSIL-generated types
 
 ### User Guides
+
 - [Getting Started](./docs/getting-started.md) - Quick start guide and common commands
 - [Configuration](./docs/configuration.md) - Configuration file format and management
-- [Secrets](./docs/secrets.md) - Secret management with instance scoping
+- [Secrets](./docs/secrets.md) - Secret reference and resolution behavior
 - [Hosts](./docs/hosts.md) - Infrastructure host management
 - [Gateway Controller](./docs/gateway-controller.md) - Route-driven L4 (TCP/TLS) listeners on the cluster VIP
 

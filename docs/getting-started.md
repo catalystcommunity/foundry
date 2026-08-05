@@ -223,7 +223,7 @@ foundry host configure <name>  # Configure a specific host
 
 # Components
 foundry component list         # List available components
-foundry component status       # Show component status
+foundry component status <name> # Show component status
 ```
 
 ## Troubleshooting

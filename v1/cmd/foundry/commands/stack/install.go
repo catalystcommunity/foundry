@@ -47,21 +47,21 @@ import (
 
 // checkAllComponentsInstalled checks if all components are actually installed
 func checkAllComponentsInstalled(ctx context.Context, state *setup.SetupState) bool {
-	// Check Phase 2 components via state flags
-	phase2Complete := state.OpenBAOInstalled &&
+	// Host components do not expose a common status client.
+	hostComponentsComplete := state.OpenBAOInstalled &&
 		state.OpenBAOInitialized &&
 		state.DNSInstalled &&
 		state.DNSZonesCreated &&
 		state.ZotInstalled &&
 		state.K8sInstalled
 
-	if !phase2Complete {
+	if !hostComponentsComplete {
 		return false
 	}
 
-	// Check Phase 3 components via actual status
+	// Kubernetes components expose status through the component registry.
 	// Order: gateway-api, storage, prometheus, contour, cert-manager, seaweedfs, external-dns, loki, grafana, velero
-	phase3Components := []string{
+	kubernetesComponents := []string{
 		"gateway-api",
 		"storage",
 		"prometheus",
@@ -74,7 +74,7 @@ func checkAllComponentsInstalled(ctx context.Context, state *setup.SetupState) b
 		"velero",
 	}
 
-	for _, name := range phase3Components {
+	for _, name := range kubernetesComponents {
 		comp := component.Get(name)
 		if comp != nil {
 			status, err := comp.Status(ctx)
@@ -301,7 +301,7 @@ func RunInstall(ctx context.Context, options InstallOptions) error {
 		return nil
 	}
 
-	// Phase 1: Host Configuration
+	// Host configuration must finish before network and component work.
 	if err := ensureHostsConfigured(ctx, cfg, options.NonInteractive); err != nil {
 		return fmt.Errorf("host configuration failed: %w", err)
 	}
@@ -310,18 +310,16 @@ func RunInstall(ctx context.Context, options InstallOptions) error {
 		return fmt.Errorf("save host configuration state: %w", err)
 	}
 
-	// Phase 2: Network Planning and Validation
+	// The network values are inputs to component installation.
 	if err := ensureNetworkPlanned(ctx, cfg, options.NonInteractive); err != nil {
 		return fmt.Errorf("network planning failed: %w", err)
 	}
 
-	// Phase 3: Component Installation
 	if err := installComponents(ctx, cfg, configPath, options.Yes, upgradeMode); err != nil {
 		return fmt.Errorf("component installation failed: %w", err)
 	}
 
-	// Phase 4: Final validation
-	// Only mark complete if we actually finished (not an early exit at checkpoint)
+	// An integration-test checkpoint can return before the final state update.
 	if !cfg.SetupState.StackComplete {
 		cfg.SetupState.StackComplete = true
 		if err := config.Save(cfg, configPath); err != nil {
@@ -825,7 +823,7 @@ func installComponents(ctx context.Context, cfg *config.Config, configPath strin
 		}
 	}
 
-	// Define installation order (matches Phase 2 + Phase 3 architecture)
+	// The order keeps host services before their Kubernetes dependents.
 	components := []struct {
 		name      string
 		checkFunc func(*setup.SetupState) bool
@@ -2295,7 +2293,7 @@ func validateStackConfig(cfg *config.Config) error {
 
 // determineInstallationOrder returns components in dependency order
 func determineInstallationOrder() ([]string, error) {
-	// Stack installation order (as defined in Phase 2):
+	// Preserve the bootstrap order for services that provide later inputs.
 	// 1. Network validation (not a component, done separately)
 	// 2. OpenBAO
 	// 3. PowerDNS (dns)

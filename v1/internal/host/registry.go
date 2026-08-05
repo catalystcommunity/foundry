@@ -6,9 +6,7 @@ import (
 	"sync"
 )
 
-// MemoryRegistry is an in-memory implementation of HostRegistry
-// This is suitable for Phase 1 development and testing
-// In later phases, this may be replaced with persistent storage
+// MemoryRegistry is an in-memory implementation of HostRegistry.
 type MemoryRegistry struct {
 	hosts map[string]*Host
 	mu    sync.RWMutex
@@ -34,12 +32,11 @@ func (r *MemoryRegistry) Add(host *Host) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	// Check if host already exists
 	if _, exists := r.hosts[host.Hostname]; exists {
 		return fmt.Errorf("host with hostname %s already exists", host.Hostname)
 	}
 
-	// Create a copy to avoid external modifications
+	// Copies prevent callers from changing registry data without a lock.
 	hostCopy := *host
 	r.hosts[host.Hostname] = &hostCopy
 
@@ -60,7 +57,7 @@ func (r *MemoryRegistry) Get(hostname string) (*Host, error) {
 		return nil, fmt.Errorf("host %s not found", hostname)
 	}
 
-	// Return a copy to prevent external modifications
+	// Copies prevent callers from changing registry data without a lock.
 	hostCopy := *host
 	return &hostCopy, nil
 }
@@ -72,12 +69,10 @@ func (r *MemoryRegistry) List() ([]*Host, error) {
 
 	hosts := make([]*Host, 0, len(r.hosts))
 	for _, host := range r.hosts {
-		// Create copies to prevent external modifications
 		hostCopy := *host
 		hosts = append(hosts, &hostCopy)
 	}
 
-	// Sort by hostname for consistent ordering
 	sort.Slice(hosts, func(i, j int) bool {
 		return hosts[i].Hostname < hosts[j].Hostname
 	})
@@ -119,7 +114,7 @@ func (r *MemoryRegistry) Update(host *Host) error {
 		return fmt.Errorf("host %s not found", host.Hostname)
 	}
 
-	// Create a copy to avoid external modifications
+	// Copies prevent callers from changing registry data without a lock.
 	hostCopy := *host
 	r.hosts[host.Hostname] = &hostCopy
 

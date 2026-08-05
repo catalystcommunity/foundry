@@ -57,22 +57,17 @@ func (o *OpenBAOResolver) Resolve(ctx *ResolutionContext, ref SecretRef) (string
 		return "", fmt.Errorf("resolution context is required")
 	}
 
-	// Build the full path with instance scoping
 	namespacedPath := ctx.NamespacedPath(ref)
-
-	// Read secret from KV v2
 	data, err := o.client.ReadSecretV2(context.Background(), o.mount, namespacedPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to read secret from OpenBAO at %s: %w", namespacedPath, err)
 	}
 
-	// Extract the specific key
 	value, ok := data[ref.Key]
 	if !ok {
 		return "", fmt.Errorf("key %s not found in secret at path %s", ref.Key, namespacedPath)
 	}
 
-	// Convert to string
 	strValue, ok := value.(string)
 	if !ok {
 		return "", fmt.Errorf("value for key %s at path %s is not a string", ref.Key, namespacedPath)

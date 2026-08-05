@@ -67,20 +67,17 @@ Examples:
 }
 
 func runProvision(ctx context.Context, cmd *cli.Command) error {
-	// Get PVC name
 	name := cmd.Args().Get(0)
 	if name == "" {
 		return fmt.Errorf("PVC name is required\n\nUsage: foundry storage provision <name> --size <size>")
 	}
 
-	// Parse size
 	size := cmd.String("size")
 	quantity, err := resource.ParseQuantity(size)
 	if err != nil {
 		return fmt.Errorf("invalid size format: %w\n\nUse Kubernetes quantity format (e.g., 1Gi, 10Gi, 100Gi)", err)
 	}
 
-	// Parse access mode
 	accessModeStr := cmd.String("access-mode")
 	var accessMode corev1.PersistentVolumeAccessMode
 	switch accessModeStr {
@@ -94,7 +91,6 @@ func runProvision(ctx context.Context, cmd *cli.Command) error {
 		return fmt.Errorf("invalid access mode: %s\n\nValid modes: ReadWriteOnce, ReadWriteMany, ReadOnlyMany", accessModeStr)
 	}
 
-	// Get K8s client
 	client, err := getK8sClient()
 	if err != nil {
 		return err
@@ -103,7 +99,6 @@ func runProvision(ctx context.Context, cmd *cli.Command) error {
 	namespace := cmd.String("namespace")
 	storageClass := cmd.String("storage-class")
 
-	// Build PVC
 	pvc := &corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -119,12 +114,10 @@ func runProvision(ctx context.Context, cmd *cli.Command) error {
 		},
 	}
 
-	// Set storage class if specified
 	if storageClass != "" {
 		pvc.Spec.StorageClassName = &storageClass
 	}
 
-	// Create PVC
 	fmt.Printf("Creating PVC %q in namespace %q...\n", name, namespace)
 	_, err = client.CoreV1().PersistentVolumeClaims(namespace).Create(ctx, pvc, metav1.CreateOptions{})
 	if err != nil {
@@ -133,7 +126,6 @@ func runProvision(ctx context.Context, cmd *cli.Command) error {
 
 	fmt.Printf("PVC %q created\n", name)
 
-	// Wait for binding if requested
 	if cmd.Bool("wait") {
 		fmt.Println("Waiting for PVC to be bound...")
 		timeout := cmd.Duration("timeout")
@@ -183,25 +175,21 @@ func waitForPVCBound(ctx context.Context, client *kubernetes.Clientset, namespac
 
 // getK8sClient creates a Kubernetes client from kubeconfig
 func getK8sClient() (*kubernetes.Clientset, error) {
-	// Get kubeconfig path
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get home directory: %w", err)
 	}
 	kubeconfigPath := filepath.Join(homeDir, ".foundry", "kubeconfig")
 
-	// Check if kubeconfig exists
 	if _, err := os.Stat(kubeconfigPath); os.IsNotExist(err) {
 		return nil, fmt.Errorf("kubeconfig not found at %s\n\nHint: Run 'foundry cluster init' first", kubeconfigPath)
 	}
 
-	// Build config from kubeconfig
 	config, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build config from kubeconfig: %w", err)
 	}
 
-	// Create clientset
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create kubernetes client: %w", err)

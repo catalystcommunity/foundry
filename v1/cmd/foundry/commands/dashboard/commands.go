@@ -24,8 +24,7 @@ var Command = &cli.Command{
 This command retrieves the Grafana URL from the cluster's Ingress
 configuration and opens it in your browser.
 
-If port-forwarding is needed (no Ingress), it will set up a temporary
-port-forward to the Grafana pod.
+If no Ingress exists, the command uses the Grafana service address.
 
 Examples:
   foundry dashboard              # Open Grafana dashboard
@@ -37,7 +36,8 @@ Examples:
 		SyncCommand,
 		ListCommand,
 	},
-	Action: runOpen, // Default action when just 'foundry dashboard' is run
+	Flags:  dashboardFlags(),
+	Action: runOpen,
 }
 
 // OpenCommand opens the dashboard in a browser
@@ -48,15 +48,19 @@ var OpenCommand = &cli.Command{
 
 Examples:
   foundry dashboard open`,
-	Flags: []cli.Flag{
+	Flags:  dashboardFlags(),
+	Action: runOpen,
+}
+
+func dashboardFlags() []cli.Flag {
+	return []cli.Flag{
 		&cli.StringFlag{
 			Name:    "namespace",
 			Aliases: []string{"n"},
 			Usage:   "Namespace where Grafana is installed",
 			Value:   "monitoring",
 		},
-	},
-	Action: runOpen,
+	}
 }
 
 // URLCommand prints the dashboard URL
@@ -67,14 +71,7 @@ var URLCommand = &cli.Command{
 
 Examples:
   foundry dashboard url`,
-	Flags: []cli.Flag{
-		&cli.StringFlag{
-			Name:    "namespace",
-			Aliases: []string{"n"},
-			Usage:   "Namespace where Grafana is installed",
-			Value:   "monitoring",
-		},
-	},
+	Flags:  dashboardFlags(),
 	Action: runURL,
 }
 
@@ -105,7 +102,6 @@ func getGrafanaURL(ctx context.Context, namespace string) (string, error) {
 		return "", err
 	}
 
-	// First, try to get the Ingress URL
 	ingresses, err := client.NetworkingV1().Ingresses(namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: "app.kubernetes.io/name=grafana",
 	})
@@ -120,7 +116,6 @@ func getGrafanaURL(ctx context.Context, namespace string) (string, error) {
 		}
 	}
 
-	// Try to find Grafana service
 	services, err := client.CoreV1().Services(namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: "app.kubernetes.io/name=grafana",
 	})
@@ -134,7 +129,6 @@ func getGrafanaURL(ctx context.Context, namespace string) (string, error) {
 
 	svc := services.Items[0]
 
-	// Check for LoadBalancer IP
 	if svc.Spec.Type == "LoadBalancer" && len(svc.Status.LoadBalancer.Ingress) > 0 {
 		ip := svc.Status.LoadBalancer.Ingress[0].IP
 		if ip == "" {
@@ -150,9 +144,7 @@ func getGrafanaURL(ctx context.Context, namespace string) (string, error) {
 		return fmt.Sprintf("http://%s:%d", ip, port), nil
 	}
 
-	// Check for NodePort
 	if svc.Spec.Type == "NodePort" {
-		// Get a node IP
 		nodes, err := client.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
 		if err == nil && len(nodes.Items) > 0 {
 			nodeIP := ""
@@ -172,7 +164,7 @@ func getGrafanaURL(ctx context.Context, namespace string) (string, error) {
 		}
 	}
 
-	// Fall back to cluster IP (would need port-forward)
+	// ClusterIP is the only available address for other service types.
 	return fmt.Sprintf("http://%s:80", svc.Spec.ClusterIP), nil
 }
 
@@ -184,7 +176,6 @@ func openBrowser(url string) error {
 	case "darwin":
 		cmd = exec.Command("open", url)
 	case "linux":
-		// Try xdg-open first, fall back to other options
 		if _, err := exec.LookPath("xdg-open"); err == nil {
 			cmd = exec.Command("xdg-open", url)
 		} else if _, err := exec.LookPath("gnome-open"); err == nil {
