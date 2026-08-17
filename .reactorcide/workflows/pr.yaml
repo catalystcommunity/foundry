@@ -1,0 +1,14 @@
+id: foundry-pr
+name: Foundry PR
+description: "Validate that PR commits follow conventional commits (semver-tags drives releases from these)."
+
+on:
+  events:
+    - pull_request_opened
+    - pull_request_updated
+  branches:
+    - main
+
+jobs:
+  foundry-conventional-commits:
+    job_file: conventional-commits.yaml

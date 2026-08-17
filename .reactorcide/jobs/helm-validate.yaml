@@ -1,14 +1,5 @@
 name: foundry-helm-validate
 description: "Lint and template the gateway-controller helm chart on PRs that touch it"
-triggers:
-  events:
-    - pull_request_opened
-    - pull_request_updated
-  branches:
-    - main
-paths:
-  include:
-    - "v1/charts/**"
 job:
   image: alpine/helm:3.14.0
   command: |

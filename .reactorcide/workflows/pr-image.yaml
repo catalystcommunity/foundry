@@ -1,0 +1,22 @@
+id: foundry-pr-image
+name: Foundry PR Image Build
+description: "Verify that the foundry container image builds on PRs that touch the build (no push)."
+
+# Reactorcide path filters apply to a whole workflow, not to one job node, so
+# each path-scoped job lives in its own workflow file.
+on:
+  events:
+    - pull_request_opened
+    - pull_request_updated
+  branches:
+    - main
+
+paths:
+  include:
+    - "v1/**"
+    - "Dockerfile"
+    - ".dockerignore"
+
+jobs:
+  foundry-image-build-test:
+    job_file: image-build-test.yaml
