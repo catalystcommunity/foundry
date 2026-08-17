@@ -1,0 +1,17 @@
+id: foundry-release-helm
+name: Foundry Release Helm Chart
+description: "On merge to main that touches the chart: package it and publish a GitHub release."
+
+on:
+  events:
+    - pull_request_merged
+  branches:
+    - main
+
+paths:
+  include:
+    - "v1/charts/foundry-gateway-controller/**"
+
+jobs:
+  foundry-release-helm:
+    job_file: release-helm.yaml

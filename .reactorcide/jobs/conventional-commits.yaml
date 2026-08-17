@@ -1,13 +1,7 @@
 name: foundry-conventional-commits
 description: "Validate PR commits follow conventional commits (semver-tags drives releases from these)"
-triggers:
-  events:
-    - pull_request_opened
-    - pull_request_updated
-  branches:
-    - main
 job:
-  image: containers.catalystsquad.com/public/reactorcide/runnerbase:dev
+  image: containers.catalystsquad.com/public/reactorcide/runnerbase:latest
   command: |
     set -e
     # SOURCE_URL/HEAD_URL point at the fork for cross-repo PRs; BASE_URL is the

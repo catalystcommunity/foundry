@@ -1,0 +1,20 @@
+id: foundry-pr-helm
+name: Foundry PR Helm Chart
+description: "Lint and template the gateway-controller helm chart on PRs that touch it."
+
+# Reactorcide path filters apply to a whole workflow, not to one job node, so
+# each path-scoped job lives in its own workflow file.
+on:
+  events:
+    - pull_request_opened
+    - pull_request_updated
+  branches:
+    - main
+
+paths:
+  include:
+    - "v1/charts/**"
+
+jobs:
+  foundry-helm-validate:
+    job_file: helm-validate.yaml

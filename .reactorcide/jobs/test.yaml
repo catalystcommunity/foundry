@@ -1,15 +1,5 @@
 name: foundry-test
 description: "Build and run the Go unit tests (go test -short; integration tests need real infra and run elsewhere)"
-triggers:
-  events:
-    - pull_request_opened
-    - pull_request_updated
-  branches:
-    - main
-paths:
-  include:
-    - "v1/**"
-    - "csil/**"        # a CSIL/contract change must still build + pass the suite
 job:
   image: golang:1.25-bookworm
   command: |

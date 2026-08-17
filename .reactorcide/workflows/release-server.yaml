@@ -1,0 +1,21 @@
+id: foundry-release-server
+name: Foundry Release Server
+description: "On merge to main: semver-tag, build and push the foundry image, bump the chart appVersion."
+
+# The node name must stay foundry-release-server: the foundry-registry secret
+# grant matches that exact job name.
+on:
+  events:
+    - pull_request_merged
+  branches:
+    - main
+
+paths:
+  include:
+    - "v1/**"
+    - "csil/**"
+    - "Dockerfile"
+
+jobs:
+  foundry-release-server:
+    job_file: release-server.yaml
