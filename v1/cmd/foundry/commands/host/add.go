@@ -8,11 +8,11 @@ import (
 	"strings"
 
 	"github.com/catalystcommunity/foundry/v1/internal/config"
+	"github.com/catalystcommunity/foundry/v1/internal/console"
 	"github.com/catalystcommunity/foundry/v1/internal/host"
 	"github.com/catalystcommunity/foundry/v1/internal/ssh"
 	"github.com/urfave/cli/v3"
 	gossh "golang.org/x/crypto/ssh"
-	"golang.org/x/term"
 )
 
 // AddCommand adds a new host to the registry
@@ -279,16 +279,7 @@ func prompt(message string) (string, error) {
 
 // promptPassword prompts the user for a password (without echoing)
 func promptPassword(message string) (string, error) {
-	fmt.Printf("%s: ", message)
-
-	// Read password without echoing to screen
-	password, err := term.ReadPassword(int(os.Stdin.Fd()))
-	if err != nil {
-		return "", fmt.Errorf("failed to read password: %w", err)
-	}
-
-	fmt.Println() // Print newline after password input
-	return string(password), nil
+	return console.AskPassword(fmt.Sprintf("%s: ", message))
 }
 
 // promptRoles prompts the user to select roles for the host

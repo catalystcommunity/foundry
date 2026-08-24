@@ -18,6 +18,10 @@ type mockWorkerExecutor struct {
 }
 
 func (m *mockWorkerExecutor) Exec(command string) (*ssh.ExecResult, error) {
+	// Default: the memory cgroup preflight passes (host has the controller)
+	if strings.Contains(command, "cgroup.controllers") {
+		return &ssh.ExecResult{Stdout: "ok", ExitCode: 0}, nil
+	}
 	if m.execFunc != nil {
 		return m.execFunc(command)
 	}
@@ -326,17 +330,46 @@ func TestWaitForK3sAgentReady(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name: "agent becomes ready via status check",
+			name: "agent becomes ready after a few attempts",
+			exec: func() func(command string) (*ssh.ExecResult, error) {
+				attempts := 0
+				return func(command string) (*ssh.ExecResult, error) {
+					if strings.Contains(command, "systemctl is-active k3s-agent") {
+						attempts++
+						if attempts < 3 {
+							return &ssh.ExecResult{Stdout: "activating", ExitCode: 3}, nil
+						}
+						return &ssh.ExecResult{Stdout: "active", ExitCode: 0}, nil
+					}
+					return &ssh.ExecResult{ExitCode: 0}, nil
+				}
+			}(),
+			expectError: false,
+		},
+		{
+			name: "agent never becomes ready reports the host logs",
 			exec: func(command string) (*ssh.ExecResult, error) {
 				if strings.Contains(command, "systemctl is-active k3s-agent") {
-					return &ssh.ExecResult{Stdout: "inactive", ExitCode: 3}, nil
+					return &ssh.ExecResult{Stdout: "activating", ExitCode: 3}, nil
 				}
-				if strings.Contains(command, "systemctl status k3s-agent") {
-					return &ssh.ExecResult{Stdout: "Active: active (running)", ExitCode: 0}, nil
+				if strings.Contains(command, "journalctl") {
+					return &ssh.ExecResult{Stdout: `level=fatal msg="Error: failed to find memory cgroup (v2)"`, ExitCode: 0}, nil
 				}
 				return &ssh.ExecResult{ExitCode: 0}, nil
 			},
-			expectError: false,
+			expectError:   true,
+			errorContains: "memory cgroup controller",
+		},
+		{
+			name: "unreachable host reports that it stayed unreachable",
+			exec: func(command string) (*ssh.ExecResult, error) {
+				if strings.Contains(command, "systemctl is-active k3s-agent") {
+					return nil, fmt.Errorf("failed to create session: connection lost")
+				}
+				return &ssh.ExecResult{ExitCode: 0}, nil
+			},
+			expectError:   true,
+			errorContains: "stayed unreachable",
 		},
 	}
 

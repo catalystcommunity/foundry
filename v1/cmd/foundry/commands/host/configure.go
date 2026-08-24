@@ -4,13 +4,14 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/catalystcommunity/foundry/v1/internal/component/k3s"
 	"github.com/catalystcommunity/foundry/v1/internal/config"
+	"github.com/catalystcommunity/foundry/v1/internal/console"
 	"github.com/catalystcommunity/foundry/v1/internal/container"
 	"github.com/catalystcommunity/foundry/v1/internal/host"
 	"github.com/catalystcommunity/foundry/v1/internal/ssh"
 	"github.com/catalystcommunity/foundry/v1/internal/sudo"
 	"github.com/urfave/cli/v3"
-	"golang.org/x/term"
 )
 
 // ConfigureCommand configures a host with basic setup
@@ -117,14 +118,10 @@ func runConfigure(ctx context.Context, cmd *cli.Command) error {
 		fmt.Println("Foundry requires passwordless sudo for automated operations")
 		fmt.Println()
 		fmt.Println("To configure passwordless sudo, we need to run commands as root.")
-		fmt.Print("Enter root password: ")
-
-		passwordBytes, err := term.ReadPassword(int(0))
-		fmt.Println()
+		rootPassword, err := console.AskPassword("Enter root password: ")
 		if err != nil {
-			return fmt.Errorf("failed to read password: %w", err)
+			return err
 		}
-		rootPassword := string(passwordBytes)
 
 		fmt.Println()
 		fmt.Println("Configuring passwordless sudo...")
@@ -138,14 +135,10 @@ func runConfigure(ctx context.Context, cmd *cli.Command) error {
 		fmt.Println("Foundry requires passwordless sudo for automated operations")
 		fmt.Println()
 		fmt.Println("To add user to sudoers, we need to run commands as root.")
-		fmt.Print("Enter root password: ")
-
-		passwordBytes, err := term.ReadPassword(int(0))
-		fmt.Println()
+		rootPassword, err := console.AskPassword("Enter root password: ")
 		if err != nil {
-			return fmt.Errorf("failed to read password: %w", err)
+			return err
 		}
-		rootPassword := string(passwordBytes)
 
 		fmt.Println()
 		fmt.Println("Adding user to sudoers with passwordless access...")
@@ -160,14 +153,10 @@ func runConfigure(ctx context.Context, cmd *cli.Command) error {
 		fmt.Println("Foundry requires passwordless sudo for automated operations")
 		fmt.Println()
 		fmt.Println("To install sudo and configure access, we need to run commands as root.")
-		fmt.Print("Enter root password: ")
-
-		passwordBytes, err := term.ReadPassword(int(0))
-		fmt.Println()
+		rootPassword, err := console.AskPassword("Enter root password: ")
 		if err != nil {
-			return fmt.Errorf("failed to read password: %w", err)
+			return err
 		}
-		rootPassword := string(passwordBytes)
 
 		fmt.Println()
 		fmt.Println("Installing sudo and configuring passwordless access...")
@@ -330,6 +319,27 @@ func runConfigure(ctx context.Context, cmd *cli.Command) error {
 			}
 		} else {
 			fmt.Println("  ✓ CNI configuration already present")
+		}
+	}
+
+	// Check the memory cgroup controller (required later for K3s). Raspberry
+	// Pi OS ships with it disabled; fix the boot flags now so the cluster
+	// join doesn't fail later.
+	fmt.Println()
+	fmt.Println("Checking memory cgroup availability (required for Kubernetes)...")
+	hasMemoryCgroup, err := k3s.HasMemoryCgroup(conn)
+	if err != nil {
+		fmt.Printf("  ⚠ Warning: could not check memory cgroup: %v\n", err)
+	} else if hasMemoryCgroup {
+		fmt.Println("  ✓ Memory cgroup available")
+	} else {
+		cmdlinePath, err := k3s.EnableMemoryCgroupBootFlags(conn)
+		if err != nil {
+			fmt.Printf("  ⚠ Warning: memory cgroup is disabled and could not be enabled automatically: %v\n", err)
+			fmt.Println("  This host cannot join a Kubernetes cluster until the memory cgroup is enabled")
+		} else {
+			fmt.Printf("  ✓ Memory cgroup boot flags added to %s\n", cmdlinePath)
+			fmt.Printf("  ⚠ Reboot %s before joining it to a Kubernetes cluster\n", hostname)
 		}
 	}
 

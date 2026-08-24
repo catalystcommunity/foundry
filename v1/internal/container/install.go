@@ -81,10 +81,18 @@ func InstallRuntime(executor CommandExecutor, user string) error {
 		return nil
 	case RuntimeNerdctlIncomplete:
 		// nerdctl exists but CNI is missing, complete the installation
-		return installCNIPlugins(executor)
+		arch, err := remoteArchitecture(executor)
+		if err != nil {
+			return err
+		}
+		return installCNIPlugins(executor, arch)
 	case RuntimeNone:
 		// Nothing installed, do full installation
-		return installContainerdAndNerdctl(executor, user)
+		arch, err := remoteArchitecture(executor)
+		if err != nil {
+			return err
+		}
+		return installContainerdAndNerdctl(executor, user, arch)
 	default:
 		return fmt.Errorf("unknown runtime type")
 	}
@@ -163,11 +171,32 @@ func IsDockerAvailable(executor CommandExecutor) bool {
 	return runtimeType == RuntimeDocker || runtimeType == RuntimeNerdctl
 }
 
+// remoteArchitecture returns the release-artifact architecture for the remote
+// host ("amd64" or "arm64"), based on its uname machine string.
+func remoteArchitecture(executor CommandExecutor) (string, error) {
+	result, err := executor.Exec("uname -m")
+	if err != nil {
+		return "", fmt.Errorf("failed to detect host architecture: %w", err)
+	}
+	if result.ExitCode != 0 {
+		return "", fmt.Errorf("failed to detect host architecture: %s", strings.TrimSpace(result.Stderr))
+	}
+	machine := strings.TrimSpace(result.Stdout)
+	switch machine {
+	case "x86_64", "amd64":
+		return "amd64", nil
+	case "aarch64", "arm64":
+		return "arm64", nil
+	default:
+		return "", fmt.Errorf("unsupported host architecture %q (supported: x86_64, aarch64)", machine)
+	}
+}
+
 // installCNIPlugins installs only the CNI plugins and config (for incomplete nerdctl installations)
-func installCNIPlugins(executor CommandExecutor) error {
+func installCNIPlugins(executor CommandExecutor, arch string) error {
 	commands := []string{
 		// Download and install CNI plugins
-		"curl -fsSL https://github.com/containernetworking/plugins/releases/download/v1.4.0/cni-plugins-linux-amd64-v1.4.0.tgz -o /tmp/cni-plugins.tgz",
+		fmt.Sprintf("curl -fsSL https://github.com/containernetworking/plugins/releases/download/v1.4.0/cni-plugins-linux-%s-v1.4.0.tgz -o /tmp/cni-plugins.tgz", arch),
 		"sudo mkdir -p /opt/cni/bin",
 		"sudo tar Cxzf /opt/cni/bin /tmp/cni-plugins.tgz",
 		"rm /tmp/cni-plugins.tgz",
@@ -196,7 +225,7 @@ func installCNIPlugins(executor CommandExecutor) error {
 }
 
 // installContainerdAndNerdctl installs containerd and nerdctl on Debian/Ubuntu
-func installContainerdAndNerdctl(executor CommandExecutor, user string) error {
+func installContainerdAndNerdctl(executor CommandExecutor, user string, arch string) error {
 	// Install containerd from official repos
 	commands := []string{
 		// Update package index
@@ -236,13 +265,13 @@ CONTAINERD_CONFIG`,
 		"sudo systemctl restart containerd",
 
 		// Download and install CNI plugins (required by nerdctl for networking)
-		"curl -fsSL https://github.com/containernetworking/plugins/releases/download/v1.4.0/cni-plugins-linux-amd64-v1.4.0.tgz -o /tmp/cni-plugins.tgz",
+		fmt.Sprintf("curl -fsSL https://github.com/containernetworking/plugins/releases/download/v1.4.0/cni-plugins-linux-%s-v1.4.0.tgz -o /tmp/cni-plugins.tgz", arch),
 		"sudo mkdir -p /opt/cni/bin",
 		"sudo tar Cxzf /opt/cni/bin /tmp/cni-plugins.tgz",
 		"rm /tmp/cni-plugins.tgz",
 
 		// Download and install nerdctl
-		"curl -fsSL https://github.com/containerd/nerdctl/releases/download/v1.7.2/nerdctl-1.7.2-linux-amd64.tar.gz -o /tmp/nerdctl.tar.gz",
+		fmt.Sprintf("curl -fsSL https://github.com/containerd/nerdctl/releases/download/v1.7.2/nerdctl-1.7.2-linux-%s.tar.gz -o /tmp/nerdctl.tar.gz", arch),
 		"sudo tar Cxzf /usr/local/bin /tmp/nerdctl.tar.gz",
 		"rm /tmp/nerdctl.tar.gz",
 

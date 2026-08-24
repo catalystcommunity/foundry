@@ -64,6 +64,11 @@ func InstallControlPlane(ctx context.Context, executor SSHExecutor, cfg *Config)
 		return fmt.Errorf("config validation failed: %w", err)
 	}
 
+	// Fail fast if the memory cgroup is unavailable (common on Raspberry Pi OS)
+	if err := EnsureMemoryCgroup(executor); err != nil {
+		return err
+	}
+
 	// Check if K3s is already installed (idempotency)
 	isInstalled, err := IsK3sInstalled(executor)
 	if err != nil {
@@ -278,16 +283,28 @@ func createRegistriesConfig(executor SSHExecutor, registryConfigContent string) 
 
 // waitForK3sReady waits for K3s to be ready
 func waitForK3sReady(executor SSHExecutor, retryCfg RetryConfig) error {
-	for i := 0; i < retryCfg.MaxRetries; i++ {
+	for attempt := 0; attempt < retryCfg.MaxRetries; attempt++ {
 		result, err := executor.Exec("sudo k3s kubectl get nodes")
-		if err == nil && result.ExitCode == 0 {
+		if err == nil && result != nil && result.ExitCode == 0 {
+			if attempt > 0 {
+				fmt.Println("   ✓ K3s API is responding")
+			}
 			return nil
+		}
+		if err != nil && reconnect(executor) {
+			fmt.Println("   ℹ Lost the connection to the host and reconnected; still waiting for K3s")
+			continue
+		}
+
+		if attempt == 0 || (attempt+1)%progressInterval == 0 {
+			fmt.Printf("   … waiting for the K3s API (attempt %d/%d)\n", attempt+1, retryCfg.MaxRetries)
 		}
 
 		time.Sleep(retryCfg.RetryDelay)
 	}
 
-	return fmt.Errorf("K3s did not become ready after %d retries", retryCfg.MaxRetries)
+	waited := time.Duration(retryCfg.MaxRetries) * retryCfg.RetryDelay
+	return fmt.Errorf("K3s did not become ready after %v%s", waited, diagnoseServiceFailure(executor, "k3s"))
 }
 
 // setupKubeVIP sets up kube-vip on the control plane node

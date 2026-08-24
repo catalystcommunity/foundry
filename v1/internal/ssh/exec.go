@@ -2,7 +2,6 @@ package ssh
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"time"
 
@@ -23,7 +22,11 @@ func (c *Connection) Exec(command string) (*ExecResult, error) {
 
 // ExecWithTimeout executes a command with a specified timeout
 func (c *Connection) ExecWithTimeout(command string, timeout time.Duration) (*ExecResult, error) {
-	if c.client == nil {
+	c.mu.Lock()
+	client := c.client
+	c.mu.Unlock()
+
+	if client == nil {
 		return nil, fmt.Errorf("connection is not established")
 	}
 
@@ -31,55 +34,55 @@ func (c *Connection) ExecWithTimeout(command string, timeout time.Duration) (*Ex
 		return nil, fmt.Errorf("command cannot be empty")
 	}
 
-	// Create a context with timeout
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-
-	// Create a new session
-	session, err := c.client.NewSession()
-	if err != nil {
-		return nil, fmt.Errorf("failed to create session: %w", err)
+	type execOutcome struct {
+		result *ExecResult
+		err    error
 	}
-	defer session.Close()
+	outcome := make(chan execOutcome, 1)
 
-	// Set up buffers for stdout and stderr
-	var stdout, stderr bytes.Buffer
-	session.Stdout = &stdout
-	session.Stderr = &stderr
-
-	// Channel to receive the result
-	done := make(chan error, 1)
-
-	// Run the command in a goroutine
 	go func() {
-		done <- session.Run(command)
-	}()
+		// NewSession must run inside the timed goroutine. On a half-open
+		// connection (the host rebooted) it blocks until the transport
+		// fails, so leaving it outside makes the timeout meaningless.
+		session, err := client.NewSession()
+		if err != nil {
+			outcome <- execOutcome{err: fmt.Errorf("failed to create session: %w", err)}
+			return
+		}
+		defer session.Close()
 
-	// Wait for either the command to complete or the context to timeout
-	select {
-	case <-ctx.Done():
-		// Try to signal the session to stop (best effort)
-		session.Signal(ssh.SIGTERM)
-		session.Close()
-		return nil, fmt.Errorf("command timed out after %v", timeout)
-	case err := <-done:
+		var stdout, stderr bytes.Buffer
+		session.Stdout = &stdout
+		session.Stderr = &stderr
+
+		runErr := session.Run(command)
 		result := &ExecResult{
 			Stdout:   stdout.String(),
 			Stderr:   stderr.String(),
 			ExitCode: 0,
 		}
 
-		if err != nil {
-			// Check if it's an exit error
-			if exitErr, ok := err.(*ssh.ExitError); ok {
+		if runErr != nil {
+			// An exit error is a result, not a failure to execute
+			if exitErr, ok := runErr.(*ssh.ExitError); ok {
 				result.ExitCode = exitErr.ExitStatus()
 			} else {
-				// Other error (connection, etc.)
-				return nil, fmt.Errorf("failed to execute command: %w", err)
+				outcome <- execOutcome{err: fmt.Errorf("failed to execute command: %w", runErr)}
+				return
 			}
 		}
 
-		return result, nil
+		outcome <- execOutcome{result: result}
+	}()
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
+	select {
+	case <-timer.C:
+		return nil, fmt.Errorf("command timed out after %v", timeout)
+	case out := <-outcome:
+		return out.result, out.err
 	}
 }
 
