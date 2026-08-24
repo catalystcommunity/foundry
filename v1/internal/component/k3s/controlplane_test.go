@@ -17,6 +17,10 @@ type mockControlPlaneExecutor struct {
 }
 
 func (m *mockControlPlaneExecutor) Exec(command string) (*ssh.ExecResult, error) {
+	// Default: the memory cgroup preflight passes (host has the controller)
+	if strings.Contains(command, "cgroup.controllers") {
+		return &ssh.ExecResult{Stdout: "ok", ExitCode: 0}, nil
+	}
 	if m.execFunc != nil {
 		return m.execFunc(command)
 	}

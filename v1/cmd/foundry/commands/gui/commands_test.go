@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -35,6 +36,28 @@ func TestReadTokenFileRejectsWeakOrExposedToken(t *testing.T) {
 		_, err := readTokenFile(path)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "permissions")
+	})
+}
+
+func TestRequireLoopback(t *testing.T) {
+	loopback, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer loopback.Close()
+
+	nonLoopback, err := net.Listen("tcp", "0.0.0.0:0")
+	require.NoError(t, err)
+	defer nonLoopback.Close()
+
+	t.Run("loopback allowed without flag", func(t *testing.T) {
+		assert.NoError(t, requireLoopback(loopback, false, "must be loopback"))
+	})
+	t.Run("non-loopback rejected without flag", func(t *testing.T) {
+		err := requireLoopback(nonLoopback, false, "must be loopback")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "must be loopback")
+	})
+	t.Run("non-loopback allowed with flag", func(t *testing.T) {
+		assert.NoError(t, requireLoopback(nonLoopback, true, "must be loopback"))
 	})
 }
 

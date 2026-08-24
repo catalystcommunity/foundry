@@ -31,6 +31,7 @@ import (
 	"github.com/catalystcommunity/foundry/v1/internal/component/storage"
 	"github.com/catalystcommunity/foundry/v1/internal/component/velero"
 	"github.com/catalystcommunity/foundry/v1/internal/config"
+	"github.com/catalystcommunity/foundry/v1/internal/console"
 	"github.com/catalystcommunity/foundry/v1/internal/container"
 	"github.com/catalystcommunity/foundry/v1/internal/dashboards"
 	"github.com/catalystcommunity/foundry/v1/internal/helm"
@@ -42,7 +43,6 @@ import (
 	"github.com/catalystcommunity/foundry/v1/internal/sudo"
 	"github.com/urfave/cli/v3"
 	gossh "golang.org/x/crypto/ssh"
-	"golang.org/x/term"
 )
 
 // checkAllComponentsInstalled checks if all components are actually installed
@@ -2723,13 +2723,10 @@ func setupHostSSHKey(h *config.Host, nonInteractive bool) error {
 		return fmt.Errorf("cannot setup SSH key in non-interactive mode (password required)")
 	}
 
-	fmt.Printf("  Password for %s@%s: ", h.User, h.Address)
-	passwordBytes, err := term.ReadPassword(int(os.Stdin.Fd()))
-	fmt.Println() // Newline after password
+	password, err := console.AskPassword(fmt.Sprintf("  Password for %s@%s: ", h.User, h.Address))
 	if err != nil {
-		return fmt.Errorf("failed to read password: %w", err)
+		return err
 	}
-	password = string(passwordBytes)
 
 	// Test SSH connection with password
 	fmt.Println("  Testing SSH connection with password...")
@@ -3042,13 +3039,10 @@ func getRootPasswordWithCache(executor sudo.CommandExecutor, user string, cached
 	}
 
 	// Prompt for password
-	fmt.Print(promptMessage)
-	passwordBytes, err := term.ReadPassword(int(os.Stdin.Fd()))
-	fmt.Println()
+	password, err := console.AskPassword(promptMessage)
 	if err != nil {
-		return "", fmt.Errorf("failed to read root password: %w", err)
+		return "", err
 	}
-	password := string(passwordBytes)
 
 	// Try the new password
 	if err := sudo.SetupSudo(executor, user, password); err != nil {

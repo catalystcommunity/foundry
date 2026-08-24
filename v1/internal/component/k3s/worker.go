@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 )
 
 // JoinWorker joins a worker node to an existing K3s cluster
@@ -27,6 +26,12 @@ func JoinWorker(ctx context.Context, executor SSHExecutor, serverURL string, tok
 		if err := ValidateVIP(cfg.VIP, allowCGNAT); err != nil {
 			return fmt.Errorf("VIP validation failed: %w", err)
 		}
+	}
+
+	// Fail fast if the memory cgroup is unavailable (common on Raspberry Pi OS):
+	// without it the k3s-agent service crash-loops and never becomes ready
+	if err := EnsureMemoryCgroup(executor); err != nil {
+		return err
 	}
 
 	// Check if K3s agent is already installed (idempotency)
@@ -116,23 +121,7 @@ func generateK3sAgentInstallCommand(serverURL string, agentToken string) string 
 // waitForK3sAgentReady waits for K3s agent to be ready
 // Agent nodes don't have kubectl, so we check the service status instead
 func waitForK3sAgentReady(executor SSHExecutor, retryCfg RetryConfig) error {
-	for i := 0; i < retryCfg.MaxRetries; i++ {
-		result, err := executor.Exec("sudo systemctl is-active k3s-agent")
-		if err == nil && result.ExitCode == 0 && strings.TrimSpace(result.Stdout) == "active" {
-			return nil
-		}
-
-		// Also check if service exists
-		result, err = executor.Exec("sudo systemctl status k3s-agent")
-		if err == nil && result.ExitCode == 0 {
-			// Service exists and running
-			return nil
-		}
-
-		time.Sleep(retryCfg.RetryDelay)
-	}
-
-	return fmt.Errorf("K3s agent did not become ready after %d retries", retryCfg.MaxRetries)
+	return waitForServiceActive(executor, "k3s-agent", retryCfg)
 }
 
 // verifyWorkerNodeJoined verifies that the worker node successfully joined the cluster

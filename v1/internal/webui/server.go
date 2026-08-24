@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/catalystcommunity/foundry/v1/internal/config"
+	"github.com/catalystcommunity/foundry/v1/internal/console"
 	"github.com/catalystcommunity/foundry/v1/internal/discovery"
 	"github.com/catalystcommunity/foundry/v1/internal/host"
 	"github.com/catalystcommunity/foundry/v1/internal/setup"
@@ -56,6 +57,8 @@ type Server struct {
 	mode       string
 	jobsMu     sync.RWMutex
 	jobs       map[string]*Job
+	promptsMu  sync.Mutex
+	prompts    map[string]*pendingPrompt
 	applyMu    sync.Mutex
 	handler    http.Handler
 }
@@ -67,7 +70,34 @@ type Job struct {
 	Message    string    `json:"message"`
 	StartedAt  time.Time `json:"started_at"`
 	FinishedAt time.Time `json:"finished_at,omitempty"`
+	// Log holds the console output of the operation so the browser shows
+	// the same progress the terminal does.
+	Log []string `json:"log,omitempty"`
+	// Prompt is set while the operation waits for operator input.
+	Prompt *Prompt `json:"prompt,omitempty"`
 }
+
+// Prompt is an outstanding request for operator input, such as a password.
+// The answer itself is never stored on the job.
+type Prompt struct {
+	ID      string `json:"id"`
+	Message string `json:"message"`
+	Secret  bool   `json:"secret"`
+}
+
+// pendingPrompt couples a published prompt with the channel that carries the
+// operator's answer back to the waiting operation.
+type pendingPrompt struct {
+	prompt Prompt
+	answer chan string
+}
+
+// maxJobLogLines bounds how much output one job keeps in memory.
+const maxJobLogLines = 5000
+
+// promptTimeout is how long an operation waits for an answer before it gives
+// up, so a browser that goes away cannot wedge the job forever.
+const promptTimeout = 15 * time.Minute
 
 // WizardConfig is the editable part of a stack configuration. Component
 // details remain in YAML and are preserved when the wizard applies changes.
@@ -116,6 +146,7 @@ func New(options Options) (*Server, error) {
 		inspect:    options.Inspect,
 		mode:       options.Mode,
 		jobs:       make(map[string]*Job),
+		prompts:    make(map[string]*pendingPrompt),
 	}
 	if server.mode == "" {
 		server.mode = "local"
@@ -138,6 +169,7 @@ func (s *Server) routes() http.Handler {
 	mux.Handle("POST /api/v1/apply", s.requireAuth(http.HandlerFunc(s.handleApply)))
 	mux.Handle("POST /api/v1/apply/current", s.requireAuth(http.HandlerFunc(s.handleApplyCurrent)))
 	mux.Handle("GET /api/v1/jobs/{id}", s.requireAuth(http.HandlerFunc(s.handleJob)))
+	mux.Handle("POST /api/v1/jobs/{id}/prompt", s.requireAuth(http.HandlerFunc(s.handleJobPrompt)))
 
 	content, err := fs.Sub(assets, "assets")
 	if err != nil {
@@ -344,9 +376,17 @@ func (s *Server) runApply(jobID string) {
 		job.Message = "Applying the stack configuration"
 	})
 
+	// Send anything the operation prints to the job log, and answer any
+	// password prompt from the browser instead of the terminal.
+	restorePrompter := console.SetPrompter(&jobPrompter{server: s, jobID: jobID})
+	defer restorePrompter()
+
 	var err error
 	if s.apply != nil {
-		err = s.apply(context.Background(), s.configPath)
+		err = console.Capture(
+			func(line string) { s.appendJobLog(jobID, line) },
+			func() error { return s.apply(context.Background(), s.configPath) },
+		)
 	}
 	s.updateJob(jobID, func(job *Job) {
 		job.FinishedAt = time.Now()
@@ -373,6 +413,98 @@ func (s *Server) handleJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, job)
+}
+
+// appendJobLog records one line of operation output, keeping the most recent
+// lines when a long run exceeds the limit.
+func (s *Server) appendJobLog(jobID string, line string) {
+	s.updateJob(jobID, func(job *Job) {
+		job.Log = append(job.Log, line)
+		if len(job.Log) > maxJobLogLines {
+			job.Log = job.Log[len(job.Log)-maxJobLogLines:]
+		}
+		if trimmed := strings.TrimSpace(line); trimmed != "" {
+			job.Message = trimmed
+		}
+	})
+}
+
+// jobPrompter answers operator prompts from the browser instead of a
+// terminal, so a web UI user is never blocked by an invisible question.
+type jobPrompter struct {
+	server *Server
+	jobID  string
+}
+
+// Password publishes the question on the job and waits for the answer.
+func (p *jobPrompter) Password(message string) (string, error) {
+	return p.server.askOperator(p.jobID, message, true)
+}
+
+// askOperator publishes a prompt on a job and blocks until the browser
+// answers it or the wait times out.
+func (s *Server) askOperator(jobID string, message string, secret bool) (string, error) {
+	promptID, err := randomToken()
+	if err != nil {
+		return "", fmt.Errorf("create prompt: %w", err)
+	}
+
+	pending := &pendingPrompt{
+		prompt: Prompt{ID: promptID, Message: strings.TrimSpace(message), Secret: secret},
+		answer: make(chan string, 1),
+	}
+
+	s.promptsMu.Lock()
+	s.prompts[jobID] = pending
+	s.promptsMu.Unlock()
+
+	published := pending.prompt
+	s.updateJob(jobID, func(job *Job) { job.Prompt = &published })
+
+	defer func() {
+		s.promptsMu.Lock()
+		delete(s.prompts, jobID)
+		s.promptsMu.Unlock()
+		s.updateJob(jobID, func(job *Job) { job.Prompt = nil })
+	}()
+
+	select {
+	case answer := <-pending.answer:
+		return answer, nil
+	case <-time.After(promptTimeout):
+		return "", fmt.Errorf("no answer to %q within %v", published.Message, promptTimeout)
+	}
+}
+
+// handleJobPrompt accepts the operator's answer to a waiting prompt.
+func (s *Server) handleJobPrompt(w http.ResponseWriter, r *http.Request) {
+	var payload struct {
+		PromptID string `json:"prompt_id"`
+		Value    string `json:"value"`
+	}
+	if err := decodeJSON(w, r, &payload); err != nil {
+		return
+	}
+
+	s.promptsMu.Lock()
+	pending := s.prompts[r.PathValue("id")]
+	s.promptsMu.Unlock()
+
+	if pending == nil {
+		writeError(w, http.StatusNotFound, "no prompt is waiting for this job")
+		return
+	}
+	if payload.PromptID != pending.prompt.ID {
+		writeError(w, http.StatusConflict, "this prompt is no longer waiting for an answer")
+		return
+	}
+
+	select {
+	case pending.answer <- payload.Value:
+		writeJSON(w, http.StatusOK, map[string]string{"state": "accepted"})
+	default:
+		writeError(w, http.StatusConflict, "this prompt was already answered")
+	}
 }
 
 func (s *Server) updateJob(id string, update func(*Job)) {

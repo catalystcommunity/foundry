@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/catalystcommunity/foundry/v1/internal/config"
+	"github.com/catalystcommunity/foundry/v1/internal/console"
 	"github.com/catalystcommunity/foundry/v1/internal/discovery"
 	"github.com/catalystcommunity/foundry/v1/internal/host"
 	"github.com/catalystcommunity/foundry/v1/internal/topology"
@@ -193,4 +195,133 @@ func nodeIDs(nodes []topology.Node) []string {
 		ids = append(ids, node.ID)
 	}
 	return ids
+}
+
+func TestApplyJobCapturesConsoleOutput(t *testing.T) {
+	server, token, _ := newTestServer(t, func(_ context.Context, _ string) error {
+		fmt.Println("Joining worker node ht0-labpi...")
+		fmt.Println("✓ Worker node ht0-labpi joined")
+		return nil
+	})
+
+	accepted := performRequest(server.Handler(), http.MethodPost, "/api/v1/apply/current", nil, token, "")
+	require.Equal(t, http.StatusAccepted, accepted.Code)
+
+	var queued Job
+	require.NoError(t, json.Unmarshal(accepted.Body.Bytes(), &queued))
+
+	job := waitForJobState(t, server, token, queued.ID, "complete")
+	assert.Contains(t, job.Log, "Joining worker node ht0-labpi...")
+	assert.Contains(t, job.Log, "✓ Worker node ht0-labpi joined")
+}
+
+func TestApplyJobAsksTheBrowserForAPassword(t *testing.T) {
+	answered := make(chan string, 1)
+	server, token, _ := newTestServer(t, func(_ context.Context, _ string) error {
+		secret, err := console.AskPassword("Enter root password: ")
+		if err != nil {
+			return err
+		}
+		answered <- secret
+		return nil
+	})
+
+	accepted := performRequest(server.Handler(), http.MethodPost, "/api/v1/apply/current", nil, token, "")
+	require.Equal(t, http.StatusAccepted, accepted.Code)
+	var queued Job
+	require.NoError(t, json.Unmarshal(accepted.Body.Bytes(), &queued))
+
+	// The job publishes the question and waits for the browser
+	job := waitForJobPrompt(t, server, token, queued.ID)
+	require.NotNil(t, job.Prompt)
+	assert.Equal(t, "Enter root password:", job.Prompt.Message)
+	assert.True(t, job.Prompt.Secret)
+
+	reply := performRequest(server.Handler(), http.MethodPost,
+		"/api/v1/jobs/"+queued.ID+"/prompt",
+		map[string]string{"prompt_id": job.Prompt.ID, "value": "hunter2"}, token, "")
+	require.Equal(t, http.StatusOK, reply.Code)
+
+	select {
+	case secret := <-answered:
+		assert.Equal(t, "hunter2", secret)
+	case <-time.After(2 * time.Second):
+		t.Fatal("the operation never received the password")
+	}
+
+	final := waitForJobState(t, server, token, queued.ID, "complete")
+	assert.Nil(t, final.Prompt, "the prompt must clear once answered")
+}
+
+func TestJobPromptRejectsUnknownAndStalePrompts(t *testing.T) {
+	server, token, _ := newTestServer(t, nil)
+
+	missing := performRequest(server.Handler(), http.MethodPost, "/api/v1/jobs/does-not-exist/prompt",
+		map[string]string{"prompt_id": "x", "value": "y"}, token, "")
+	assert.Equal(t, http.StatusNotFound, missing.Code)
+
+	server.promptsMu.Lock()
+	server.prompts["job-1"] = &pendingPrompt{
+		prompt: Prompt{ID: "current", Message: "Password", Secret: true},
+		answer: make(chan string, 1),
+	}
+	server.promptsMu.Unlock()
+
+	stale := performRequest(server.Handler(), http.MethodPost, "/api/v1/jobs/job-1/prompt",
+		map[string]string{"prompt_id": "old", "value": "y"}, token, "")
+	assert.Equal(t, http.StatusConflict, stale.Code)
+}
+
+func TestJobLogIsBounded(t *testing.T) {
+	server, _, _ := newTestServer(t, nil)
+	server.jobsMu.Lock()
+	server.jobs["job-1"] = &Job{ID: "job-1", State: "running"}
+	server.jobsMu.Unlock()
+
+	for i := 0; i < maxJobLogLines+50; i++ {
+		server.appendJobLog("job-1", fmt.Sprintf("line %d", i))
+	}
+
+	server.jobsMu.RLock()
+	logged := server.jobs["job-1"].Log
+	server.jobsMu.RUnlock()
+
+	require.Len(t, logged, maxJobLogLines)
+	assert.Equal(t, "line 50", logged[0], "oldest lines are dropped first")
+}
+
+// waitForJobState polls a job until it reaches the wanted state.
+func waitForJobState(t *testing.T, server *Server, token, jobID, wanted string) Job {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		response := performRequest(server.Handler(), http.MethodGet, "/api/v1/jobs/"+jobID, nil, token, "")
+		require.Equal(t, http.StatusOK, response.Code)
+		var job Job
+		require.NoError(t, json.Unmarshal(response.Body.Bytes(), &job))
+		if job.State == wanted {
+			return job
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("job %s never reached state %s", jobID, wanted)
+	return Job{}
+}
+
+// waitForJobPrompt polls a job until it publishes a prompt.
+func waitForJobPrompt(t *testing.T, server *Server, token, jobID string) Job {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		response := performRequest(server.Handler(), http.MethodGet, "/api/v1/jobs/"+jobID, nil, token, "")
+		require.Equal(t, http.StatusOK, response.Code)
+		var job Job
+		require.NoError(t, json.Unmarshal(response.Body.Bytes(), &job))
+		if job.Prompt != nil {
+			return job
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("job %s never asked for input", jobID)
+	return Job{}
 }

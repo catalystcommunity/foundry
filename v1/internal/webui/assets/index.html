@@ -100,6 +100,16 @@
             <span id="apply-message">Review the plan before you apply it.</span>
             <button id="apply" type="button" disabled>Apply configuration</button>
           </div>
+
+          <section class="job-console" id="job-console" hidden>
+            <h2>Progress</h2>
+            <div class="prompt-box" id="job-prompt" hidden>
+              <label id="job-prompt-message" for="job-prompt-value">Input required</label>
+              <input id="job-prompt-value" type="password" autocomplete="off">
+              <button id="job-prompt-send" type="button">Send</button>
+            </div>
+            <pre id="job-log" class="job-log" aria-live="polite"></pre>
+          </section>
         </form>
       </section>
     </main>

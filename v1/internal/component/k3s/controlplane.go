@@ -31,6 +31,11 @@ func JoinControlPlane(ctx context.Context, executor SSHExecutor, existingServerU
 		return fmt.Errorf("config validation failed: %w", err)
 	}
 
+	// Fail fast if the memory cgroup is unavailable (common on Raspberry Pi OS)
+	if err := EnsureMemoryCgroup(executor); err != nil {
+		return err
+	}
+
 	// Check if K3s is already installed (idempotency)
 	isInstalled, err := IsK3sInstalled(executor)
 	if err != nil {

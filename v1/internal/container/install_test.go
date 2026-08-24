@@ -228,3 +228,53 @@ func TestDetectRuntimeInstallation_None(t *testing.T) {
 	runtimeType := DetectRuntimeInstallation(mock)
 	assert.Equal(t, RuntimeNone, runtimeType)
 }
+
+func TestRemoteArchitecture(t *testing.T) {
+	cases := []struct {
+		machine  string
+		expected string
+	}{
+		{"x86_64", "amd64"},
+		{"amd64", "amd64"},
+		{"aarch64", "arm64"},
+		{"arm64", "arm64"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.machine, func(t *testing.T) {
+			mock := newMockCommandExecutor()
+			mock.setResult("uname -m", tc.machine+"\n", 0)
+			arch, err := remoteArchitecture(mock)
+			require.NoError(t, err)
+			assert.Equal(t, tc.expected, arch)
+		})
+	}
+}
+
+func TestRemoteArchitecture_Unsupported(t *testing.T) {
+	mock := newMockCommandExecutor()
+	mock.setResult("uname -m", "armv7l\n", 0)
+	_, err := remoteArchitecture(mock)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unsupported host architecture")
+}
+
+func TestRemoteArchitecture_CommandFails(t *testing.T) {
+	mock := newMockCommandExecutor()
+	mock.setError("uname -m", "uname: not found", 127)
+	_, err := remoteArchitecture(mock)
+	require.Error(t, err)
+}
+
+func TestInstallRuntime_UsesHostArchitecture(t *testing.T) {
+	mock := newMockCommandExecutor()
+	// Nothing installed: detection falls through to RuntimeNone
+	mock.setResult("which docker", "", 1)
+	mock.setResult("uname -m", "aarch64\n", 0)
+
+	require.NoError(t, InstallRuntime(mock, "testuser"))
+
+	history := strings.Join(mock.execHistory, "\n")
+	assert.Contains(t, history, "cni-plugins-linux-arm64-v1.4.0.tgz")
+	assert.Contains(t, history, "nerdctl-1.7.2-linux-arm64.tar.gz")
+	assert.NotContains(t, history, "amd64")
+}

@@ -3,6 +3,8 @@ package ssh
 import (
 	"fmt"
 	"net"
+	"sync"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -13,7 +15,11 @@ type Connection struct {
 	Port       int
 	User       string
 	AuthMethod ssh.AuthMethod
-	client     *ssh.Client
+
+	mu            sync.Mutex
+	client        *ssh.Client
+	timeout       time.Duration
+	keepAliveDone chan struct{}
 }
 
 // KeyPair represents an SSH public/private key pair

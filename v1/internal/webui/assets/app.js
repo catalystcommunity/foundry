@@ -233,16 +233,75 @@ byId("apply").addEventListener("click", async () => {
   try {
     const job = await request("/api/v1/apply", { method: "POST", body: JSON.stringify({ config: reviewedConfig, confirm: true }) });
     byId("apply-message").textContent = job.message;
+    byId("job-console").hidden = false;
+    byId("job-log").textContent = "";
     pollJob(job.id);
   } catch (error) { byId("apply-message").textContent = error.message; byId("apply").disabled = false; }
+});
+
+// activePrompt tracks the question the running job is waiting on, so the
+// answer is sent back against the right prompt.
+let activePrompt = null;
+
+function renderJobLog(lines) {
+  const pane = byId("job-log");
+  const text = (lines || []).join("\n");
+  if (pane.textContent === text) return;
+  const atBottom = pane.scrollTop + pane.clientHeight >= pane.scrollHeight - 20;
+  pane.textContent = text;
+  if (atBottom) pane.scrollTop = pane.scrollHeight;
+}
+
+function renderPrompt(prompt) {
+  const box = byId("job-prompt");
+  const field = byId("job-prompt-value");
+  if (!prompt) {
+    activePrompt = null;
+    box.hidden = true;
+    field.value = "";
+    return;
+  }
+  if (activePrompt && activePrompt.id === prompt.id) return;
+  activePrompt = prompt;
+  byId("job-prompt-message").textContent = prompt.message;
+  field.type = prompt.secret ? "password" : "text";
+  field.value = "";
+  box.hidden = false;
+  field.focus();
+}
+
+async function sendPromptAnswer() {
+  if (!activePrompt) return;
+  const field = byId("job-prompt-value");
+  const value = field.value;
+  const prompt = activePrompt;
+  activePrompt = null;
+  byId("job-prompt").hidden = true;
+  field.value = "";
+  try {
+    await request(`/api/v1/jobs/${encodeURIComponent(prompt.jobId)}/prompt`, {
+      method: "POST",
+      body: JSON.stringify({ prompt_id: prompt.id, value }),
+    });
+  } catch (error) {
+    byId("apply-message").textContent = error.message;
+  }
+}
+
+byId("job-prompt-send").addEventListener("click", sendPromptAnswer);
+byId("job-prompt-value").addEventListener("keydown", (event) => {
+  if (event.key === "Enter") { event.preventDefault(); sendPromptAnswer(); }
 });
 
 async function pollJob(id) {
   try {
     const job = await request(`/api/v1/jobs/${encodeURIComponent(id)}`);
     byId("apply-message").textContent = job.message;
+    renderJobLog(job.log);
+    renderPrompt(job.prompt ? { ...job.prompt, jobId: id } : null);
     if (["queued", "running"].includes(job.state)) return setTimeout(() => pollJob(id), 1000);
     if (job.state === "complete") { currentConfig = reviewedConfig; await Promise.all([loadState(), loadOverview(), loadRuntime()]); }
+    else byId("apply").disabled = false;
   } catch (error) { byId("apply-message").textContent = error.message; }
 }
 

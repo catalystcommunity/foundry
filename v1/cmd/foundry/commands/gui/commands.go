@@ -27,7 +27,8 @@ var Command = &cli.Command{
 	Name:  "gui",
 	Usage: "Open the optional Foundry web interface",
 	Flags: []cli.Flag{
-		&cli.StringFlag{Name: "listen", Usage: "loopback listen address", Value: "127.0.0.1:0"},
+		&cli.StringFlag{Name: "listen", Usage: "listen address (loopback unless --noloopback is set)", Value: "127.0.0.1:0"},
+		&cli.BoolFlag{Name: "noloopback", Usage: "allow --listen on a non-loopback address"},
 		&cli.BoolFlag{Name: "no-open", Usage: "print the URL without opening a browser"},
 		&cli.BoolFlag{Name: "manager", Usage: "forward the installed external manager over SSH"},
 		&cli.BoolFlag{Name: "local", Usage: "run the local manager even when an external manager is configured"},
@@ -76,8 +77,9 @@ func runGUI(ctx context.Context, cmd *cli.Command) error {
 		return fmt.Errorf("listen for web UI: %w", err)
 	}
 	defer listener.Close()
-	if !listener.Addr().(*net.TCPAddr).IP.IsLoopback() {
-		return fmt.Errorf("foundry gui must listen on a loopback address; use the external manager for network access")
+	if err := requireLoopback(listener, cmd.Bool("noloopback"),
+		"foundry gui must listen on a loopback address; pass --noloopback or use the external manager for network access"); err != nil {
+		return err
 	}
 
 	url := fmt.Sprintf("http://%s/#token=%s", listener.Addr().String(), token)
@@ -157,8 +159,9 @@ func runManagerProxy(ctx context.Context, cmd *cli.Command, configPath string) e
 		return fmt.Errorf("listen for manager proxy: %w", err)
 	}
 	defer listener.Close()
-	if !listener.Addr().(*net.TCPAddr).IP.IsLoopback() {
-		return fmt.Errorf("the manager proxy must listen on a loopback address")
+	if err := requireLoopback(listener, cmd.Bool("noloopback"),
+		"the manager proxy must listen on a loopback address; pass --noloopback to override"); err != nil {
+		return err
 	}
 	url := fmt.Sprintf("http://%s/#token=%s", listener.Addr().String(), token)
 	fmt.Printf("Foundry manager proxy: %s\n", url)
@@ -285,6 +288,17 @@ func readTokenFile(path string) (string, error) {
 		return "", fmt.Errorf("token file must contain one high-entropy token")
 	}
 	return token, nil
+}
+
+func requireLoopback(listener net.Listener, allowNonLoopback bool, message string) error {
+	if listener.Addr().(*net.TCPAddr).IP.IsLoopback() {
+		return nil
+	}
+	if !allowNonLoopback {
+		return fmt.Errorf("%s", message)
+	}
+	fmt.Println("Warning: listening on a non-loopback address; the access token in the URL grants full control to anyone who obtains it")
+	return nil
 }
 
 func serve(ctx context.Context, listener net.Listener, handler http.Handler) error {
