@@ -145,9 +145,19 @@ class FoundryJobsTests(unittest.TestCase):
             ),
         )
         with mock.patch.object(jobs, "_ensure_semver_tags", return_value=Path("semver-tags")):
-            with mock.patch.object(jobs, "_run", return_value=completed):
+            with mock.patch.object(jobs, "_run", return_value=completed) as run:
                 metadata = jobs._release_metadata(Path("/tmp"), "v1", {})
         self.assertEqual(metadata, {"tag": "v1/v1.2.3", "version": "1.2.3"})
+        self.assertEqual(
+            run.call_args.args[0],
+            [
+                Path("semver-tags"),
+                "run",
+                "--output_json",
+                "--directories",
+                "v1",
+            ],
+        )
 
     def test_release_metadata_reports_no_release(self) -> None:
         completed = subprocess.CompletedProcess(
@@ -298,6 +308,12 @@ class FoundryJobsTests(unittest.TestCase):
             content = job_file.read_text(encoding="utf-8")
             self.assertIn("runnerlib run --job-command true", content)
             self.assertNotIn("raw_command:", content)
+
+    def test_release_workflow_runs_for_release_job_changes(self) -> None:
+        workflow = (
+            REPOSITORY_ROOT / ".reactorcide" / "workflows" / "release-server.yaml"
+        ).read_text(encoding="utf-8")
+        self.assertIn('- ".reactorcide/**"', workflow)
 
     def test_bash_job_directory_is_empty(self) -> None:
         scripts = REPOSITORY_ROOT / ".reactorcide" / "jobs" / "scripts"

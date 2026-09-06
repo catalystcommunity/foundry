@@ -12,6 +12,7 @@ on:
 
 paths:
   include:
+    - ".reactorcide/**"
     - "v1/**"
     - "csil/**"
     - "Dockerfile"

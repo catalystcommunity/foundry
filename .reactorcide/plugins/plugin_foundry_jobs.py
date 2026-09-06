@@ -397,8 +397,6 @@ def _release_metadata(root: Path, directory: str, environment: Mapping[str, str]
             "--output_json",
             "--directories",
             directory,
-            "--branch",
-            "",
         ],
         cwd=root,
         env=environment,
