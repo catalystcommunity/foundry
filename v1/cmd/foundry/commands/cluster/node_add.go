@@ -99,6 +99,9 @@ func runNodeAdd(ctx context.Context, cmd *cli.Command) error {
 	if err := addNodeToCluster(ctx, hostname, nodeRole, cfg); err != nil {
 		return fmt.Errorf("failed to add node: %w", err)
 	}
+	if err := reconcileARM64NodeTaints(ctx, hostname); err != nil {
+		return fmt.Errorf("failed to apply architecture scheduling protection: %w", err)
+	}
 
 	// Apply labels if specified
 	if len(labels) > 0 {
@@ -271,9 +274,31 @@ func addNodeToCluster(ctx context.Context, hostname string, nodeRole *k3s.Determ
 	}
 
 	// Parse additional registries from component config
+	hasVersionPin := false
 	if k3sCompCfg, exists := cfg.Components["k3s"]; exists {
+		if k3sCompCfg.Version != nil {
+			k3sConfig.Version = *k3sCompCfg.Version
+			hasVersionPin = k3sConfig.Version != "" && k3sConfig.Version != "latest"
+		}
 		k3sConfig.AdditionalRegistries = k3s.ParseAdditionalRegistries(k3sCompCfg.Config)
 	}
+	controlPlanes := cfg.GetClusterControlPlaneHosts()
+	if len(controlPlanes) == 0 {
+		return fmt.Errorf("no control plane host is configured")
+	}
+	controlPlaneConn, err := connectToHost(controlPlanes[0].Hostname)
+	if err != nil {
+		return fmt.Errorf("failed to connect to control plane %s: %w", controlPlanes[0].Hostname, err)
+	}
+	installedVersion, err := k3s.GetInstalledVersion(controlPlaneConn)
+	controlPlaneConn.Close()
+	if err != nil {
+		return fmt.Errorf("failed to resolve the cluster K3s version: %w", err)
+	}
+	if hasVersionPin && strings.TrimPrefix(k3sConfig.Version, "v") != strings.TrimPrefix(installedVersion, "v") {
+		return fmt.Errorf("K3s version pin %s does not match the current cluster version %s; upgrade the cluster before you add a node", k3sConfig.Version, installedVersion)
+	}
+	k3sConfig.Version = installedVersion
 
 	// Add registry config if Zot is configured
 	if zotAddr, err := cfg.GetPrimaryZotAddress(); err == nil {
@@ -354,6 +379,41 @@ func applyNodeLabelsAfterJoin(ctx context.Context, nodeName string, labels map[s
 
 	// Apply labels
 	return client.SetNodeLabels(ctx, nodeName, labels)
+}
+
+func reconcileARM64NodeTaints(ctx context.Context, nodeName string) error {
+	resolver, err := secrets.NewOpenBAOResolver("", "")
+	if err != nil {
+		return fmt.Errorf("failed to create OpenBAO resolver: %w", err)
+	}
+
+	client, err := k8s.NewClientFromOpenBAO(ctx, resolver, "foundry-core/k3s/kubeconfig", "value")
+	if err != nil {
+		return fmt.Errorf("failed to create Kubernetes client: %w", err)
+	}
+	deadline := time.Now().Add(60 * time.Second)
+	for {
+		if _, err := client.GetNodeLabels(ctx, nodeName); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("node %s did not appear in the Kubernetes API", nodeName)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(2 * time.Second):
+		}
+	}
+
+	updatedNodes, err := client.EnsureARM64NodeTaints(ctx)
+	if err != nil {
+		return err
+	}
+	if updatedNodes > 0 {
+		fmt.Printf("Applied the ARM64 scheduling taint to %d node(s)\n", updatedNodes)
+	}
+	return nil
 }
 
 // maybeUpdateLonghornReplicaCount checks if Longhorn is installed and updates

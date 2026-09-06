@@ -137,6 +137,32 @@ components:
 	assert.Equal(t, "ghcr.io/catalystcommunity/foundry", cfg.Management.Image)
 	assert.Equal(t, "latest", cfg.Management.Version)
 	assert.Equal(t, "/var/lib/foundry", cfg.Management.DataPath)
+	require.NotNil(t, cfg.Components["k3s"].AllowUpgrades)
+	assert.True(t, *cfg.Components["k3s"].AllowUpgrades)
+}
+
+func TestSaveWritesComponentUpgradeControls(t *testing.T) {
+	cfg, err := LoadFromReader(strings.NewReader(`
+cluster:
+  name: test
+  primary_domain: example.test
+components:
+  k3s:
+    version: latest
+  zot:
+    allow_upgrades: false
+`))
+	require.NoError(t, err)
+
+	path := filepath.Join(t.TempDir(), "stack.yaml")
+	require.NoError(t, Save(cfg, path))
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+
+	output := string(data)
+	assert.Contains(t, output, "k3s:\n        allow_upgrades: true")
+	assert.Contains(t, output, "zot:\n        allow_upgrades: false")
+	assert.NotContains(t, output, "version: latest")
 }
 
 func TestLegacyConfigRoundTripFromProtectedCopies(t *testing.T) {

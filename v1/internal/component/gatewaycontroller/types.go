@@ -118,6 +118,9 @@ func ParseConfig(cfg component.ComponentConfig) (*Config, error) {
 	if v, ok := cfg.GetString("image_repository"); ok {
 		config.ImageRepository = v
 	}
+	if v, ok := cfg.GetString("version"); ok {
+		config.ImageTag = v
+	}
 	if v, ok := cfg.GetString("image_tag"); ok {
 		config.ImageTag = v
 	}

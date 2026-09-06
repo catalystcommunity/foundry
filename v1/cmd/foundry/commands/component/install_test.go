@@ -10,6 +10,7 @@ import (
 
 	"github.com/catalystcommunity/foundry/v1/cmd/foundry/registry"
 	"github.com/catalystcommunity/foundry/v1/internal/component"
+	"github.com/catalystcommunity/foundry/v1/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
@@ -114,6 +115,28 @@ func TestInstallCommand_DryRun(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestApplyConfiguredComponentValues(t *testing.T) {
+	pinnedVersion := "4.0.401"
+	stackConfig := &config.Config{
+		Components: config.ComponentMap{
+			"seaweedfs": {
+				Version: &pinnedVersion,
+				Config: map[string]any{
+					"access_key": "configured-key",
+					"buckets":    []any{"loki", "velero"},
+				},
+			},
+		},
+	}
+	runtimeConfig := component.ComponentConfig{"access_key": "command-key"}
+
+	applyConfiguredComponentValues(stackConfig, "seaweedfs", runtimeConfig)
+
+	assert.Equal(t, "command-key", runtimeConfig["access_key"])
+	assert.Equal(t, []any{"loki", "velero"}, runtimeConfig["buckets"])
+	assert.Equal(t, pinnedVersion, runtimeConfig["version"])
 }
 
 func TestInstallCommand_DependencyCheck(t *testing.T) {

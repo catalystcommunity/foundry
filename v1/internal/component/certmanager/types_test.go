@@ -179,6 +179,17 @@ func TestComponent_Install(t *testing.T) {
 	assert.Contains(t, err.Error(), "helm_client not provided")
 }
 
+func TestComponentRuntimeVersionPin(t *testing.T) {
+	comp := NewComponent(&Config{Version: "v1.14.2"})
+
+	installConfig := comp.configWithRuntimeOverrides(component.ComponentConfig{
+		"version": "v1.16.4",
+	})
+
+	assert.Equal(t, "v1.16.4", installConfig.Version)
+	assert.Equal(t, "v1.14.2", comp.config.Version)
+}
+
 func TestComponent_Upgrade(t *testing.T) {
 	comp := NewComponent(&Config{
 		Namespace: "cert-manager",

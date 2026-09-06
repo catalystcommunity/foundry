@@ -1,26 +1,16 @@
 name: foundry-release-server
-description: "On merge to main: semver-tag, build + push the foundry image, bump chart appVersion"
+description: "On merge to main: semver-tag, publish the Foundry image and binaries, bump chart appVersion"
 job:
   image: containers.catalystsquad.com/public/reactorcide/runnerbase:latest
-  # Clone the repo ourselves (triggered child jobs don't get /job/src populated) —
-  # the linkkeys release pattern. The authed clone gives semver-tags full history,
-  # tags, and a push-capable origin. The script operates on the current dir.
-  command: |
-    set -e
-    if [ "${REACTORCIDE_WORKER_MODE:-remote}" = "local" ]; then
-      cd /job/src
-    else
-      git clone "https://x-access-token:${GITHUB_PAT}@github.com/${REACTORCIDE_REPO}.git" /workspace
-      cd /workspace
-    fi
-    bash .reactorcide/jobs/scripts/release-server.sh
+  command: "runnerlib run --job-command true"
   timeout: 1800
   priority: 15
+  working_dir: /job
   capabilities:
-    - docker          # build + push the image
-  raw_command: true
+    - docker
   disable_run_local: true
 environment:
+  FOUNDRY_RELEASE_JOB: server
   REGISTRY: "containers.catalystsquad.com"
   IMAGE_PATH: "public/catalystcommunity/foundry"
   REGISTRY_USER: "${secret:catalystcommunity/registry:user}"

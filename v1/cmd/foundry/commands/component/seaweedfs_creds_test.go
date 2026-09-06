@@ -10,7 +10,7 @@ import (
 
 // TestGetSeaweedFSCredentials_FromStackConfig verifies the authoritative path:
 // SeaweedFS S3 keys are read from the stack config's seaweedfs component, with no
-// k8s client required (SeaweedFS runs with S3 auth disabled, so there is no secret).
+// Kubernetes client required.
 func TestGetSeaweedFSCredentials_FromStackConfig(t *testing.T) {
 	cfg := &config.Config{
 		Components: config.ComponentMap{

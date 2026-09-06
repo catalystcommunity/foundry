@@ -199,6 +199,136 @@ func TestInstallControlPlane(t *testing.T) {
 	}
 }
 
+func TestGetInstalledVersion(t *testing.T) {
+	tests := []struct {
+		name    string
+		result  *ssh.ExecResult
+		want    string
+		wantErr bool
+	}{
+		{
+			name:   "standard output",
+			result: &ssh.ExecResult{ExitCode: 0, Stdout: "k3s version v1.34.3+k3s1 (abcdef12)\ngo version go1.24.6"},
+			want:   "v1.34.3+k3s1",
+		},
+		{
+			name:    "command failure",
+			result:  &ssh.ExecResult{ExitCode: 1, Stderr: "not found"},
+			wantErr: true,
+		},
+		{
+			name:    "invalid output",
+			result:  &ssh.ExecResult{ExitCode: 0, Stdout: "unknown"},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			executor := &mockInstallSSHExecutor{execFunc: func(string) (*ssh.ExecResult, error) {
+				return tt.result, nil
+			}}
+			got, err := GetInstalledVersion(executor)
+			if tt.wantErr {
+				assert.Error(t, err)
+				return
+			}
+			assert.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestUpgradeControlPlaneRunsVersionedInstaller(t *testing.T) {
+	installerRan := false
+	executor := &mockInstallSSHExecutor{execFunc: func(command string) (*ssh.ExecResult, error) {
+		switch {
+		case strings.Contains(command, "systemctl is-active k3s"):
+			return &ssh.ExecResult{ExitCode: 0, Stdout: "active"}, nil
+		case command == "k3s --version":
+			return &ssh.ExecResult{ExitCode: 0, Stdout: "k3s version v1.33.8+k3s1"}, nil
+		case strings.Contains(command, "curl -sfL https://get.k3s.io"):
+			installerRan = true
+			assert.Contains(t, command, "INSTALL_K3S_VERSION=v1.34.3+k3s1")
+			return &ssh.ExecResult{ExitCode: 0}, nil
+		case strings.Contains(command, "k3s kubectl get nodes"):
+			return &ssh.ExecResult{ExitCode: 0, Stdout: "node1 Ready"}, nil
+		default:
+			return &ssh.ExecResult{ExitCode: 0}, nil
+		}
+	}}
+
+	err := UpgradeControlPlane(context.Background(), executor, &Config{
+		Version:      "v1.34.3+k3s1",
+		VIP:          "192.168.1.100",
+		Interface:    "eth0",
+		ClusterInit:  true,
+		ClusterToken: "test-token",
+	})
+
+	assert.NoError(t, err)
+	assert.True(t, installerRan)
+}
+
+func TestUpgradeControlPlaneRunsEveryMinorInOrder(t *testing.T) {
+	var installers []string
+	executor := &mockInstallSSHExecutor{execFunc: func(command string) (*ssh.ExecResult, error) {
+		switch {
+		case strings.Contains(command, "systemctl is-active k3s"):
+			return &ssh.ExecResult{ExitCode: 0, Stdout: "active"}, nil
+		case command == "k3s --version":
+			return &ssh.ExecResult{ExitCode: 0, Stdout: "k3s version v1.34.3+k3s1"}, nil
+		case strings.Contains(command, "curl -sfL https://get.k3s.io"):
+			installers = append(installers, command)
+			return &ssh.ExecResult{ExitCode: 0}, nil
+		case strings.Contains(command, "k3s kubectl get nodes"):
+			return &ssh.ExecResult{ExitCode: 0, Stdout: "node1 Ready"}, nil
+		default:
+			return &ssh.ExecResult{ExitCode: 0}, nil
+		}
+	}}
+
+	err := UpgradeControlPlane(context.Background(), executor, &Config{
+		Version:      "v1.36.3+k3s1",
+		VIP:          "192.168.1.100",
+		Interface:    "eth0",
+		ClusterInit:  true,
+		ClusterToken: "test-token",
+	})
+
+	assert.NoError(t, err)
+	if !assert.Len(t, installers, 2) {
+		return
+	}
+	assert.Contains(t, installers[0], "INSTALL_K3S_CHANNEL=v1.35")
+	assert.Contains(t, installers[1], "INSTALL_K3S_VERSION=v1.36.3+k3s1")
+}
+
+func TestUpgradeControlPlaneReturnsInstallerError(t *testing.T) {
+	executor := &mockInstallSSHExecutor{execFunc: func(command string) (*ssh.ExecResult, error) {
+		if strings.Contains(command, "systemctl is-active k3s") {
+			return &ssh.ExecResult{ExitCode: 0, Stdout: "active"}, nil
+		}
+		if command == "k3s --version" {
+			return &ssh.ExecResult{ExitCode: 0, Stdout: "k3s version v1.34.2+k3s1"}, nil
+		}
+		if strings.Contains(command, "curl -sfL https://get.k3s.io") {
+			return &ssh.ExecResult{ExitCode: 1, Stderr: "upgrade failed"}, nil
+		}
+		return &ssh.ExecResult{ExitCode: 0}, nil
+	}}
+
+	err := UpgradeControlPlane(context.Background(), executor, &Config{
+		VIP:          "192.168.1.100",
+		Interface:    "eth0",
+		ClusterInit:  true,
+		ClusterToken: "test-token",
+	})
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "K3s upgrade failed")
+}
+
 func TestConfigureDNS(t *testing.T) {
 	tests := []struct {
 		name       string

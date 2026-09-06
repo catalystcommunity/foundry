@@ -3,9 +3,12 @@ package k3s
 import (
 	"context"
 	"fmt"
+	"regexp"
 
 	"github.com/catalystcommunity/foundry/v1/internal/component"
 )
+
+var versionPattern = regexp.MustCompile(`^v?([0-9]+)\.([0-9]+)\.([0-9]+)(?:-[A-Za-z0-9.-]+)?(?:\+[A-Za-z0-9.-]+)?$`)
 
 // Component implements the component.Component interface for K3s
 type Component struct {
@@ -195,6 +198,9 @@ func ParseAdditionalRegistries(raw map[string]any) []AdditionalRegistry {
 
 // Validate validates the K3s configuration
 func (c *Config) Validate() error {
+	if c.Version != "" && c.Version != "latest" && !versionPattern.MatchString(c.Version) {
+		return fmt.Errorf("version %q is invalid", c.Version)
+	}
 	if c.VIP == "" {
 		return fmt.Errorf("VIP is required")
 	}

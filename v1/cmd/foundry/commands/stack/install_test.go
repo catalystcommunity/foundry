@@ -126,6 +126,57 @@ func writeTestConfigFile(t *testing.T, cfg *config.Config) string {
 	return configPath
 }
 
+func TestComponentUpgradesAllowed(t *testing.T) {
+	disallow := false
+	cfg := &config.Config{Components: config.ComponentMap{
+		"pinned-off": {AllowUpgrades: &disallow},
+		"legacy":     {},
+	}}
+
+	assert.False(t, componentUpgradesAllowed(cfg, "pinned-off"))
+	assert.True(t, componentUpgradesAllowed(cfg, "legacy"))
+	assert.True(t, componentUpgradesAllowed(cfg, "not-configured"))
+}
+
+func TestComponentMarkedInstalled(t *testing.T) {
+	cfg := &config.Config{Components: config.ComponentMap{
+		"installed": {Config: map[string]any{"installed": true}},
+		"pending":   {Config: map[string]any{"installed": false}},
+	}}
+
+	assert.True(t, componentMarkedInstalled(cfg, "installed"))
+	assert.False(t, componentMarkedInstalled(cfg, "pending"))
+	assert.False(t, componentMarkedInstalled(cfg, "missing"))
+}
+
+func TestDefaultComponentConfigsShowUpgradeControls(t *testing.T) {
+	components := defaultComponentConfigs()
+
+	assert.Len(t, components, 15)
+	for name, componentConfig := range components {
+		require.NotNil(t, componentConfig.AllowUpgrades, name)
+		assert.True(t, *componentConfig.AllowUpgrades, name)
+		assert.Nil(t, componentConfig.Version, name)
+	}
+	assert.Equal(t, true, components["gateway-controller"].Config["enabled"])
+}
+
+func TestApplyComponentVersion(t *testing.T) {
+	version := "v1.34.3+k3s1"
+	cfg := &config.Config{Components: config.ComponentMap{
+		"k3s": {Version: &version},
+		"zot": {},
+	}}
+
+	runtimeConfig := component.ComponentConfig{}
+	applyComponentVersion(cfg, "k3s", runtimeConfig)
+	assert.Equal(t, version, runtimeConfig["version"])
+
+	unpinnedConfig := component.ComponentConfig{}
+	applyComponentVersion(cfg, "zot", unpinnedConfig)
+	assert.NotContains(t, unpinnedConfig, "version")
+}
+
 func TestValidateStackConfig(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -555,13 +606,13 @@ func TestRunStackInstallDryRun(t *testing.T) {
 }
 
 func TestComponentEnabled_GatewayController(t *testing.T) {
-	// Absent from config -> disabled
+	// Absent from config -> enabled by default
 	cfg := &config.Config{Components: config.ComponentMap{}}
-	assert.False(t, componentEnabled(cfg, "gateway-controller"))
+	assert.True(t, componentEnabled(cfg, "gateway-controller"))
 
-	// Present but enabled not set -> disabled
+	// Present but enabled not set -> enabled by default
 	cfg.Components["gateway-controller"] = config.ComponentConfig{Config: map[string]any{}}
-	assert.False(t, componentEnabled(cfg, "gateway-controller"))
+	assert.True(t, componentEnabled(cfg, "gateway-controller"))
 
 	// enabled: false -> disabled
 	cfg.Components["gateway-controller"] = config.ComponentConfig{Config: map[string]any{"enabled": false}}
@@ -571,8 +622,8 @@ func TestComponentEnabled_GatewayController(t *testing.T) {
 	cfg.Components["gateway-controller"] = config.ComponentConfig{Config: map[string]any{"enabled": true}}
 	assert.True(t, componentEnabled(cfg, "gateway-controller"))
 
-	// gateway-controller is registered as opt-in
-	assert.True(t, optInComponents["gateway-controller"])
+	// gateway-controller supports an explicit enabled switch.
+	assert.True(t, toggleableComponents["gateway-controller"])
 }
 
 func TestBuildGatewayControllerConfig_FlowsStackKeys(t *testing.T) {

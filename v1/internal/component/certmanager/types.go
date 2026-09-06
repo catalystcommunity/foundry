@@ -56,8 +56,16 @@ func (c *Component) Dependencies() []string {
 
 // Install installs the cert-manager component
 func (c *Component) Install(ctx context.Context, cfg component.ComponentConfig) error {
-	// Installation logic is in install.go
-	return Install(ctx, c.config, cfg)
+	installConfig := c.configWithRuntimeOverrides(cfg)
+	return Install(ctx, installConfig, cfg)
+}
+
+func (c *Component) configWithRuntimeOverrides(cfg component.ComponentConfig) *Config {
+	installConfig := *c.config
+	if version, ok := cfg.GetString("version"); ok {
+		installConfig.Version = version
+	}
+	return &installConfig
 }
 
 // Upgrade upgrades the cert-manager component

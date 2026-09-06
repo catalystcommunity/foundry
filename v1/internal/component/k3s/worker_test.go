@@ -277,6 +277,36 @@ func TestJoinWorker(t *testing.T) {
 	}
 }
 
+func TestUpgradeWorkerRunsEveryMinorInOrder(t *testing.T) {
+	var installers []string
+	executor := &mockWorkerExecutor{execFunc: func(command string) (*ssh.ExecResult, error) {
+		switch {
+		case strings.Contains(command, "systemctl is-active k3s-agent"):
+			return &ssh.ExecResult{Stdout: "active", ExitCode: 0}, nil
+		case command == "k3s --version":
+			return &ssh.ExecResult{Stdout: "k3s version v1.34.3+k3s1", ExitCode: 0}, nil
+		case strings.Contains(command, "curl -sfL https://get.k3s.io"):
+			installers = append(installers, command)
+			return &ssh.ExecResult{ExitCode: 0}, nil
+		default:
+			return &ssh.ExecResult{ExitCode: 0}, nil
+		}
+	}}
+
+	err := UpgradeWorker(
+		context.Background(),
+		executor,
+		"https://192.168.1.100:6443",
+		&Tokens{AgentToken: "test-agent-token"},
+		&Config{Version: "v1.36.3+k3s1"},
+	)
+
+	require.NoError(t, err)
+	require.Len(t, installers, 2)
+	assert.Contains(t, installers[0], "INSTALL_K3S_CHANNEL=v1.35")
+	assert.Contains(t, installers[1], "INSTALL_K3S_VERSION=v1.36.3+k3s1")
+}
+
 func TestGenerateK3sAgentInstallCommand(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -304,6 +334,16 @@ func TestGenerateK3sAgentInstallCommand(t *testing.T) {
 			assert.Equal(t, tt.expected, result)
 		})
 	}
+}
+
+func TestGenerateK3sAgentInstallCommandWithVersionPin(t *testing.T) {
+	command := generateK3sAgentInstallCommandForVersion(
+		"https://192.168.1.100:6443",
+		"agent-token",
+		"v1.34.3+k3s1",
+	)
+
+	assert.Contains(t, command, "INSTALL_K3S_VERSION=v1.34.3+k3s1")
 }
 
 func TestWaitForK3sAgentReady(t *testing.T) {

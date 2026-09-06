@@ -135,6 +135,27 @@ func TestComponentConfig_Validate(t *testing.T) {
 	}
 }
 
+func TestComponentConfig_UpgradesAllowed(t *testing.T) {
+	allow := true
+	disallow := false
+
+	tests := []struct {
+		name   string
+		config ComponentConfig
+		want   bool
+	}{
+		{name: "omitted defaults to true", config: ComponentConfig{}, want: true},
+		{name: "explicit true", config: ComponentConfig{AllowUpgrades: &allow}, want: true},
+		{name: "explicit false", config: ComponentConfig{AllowUpgrades: &disallow}, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, tt.config.UpgradesAllowed())
+		})
+	}
+}
+
 func TestStorageConfig_Validate(t *testing.T) {
 	// StorageConfig is now a simple struct with just Backend field
 	config := &StorageConfig{

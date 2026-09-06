@@ -260,12 +260,17 @@ func TestComponent_Install_NilHelmClient(t *testing.T) {
 	assert.Contains(t, err.Error(), "helm client cannot be nil")
 }
 
-func TestComponent_Upgrade_NotImplemented(t *testing.T) {
-	comp := NewComponent(nil, nil)
-	err := comp.Upgrade(context.Background(), component.ComponentConfig{})
+func TestComponent_Upgrade_ReconcilesInstallation(t *testing.T) {
+	helmClient := &mockHelmClient{}
+	k8sClient := &mockK8sClient{
+		pods:                    []*k8s.Pod{{Name: "seaweedfs-master-0", Status: "Running"}},
+		serviceMonitorCRDExists: true,
+	}
+	comp := NewComponent(helmClient, k8sClient)
+	err := comp.Upgrade(context.Background(), component.ComponentConfig{"s3_enabled": false})
 
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "not yet implemented")
+	require.NoError(t, err)
+	require.Len(t, helmClient.chartsInstalled, 1)
 }
 
 func TestComponent_Uninstall_NotImplemented(t *testing.T) {
@@ -332,13 +337,22 @@ type mockK8sClient struct {
 	waitJobErr                 error
 	serviceMonitorCRDExists    bool
 	serviceMonitorCRDExistsErr error
+	manifests                  []string
+	createNamespaceErr         error
+	namespacesCreated          []string
 }
 
 func (m *mockK8sClient) GetPods(ctx context.Context, namespace string) ([]*k8s.Pod, error) {
 	return m.pods, m.podsErr
 }
 
+func (m *mockK8sClient) CreateNamespace(ctx context.Context, name string) error {
+	m.namespacesCreated = append(m.namespacesCreated, name)
+	return m.createNamespaceErr
+}
+
 func (m *mockK8sClient) ApplyManifest(ctx context.Context, manifest string) error {
+	m.manifests = append(m.manifests, manifest)
 	return m.applyManifestErr
 }
 

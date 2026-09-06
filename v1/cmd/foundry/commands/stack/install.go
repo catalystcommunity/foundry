@@ -505,6 +505,7 @@ func createConfigFromFlags(clusterName, domain string, hosts []string, vip strin
 			Backend:    "gsqlite3",
 			Forwarders: forwarders,
 		},
+		Components: defaultComponentConfigs(),
 	}
 
 	return cfg, nil
@@ -597,9 +598,27 @@ func createConfigInteractive() (*config.Config, error) {
 			Backend:    "gsqlite3",
 			Forwarders: []string{"8.8.8.8", "1.1.1.1"},
 		},
+		Components: defaultComponentConfigs(),
 	}
 
 	return cfg, nil
+}
+
+func defaultComponentConfigs() config.ComponentMap {
+	names := []string{
+		"openbao", "dns", "zot", "k3s", "gateway-api", "storage",
+		"prometheus", "contour", "gateway-controller", "cert-manager",
+		"seaweedfs", "external-dns", "loki", "grafana", "velero",
+	}
+	components := make(config.ComponentMap, len(names))
+	for _, name := range names {
+		allow := true
+		components[name] = config.ComponentConfig{AllowUpgrades: &allow}
+	}
+	gatewayController := components["gateway-controller"]
+	gatewayController.Config = map[string]any{"enabled": true}
+	components["gateway-controller"] = gatewayController
+	return components
 }
 
 // ensureHostsConfigured validates that hosts are added and configured
@@ -753,22 +772,23 @@ func ensureNetworkPlanned(ctx context.Context, cfg *config.Config, nonInteractiv
 }
 
 // installComponents installs all components in order with state tracking
-// If upgrade is true, K8s components will be upgraded even if already installed
-// optInComponents are not installed by a default stack install; they require
-// an explicit components.<name>.enabled: true in the stack config.
-var optInComponents = map[string]bool{
+// If upgrade is true, installed components are upgraded unless their component
+// configuration disables upgrades.
+// toggleableComponents can be disabled explicitly in the stack configuration.
+// These components are enabled when the enabled field is absent.
+var toggleableComponents = map[string]bool{
 	"gateway-controller": true,
 }
 
-// componentEnabled reports whether an opt-in component is turned on in the stack
-// config via components.<name>.enabled: true.
+// componentEnabled reports whether a toggleable component is enabled. An
+// absent component or enabled field uses the default value of true.
 func componentEnabled(cfg *config.Config, name string) bool {
 	cc, ok := cfg.Components[name]
 	if !ok {
-		return false
+		return true
 	}
 	enabled, ok := cc.Config["enabled"].(bool)
-	return ok && enabled
+	return !ok || enabled
 }
 
 // buildGatewayControllerConfig copies the user's components.gateway-controller
@@ -794,6 +814,9 @@ func installComponents(ctx context.Context, cfg *config.Config, configPath strin
 
 	// Helper function to check component status via registry
 	checkComponentStatus := func(name string) bool {
+		if componentMarkedInstalled(cfg, name) {
+			return true
+		}
 		comp := component.Get(name)
 		if comp == nil {
 			return false
@@ -978,18 +1001,9 @@ func installComponents(ctx context.Context, cfg *config.Config, configPath strin
 		},
 	}
 
-	// K8s components that can be upgraded with --upgrade flag
-	k8sComponents := map[string]bool{
-		"gateway-api": true, "contour": true, "cert-manager": true, "storage": true,
-		"seaweedfs": true, "prometheus": true, "external-dns": true,
-		"loki": true, "grafana": true, "velero": true,
-		"gateway-controller": true,
-	}
-
 	for i, comp := range components {
-		// Opt-in components only install when explicitly enabled in the stack
-		// config (e.g. components.gateway-controller.enabled: true).
-		if optInComponents[comp.name] && !componentEnabled(cfg, comp.name) {
+		// Toggleable components install by default and can be disabled explicitly.
+		if toggleableComponents[comp.name] && !componentEnabled(cfg, comp.name) {
 			fmt.Printf("\n[%d/%d] %s: ⊝ disabled (set components.%s.enabled: true to install)\n",
 				i+1, len(components), comp.name, comp.name)
 			continue
@@ -997,13 +1011,16 @@ func installComponents(ctx context.Context, cfg *config.Config, configPath strin
 
 		// Check if already installed
 		isInstalled := comp.checkFunc(cfg.SetupState)
-		isK8sComponent := k8sComponents[comp.name]
 
 		if isInstalled {
-			if upgrade && isK8sComponent {
+			if upgrade && componentUpgradesAllowed(cfg, comp.name) {
 				fmt.Printf("\n[%d/%d] Upgrading %s...\n", i+1, len(components), comp.name)
 			} else {
-				fmt.Printf("\n[%d/%d] %s: ✓ Already installed (skipping)\n", i+1, len(components), comp.name)
+				reason := "already installed"
+				if upgrade && !componentUpgradesAllowed(cfg, comp.name) {
+					reason = "upgrades disabled by components." + comp.name + ".allow_upgrades"
+				}
+				fmt.Printf("\n[%d/%d] %s: ✓ %s (skipping)\n", i+1, len(components), comp.name, reason)
 				// DNS is installed but ensure zones exist (sync config with reality)
 				if comp.name == "dns" {
 					configDir, err := config.GetConfigDir()
@@ -1015,9 +1032,9 @@ func installComponents(ctx context.Context, cfg *config.Config, configPath strin
 					}
 				}
 				// K3s is installed but ensure registries.yaml is up to date
-				if comp.name == "k3s" {
+				if comp.name == "k3s" && (!upgrade || !componentUpgradesAllowed(cfg, comp.name)) {
 					fmt.Println("  Syncing K3s registry configuration...")
-					if err := installK3sCluster(ctx, cfg); err != nil {
+					if err := installK3sCluster(ctx, cfg, false); err != nil {
 						return fmt.Errorf("failed to sync K3s registries: %w", err)
 					}
 				}
@@ -1028,7 +1045,7 @@ func installComponents(ctx context.Context, cfg *config.Config, configPath strin
 		}
 
 		// Install/upgrade the component
-		if err := installSingleComponent(ctx, cfg, comp.name); err != nil {
+		if err := installSingleComponent(ctx, cfg, comp.name, upgrade && isInstalled); err != nil {
 			return fmt.Errorf("%s installation failed: %w", comp.name, err)
 		}
 
@@ -1062,6 +1079,36 @@ func installComponents(ctx context.Context, cfg *config.Config, configPath strin
 	}
 
 	return nil
+}
+
+func componentMarkedInstalled(cfg *config.Config, componentName string) bool {
+	componentConfig, ok := cfg.Components[componentName]
+	if !ok {
+		return false
+	}
+	installed, ok := componentConfig.Config["installed"].(bool)
+	return ok && installed
+}
+
+func componentUpgradesAllowed(cfg *config.Config, componentName string) bool {
+	componentConfig, ok := cfg.Components[componentName]
+	if !ok {
+		return true
+	}
+	return componentConfig.UpgradesAllowed()
+}
+
+// applyComponentVersion passes an exceptional version pin to a component at
+// runtime. An omitted version lets the component use the version supported by
+// the current Foundry release.
+func applyComponentVersion(cfg *config.Config, componentName string, runtimeConfig component.ComponentConfig) {
+	componentConfig, ok := cfg.Components[componentName]
+	if !ok || componentConfig.Version == nil {
+		return
+	}
+	if version := strings.TrimSpace(*componentConfig.Version); version != "" {
+		runtimeConfig["version"] = version
+	}
 }
 
 // installK8sComponent installs a Kubernetes component using the cluster kubeconfig
@@ -1184,6 +1231,7 @@ func installK8sComponent(ctx context.Context, cfg *config.Config, componentName 
 	if componentName == "gateway-controller" {
 		componentConfig = buildGatewayControllerConfig(cfg)
 	}
+	applyComponentVersion(cfg, componentName, componentConfig)
 
 	// Install the component
 	if err := componentWithClients.Install(ctx, componentConfig); err != nil {
@@ -1226,6 +1274,9 @@ func installK8sComponent(ctx context.Context, cfg *config.Config, componentName 
 // upgradeStorageWithServiceMonitor upgrades storage (Longhorn) to enable ServiceMonitor
 // after Prometheus has been installed and the CRD is available
 func upgradeStorageWithServiceMonitor(ctx context.Context, cfg *config.Config, helmClient *helm.Client, k8sClient *k8s.Client) error {
+	if !componentUpgradesAllowed(cfg, "storage") {
+		return nil
+	}
 	// Only upgrade if storage backend is Longhorn
 	if cfg.Storage == nil || cfg.Storage.Backend != "longhorn" {
 		// Check component config too
@@ -1974,7 +2025,7 @@ schedules:
 }
 
 // installSingleComponent installs a single component with proper configuration
-func installSingleComponent(ctx context.Context, cfg *config.Config, componentName string) error {
+func installSingleComponent(ctx context.Context, cfg *config.Config, componentName string, upgrade bool) error {
 	// Get component from registry
 	comp := component.Get(componentName)
 	if comp == nil {
@@ -1983,7 +2034,7 @@ func installSingleComponent(ctx context.Context, cfg *config.Config, componentNa
 
 	// K3s is special - use cluster init logic instead of component install
 	if componentName == "k3s" {
-		return installK3sCluster(ctx, cfg)
+		return installK3sCluster(ctx, cfg, upgrade)
 	}
 
 	// Kubernetes components are installed via kubeconfig, not SSH to a host
@@ -2029,6 +2080,7 @@ func installSingleComponent(ctx context.Context, cfg *config.Config, componentNa
 	if err != nil {
 		return fmt.Errorf("failed to build component config: %w", err)
 	}
+	applyComponentVersion(cfg, componentName, componentConfig)
 
 	// Install the component
 	fmt.Printf("  Installing %s...\n", componentName)
@@ -2148,12 +2200,12 @@ func buildComponentConfig(ctx context.Context, cfg *config.Config, componentName
 }
 
 // installK3sCluster initializes the K3s cluster using cluster init logic
-func installK3sCluster(ctx context.Context, cfg *config.Config) error {
+func installK3sCluster(ctx context.Context, cfg *config.Config, upgrade bool) error {
 	fmt.Println("  Initializing K3s cluster...")
 
 	// Call the exported cluster initialization function
 	// This handles: tokens, control plane, nodes, VIP, kubeconfig
-	if err := clustercommands.InitializeCluster(ctx, cfg); err != nil {
+	if err := clustercommands.ReconcileCluster(ctx, cfg, clustercommands.ReconcileOptions{Upgrade: upgrade}); err != nil {
 		return fmt.Errorf("cluster initialization failed: %w", err)
 	}
 
@@ -3135,6 +3187,7 @@ func saveComponentConfig(cfg *config.Config, componentName string, componentConf
 		"ssh_conn":       true,
 		"cluster_vip":    true, // Runtime derived from cluster config
 		"gateway_domain": true, // Runtime derived from cluster config
+		"version":        true, // Persisted by ComponentConfig.Version
 	}
 
 	// Copy component config settings

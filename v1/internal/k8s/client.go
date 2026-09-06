@@ -26,6 +26,13 @@ type Client struct {
 	config        *rest.Config
 }
 
+const (
+	// ARM64ArchitectureTaintKey identifies nodes that require explicit ARM64
+	// workload support.
+	ARM64ArchitectureTaintKey = "foundry.catalystcommunity.org/arch"
+	ARM64ArchitectureValue    = "arm64"
+)
+
 // SecretResolver defines the interface for resolving secrets from OpenBAO
 type SecretResolver interface {
 	// ResolveSecret resolves a secret reference and returns the value
@@ -132,6 +139,59 @@ func (c *Client) GetNodes(ctx context.Context) ([]*Node, error) {
 	}
 
 	return nodes, nil
+}
+
+// EnsureARM64NodeTaints adds the Foundry architecture taint to all ARM64
+// nodes. It returns the number of nodes that it changed.
+func (c *Client) EnsureARM64NodeTaints(ctx context.Context) (int, error) {
+	nodeList, err := c.clientset.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return 0, fmt.Errorf("failed to list nodes: %w", err)
+	}
+
+	updated := 0
+	for i := range nodeList.Items {
+		node := &nodeList.Items[i]
+		if node.Labels[corev1.LabelArchStable] != ARM64ArchitectureValue {
+			continue
+		}
+
+		desired := corev1.Taint{
+			Key:    ARM64ArchitectureTaintKey,
+			Value:  ARM64ArchitectureValue,
+			Effect: corev1.TaintEffectNoSchedule,
+		}
+		changed := false
+		found := false
+		taints := make([]corev1.Taint, 0, len(node.Spec.Taints)+1)
+		for _, taint := range node.Spec.Taints {
+			if taint.Key != ARM64ArchitectureTaintKey {
+				taints = append(taints, taint)
+				continue
+			}
+			if !found && taint.Value == desired.Value && taint.Effect == desired.Effect {
+				taints = append(taints, taint)
+				found = true
+				continue
+			}
+			changed = true
+		}
+		if !found {
+			taints = append(taints, desired)
+			changed = true
+		}
+		if !changed {
+			continue
+		}
+
+		node.Spec.Taints = taints
+		if _, err := c.clientset.CoreV1().Nodes().Update(ctx, node, metav1.UpdateOptions{}); err != nil {
+			return updated, fmt.Errorf("failed to update taints on node %s: %w", node.Name, err)
+		}
+		updated++
+	}
+
+	return updated, nil
 }
 
 // GetPods retrieves all pods in the specified namespace

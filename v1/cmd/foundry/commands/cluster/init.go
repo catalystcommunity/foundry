@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/catalystcommunity/foundry/v1/internal/component/k3s"
 	"github.com/catalystcommunity/foundry/v1/internal/component/openbao"
 	"github.com/catalystcommunity/foundry/v1/internal/config"
 	"github.com/catalystcommunity/foundry/v1/internal/host"
+	k8sclient "github.com/catalystcommunity/foundry/v1/internal/k8s"
 	"github.com/catalystcommunity/foundry/v1/internal/setup"
 	"github.com/catalystcommunity/foundry/v1/internal/ssh"
 	"github.com/urfave/cli/v3"
@@ -198,9 +200,18 @@ func connectToHost(hostname string) (*ssh.Connection, error) {
 	return conn, nil
 }
 
+// ReconcileOptions controls cluster reconciliation behavior.
+type ReconcileOptions struct {
+	Upgrade bool
+}
+
 // InitializeCluster initializes a Kubernetes cluster with the given configuration.
-// This function is exported so it can be called from other commands like stack install.
 func InitializeCluster(ctx context.Context, cfg *config.Config) error {
+	return ReconcileCluster(ctx, cfg, ReconcileOptions{})
+}
+
+// ReconcileCluster installs or upgrades all K3s nodes in cluster order.
+func ReconcileCluster(ctx context.Context, cfg *config.Config, options ReconcileOptions) error {
 	// Step 1: Load OpenBAO credentials
 	fmt.Println("Loading OpenBAO credentials...")
 
@@ -288,6 +299,9 @@ func InitializeCluster(ctx context.Context, cfg *config.Config) error {
 
 	// Parse additional registries and etcd args from component config
 	if k3sCompCfg, exists := cfg.Components["k3s"]; exists {
+		if k3sCompCfg.Version != nil {
+			k3sConfig.Version = *k3sCompCfg.Version
+		}
 		k3sConfig.AdditionalRegistries = k3s.ParseAdditionalRegistries(k3sCompCfg.Config)
 
 		// Parse etcd_args for tuning (especially important for virtualized environments)
@@ -306,12 +320,79 @@ func InitializeCluster(ctx context.Context, cfg *config.Config) error {
 	if zotAddr, err := cfg.GetPrimaryZotAddress(); err == nil {
 		k3sConfig.RegistryConfig = k3s.GenerateRegistriesConfig(zotAddr, k3sConfig.AdditionalRegistries)
 	}
+	requestedVersion := strings.TrimSpace(k3sConfig.Version)
+	versionPinned := requestedVersion != "" && !strings.EqualFold(requestedVersion, "latest")
+	if options.Upgrade {
+		installedVersions := make([]string, 0, len(clusterHosts))
+		for i, h := range clusterHosts {
+			nodeConn := conn
+			closeNodeConnection := false
+			if i != firstCPIndex {
+				nodeConn, err = connectToHost(h.Hostname)
+				if err != nil {
+					return fmt.Errorf("failed to connect to %s for the K3s version inventory: %w", h.Hostname, err)
+				}
+				closeNodeConnection = true
+			}
+			nodeInstalled := false
+			if nodeRoles[i].IsControlPlane {
+				nodeInstalled, err = k3s.IsK3sInstalled(nodeConn)
+			} else {
+				nodeInstalled, err = k3s.IsK3sAgentInstalled(nodeConn)
+			}
+			if err == nil && nodeInstalled {
+				var nodeVersion string
+				nodeVersion, err = k3s.GetInstalledVersion(nodeConn)
+				if err == nil {
+					installedVersions = append(installedVersions, nodeVersion)
+					fmt.Printf("  %s reports K3s %s\n", h.Hostname, nodeVersion)
+				}
+			}
+			if closeNodeConnection {
+				nodeConn.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("failed to inventory K3s on %s: %w", h.Hostname, err)
+			}
+		}
+		if !versionPinned && len(installedVersions) > 0 {
+			convergenceVersion, err := k3s.HighestK3sVersion(installedVersions)
+			if err != nil {
+				return fmt.Errorf("failed to select the K3s convergence version: %w", err)
+			}
+			k3sConfig.Version = convergenceVersion
+			fmt.Printf("Converging the K3s cluster on %s before checking its release channel\n", convergenceVersion)
+		}
+	}
 
-	// Install control plane
-	if err := k3s.InstallControlPlane(ctx, conn, k3sConfig); err != nil {
+	// Install or upgrade the first control plane.
+	reconcileFirstControlPlane := k3s.InstallControlPlane
+	if options.Upgrade {
+		reconcileFirstControlPlane = k3s.UpgradeControlPlane
+	}
+	if err := reconcileFirstControlPlane(ctx, conn, k3sConfig); err != nil {
 		return fmt.Errorf("failed to install control plane on %s: %w", firstHost.Hostname, err)
 	}
+	if options.Upgrade && !versionPinned {
+		// After drift is removed from the first server, move it to the newest
+		// patch in that Kubernetes minor. The resolved exact version becomes the
+		// cluster-level target for every other node below.
+		k3sConfig.Version = ""
+		if err := k3s.UpgradeControlPlane(ctx, conn, k3sConfig); err != nil {
+			return fmt.Errorf("failed to update the K3s release channel on %s: %w", firstHost.Hostname, err)
+		}
+	}
 	fmt.Printf("✓ Control plane installed on %s\n", firstHost.Hostname)
+	installedVersion, err := k3s.GetInstalledVersion(conn)
+	if err != nil {
+		return fmt.Errorf("failed to resolve the cluster K3s version on %s: %w", firstHost.Hostname, err)
+	}
+	if versionPinned && strings.TrimPrefix(requestedVersion, "v") != strings.TrimPrefix(installedVersion, "v") {
+		return fmt.Errorf("K3s version pin %s was requested, but %s reports %s", requestedVersion, firstHost.Hostname, installedVersion)
+	}
+	// Use one resolved target for the rest of this cluster operation. Do not
+	// persist it because an omitted version remains an unpinned configuration.
+	k3sConfig.Version = installedVersion
 
 	// Step 6: Wait a bit for cluster to stabilize
 	fmt.Println("Waiting for cluster to stabilize...")
@@ -336,6 +417,7 @@ func InitializeCluster(ctx context.Context, cfg *config.Config) error {
 
 		// Build config for joining control plane
 		joinConfig := &k3s.Config{
+			Version:           k3sConfig.Version,
 			ClusterInit:       false,
 			ServerURL:         serverURL,
 			ClusterToken:      tokens.ClusterToken,
@@ -348,8 +430,12 @@ func InitializeCluster(ctx context.Context, cfg *config.Config) error {
 			AllowCGNATVIP:     k3sConfig.AllowCGNATVIP,
 		}
 
-		// Join control plane
-		if err := k3s.JoinControlPlane(ctx, conn, serverURL, tokens, joinConfig); err != nil {
+		// Join or upgrade the control plane.
+		reconcileControlPlane := k3s.JoinControlPlane
+		if options.Upgrade {
+			reconcileControlPlane = k3s.UpgradeJoinedControlPlane
+		}
+		if err := reconcileControlPlane(ctx, conn, serverURL, tokens, joinConfig); err != nil {
 			conn.Close()
 			return fmt.Errorf("failed to join control plane node %s: %w", h.Hostname, err)
 		}
@@ -378,13 +464,18 @@ func InitializeCluster(ctx context.Context, cfg *config.Config) error {
 
 		// Build config for worker
 		workerConfig := &k3s.Config{
+			Version:        k3sConfig.Version,
 			ServerURL:      serverURL,
 			AgentToken:     tokens.AgentToken,
 			RegistryConfig: k3sConfig.RegistryConfig,
 		}
 
-		// Join worker
-		if err := k3s.JoinWorker(ctx, conn, serverURL, tokens, workerConfig); err != nil {
+		// Join or upgrade the worker.
+		reconcileWorker := k3s.JoinWorker
+		if options.Upgrade {
+			reconcileWorker = k3s.UpgradeWorker
+		}
+		if err := reconcileWorker(ctx, conn, serverURL, tokens, workerConfig); err != nil {
 			conn.Close()
 			return fmt.Errorf("failed to join worker node %s: %w", h.Hostname, err)
 		}
@@ -421,6 +512,24 @@ func InitializeCluster(ctx context.Context, cfg *config.Config) error {
 		configDir, _ := config.GetConfigDir()
 		kubeconfigPath := filepath.Join(configDir, "kubeconfig")
 		fmt.Printf("✓ Kubeconfig exported to %s\n", kubeconfigPath)
+	}
+
+	// Prevent general workloads from scheduling on ARM64 nodes unless they
+	// explicitly tolerate the architecture taint.
+	kubeconfig, err := k3s.LoadKubeconfig(ctx, openbaoClient)
+	if err != nil {
+		return fmt.Errorf("failed to load kubeconfig for node taint reconciliation: %w", err)
+	}
+	client, err := k8sclient.NewClientFromKubeconfig([]byte(kubeconfig))
+	if err != nil {
+		return fmt.Errorf("failed to create Kubernetes client for node taint reconciliation: %w", err)
+	}
+	updatedNodes, err := client.EnsureARM64NodeTaints(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to reconcile ARM64 node taints: %w", err)
+	}
+	if updatedNodes > 0 {
+		fmt.Printf("✓ Applied the ARM64 scheduling taint to %d node(s)\n", updatedNodes)
 	}
 
 	// Step 10: Verify cluster health

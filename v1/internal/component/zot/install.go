@@ -32,8 +32,10 @@ func Install(conn container.SSHExecutor, runtime container.Runtime, cfg *ParsedC
 		return fmt.Errorf("enable service: %w", err)
 	}
 
-	if err := systemd.StartService(conn, "foundry-zot"); err != nil {
-		return fmt.Errorf("start service: %w", err)
+	// Restart also starts a new service and applies a pulled image or changed
+	// service definition to an existing installation.
+	if err := systemd.RestartService(conn, "foundry-zot"); err != nil {
+		return fmt.Errorf("restart service: %w", err)
 	}
 
 	status, err := systemd.GetServiceStatus(conn, "foundry-zot")

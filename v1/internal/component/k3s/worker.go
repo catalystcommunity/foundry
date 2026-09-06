@@ -9,6 +9,15 @@ import (
 // JoinWorker joins a worker node to an existing K3s cluster
 // Workers use the agent token and join via the K3s agent installation
 func JoinWorker(ctx context.Context, executor SSHExecutor, serverURL string, tokens *Tokens, cfg *Config) error {
+	return reconcileWorker(ctx, executor, serverURL, tokens, cfg, false)
+}
+
+// UpgradeWorker reconciles and upgrades an installed K3s agent.
+func UpgradeWorker(ctx context.Context, executor SSHExecutor, serverURL string, tokens *Tokens, cfg *Config) error {
+	return reconcileWorker(ctx, executor, serverURL, tokens, cfg, true)
+}
+
+func reconcileWorker(ctx context.Context, executor SSHExecutor, serverURL string, tokens *Tokens, cfg *Config, upgrade bool) error {
 	// Validate that we have the required tokens
 	if tokens == nil || tokens.AgentToken == "" {
 		return fmt.Errorf("agent token is required for joining worker nodes")
@@ -43,6 +52,29 @@ func JoinWorker(ctx context.Context, executor SSHExecutor, serverURL string, tok
 	if isInstalled {
 		// K3s agent is already installed - apply updates idempotently
 		fmt.Println("   K3s agent already installed, applying updates...")
+		if upgrade {
+			currentVersion, err := GetInstalledVersion(executor)
+			if err != nil {
+				return err
+			}
+			selectors, err := K3sUpgradeSelectors(currentVersion, cfg.Version)
+			if err != nil {
+				return fmt.Errorf("unsafe K3s agent upgrade target: %w", err)
+			}
+			for step, selector := range selectors {
+				fmt.Printf("   Applying K3s agent upgrade step %d/%d...\n", step+1, len(selectors))
+				result, err := executor.Exec(generateK3sAgentCommand(serverURL, tokens.AgentToken, selector))
+				if err != nil {
+					return fmt.Errorf("failed to execute K3s agent upgrade step %d: %w", step+1, err)
+				}
+				if result.ExitCode != 0 {
+					return fmt.Errorf("K3s agent upgrade failed at step %d with exit code %d: %s", step+1, result.ExitCode, result.Stderr)
+				}
+				if err := waitForK3sAgentReady(executor, DefaultRetryConfig()); err != nil {
+					return fmt.Errorf("k3s-agent failed to become ready after upgrade step %d: %w", step+1, err)
+				}
+			}
+		}
 
 		// Update registries.yaml if configured (idempotent - only restart if changed)
 		if cfg.RegistryConfig != "" {
@@ -89,7 +121,7 @@ func JoinWorker(ctx context.Context, executor SSHExecutor, serverURL string, tok
 	}
 
 	// Step 3: Install K3s in agent mode
-	installCmd := generateK3sAgentInstallCommand(serverURL, tokens.AgentToken)
+	installCmd := generateK3sAgentInstallCommandForVersion(serverURL, tokens.AgentToken, cfg.Version)
 	result, err := executor.Exec(installCmd)
 	if err != nil {
 		return fmt.Errorf("failed to execute K3s agent install command: %w", err)
@@ -114,8 +146,19 @@ func JoinWorker(ctx context.Context, executor SSHExecutor, serverURL string, tok
 
 // generateK3sAgentInstallCommand generates the K3s agent installation command
 func generateK3sAgentInstallCommand(serverURL string, agentToken string) string {
-	// K3s agent installation uses different syntax than server
-	return fmt.Sprintf("curl -sfL https://get.k3s.io | K3S_URL=%s K3S_TOKEN=%s sh -", serverURL, agentToken)
+	return generateK3sAgentInstallCommandForVersion(serverURL, agentToken, "")
+}
+
+func generateK3sAgentInstallCommandForVersion(serverURL string, agentToken string, version string) string {
+	selector := ""
+	if version != "" && version != "latest" {
+		selector = fmt.Sprintf("INSTALL_K3S_VERSION=%s ", version)
+	}
+	return generateK3sAgentCommand(serverURL, agentToken, selector)
+}
+
+func generateK3sAgentCommand(serverURL, agentToken, selector string) string {
+	return fmt.Sprintf("curl -sfL https://get.k3s.io | %sK3S_URL=%s K3S_TOKEN=%s sh -", selector, serverURL, agentToken)
 }
 
 // waitForK3sAgentReady waits for K3s agent to be ready

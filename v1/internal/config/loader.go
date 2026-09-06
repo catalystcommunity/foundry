@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -48,6 +49,7 @@ func LoadFromReader(r io.Reader) (*Config, error) {
 // migrateConfig applies backwards compatibility migrations to the config
 func migrateConfig(cfg *Config) {
 	applyHostDefaults(cfg.Hosts)
+	applyComponentDefaults(cfg.Components)
 
 	// Migration: cluster.domain -> cluster.primary_domain
 	// If domain is set (deprecated) and primary_domain is empty, copy domain to primary_domain
@@ -71,6 +73,24 @@ func migrateConfig(cfg *Config) {
 	}
 }
 
+// applyComponentDefaults makes the upgrade control visible in saved stack
+// files. A missing value from an older file has always meant that upgrades are
+// allowed.
+func applyComponentDefaults(components ComponentMap) {
+	for name, component := range components {
+		// "latest" is a floating selection, not a version pin. Normalize the
+		// legacy value to the unpinned representation.
+		if component.Version != nil && strings.EqualFold(strings.TrimSpace(*component.Version), "latest") {
+			component.Version = nil
+		}
+		if component.AllowUpgrades == nil {
+			allow := true
+			component.AllowUpgrades = &allow
+		}
+		components[name] = component
+	}
+}
+
 // ConfigFileHeader is the header comment added to saved config files
 const ConfigFileHeader = `# Foundry Stack Configuration
 #
@@ -86,6 +106,8 @@ const ConfigFileHeader = `# Foundry Stack Configuration
 
 // Save writes a configuration to the given path
 func Save(cfg *Config, path string) error {
+	applyComponentDefaults(cfg.Components)
+
 	// Ensure the directory exists
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {

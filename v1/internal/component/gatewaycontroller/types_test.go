@@ -44,6 +44,19 @@ func TestParseConfig_Overrides(t *testing.T) {
 	assert.Equal(t, "contour", config.GatewayName)
 }
 
+func TestParseConfigUsesVersionPinAsImageTag(t *testing.T) {
+	config, err := ParseConfig(component.ComponentConfig{"version": "0.3.0"})
+	require.NoError(t, err)
+	assert.Equal(t, "0.3.0", config.ImageTag)
+
+	config, err = ParseConfig(component.ComponentConfig{
+		"version":   "0.3.0",
+		"image_tag": "custom",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "custom", config.ImageTag)
+}
+
 func TestComponent_NameAndDependencies(t *testing.T) {
 	c := NewComponent(nil, nil)
 	assert.Equal(t, "gateway-controller", c.Name())
