@@ -286,6 +286,23 @@ def validate_conventional_commits(root: Path) -> None:
 def test_go(root: Path) -> None:
     module = root / "v1"
     environment = _go_environment()
+    environment["PYTHONDONTWRITEBYTECODE"] = "1"
+    _section("Running Foundry CI plugin tests")
+    _run(
+        [
+            "python3",
+            "-m",
+            "unittest",
+            "discover",
+            "-s",
+            root / ".reactorcide" / "tests",
+            "-p",
+            "test_*.py",
+            "-v",
+        ],
+        cwd=root,
+        env=environment,
+    )
     _section("Checking Go formatting")
     result = _run(["gofmt", "-l", "."], cwd=module, env=environment, capture=True)
     if result.stdout.strip():

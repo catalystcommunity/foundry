@@ -99,6 +99,28 @@ class FoundryJobsTests(unittest.TestCase):
             jobs.FoundryCIJobsPlugin().execute(context)
         selected.assert_called_once_with(REPOSITORY_ROOT.resolve())
 
+    def test_go_job_runs_ci_plugin_tests(self) -> None:
+        completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="")
+        with mock.patch.object(jobs, "_go_environment", return_value={}):
+            with mock.patch.object(jobs, "_run", return_value=completed) as run:
+                jobs.test_go(REPOSITORY_ROOT)
+
+        commands = [call.args[0] for call in run.call_args_list]
+        self.assertIn(
+            [
+                "python3",
+                "-m",
+                "unittest",
+                "discover",
+                "-s",
+                REPOSITORY_ROOT / ".reactorcide" / "tests",
+                "-p",
+                "test_*.py",
+                "-v",
+            ],
+            commands,
+        )
+
     def test_release_plugin_dispatches_selected_job(self) -> None:
         selected = mock.Mock()
         context = SimpleNamespace(
@@ -314,6 +336,12 @@ class FoundryJobsTests(unittest.TestCase):
             REPOSITORY_ROOT / ".reactorcide" / "workflows" / "release-server.yaml"
         ).read_text(encoding="utf-8")
         self.assertIn('- ".reactorcide/**"', workflow)
+
+    def test_pr_test_and_image_workflows_run_for_ci_changes(self) -> None:
+        workflows = REPOSITORY_ROOT / ".reactorcide" / "workflows"
+        for name in ("pr-test.yaml", "pr-image.yaml"):
+            workflow = (workflows / name).read_text(encoding="utf-8")
+            self.assertIn('- ".reactorcide/**"', workflow)
 
     def test_bash_job_directory_is_empty(self) -> None:
         scripts = REPOSITORY_ROOT / ".reactorcide" / "jobs" / "scripts"
