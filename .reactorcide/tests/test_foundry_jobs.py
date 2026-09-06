@@ -353,7 +353,10 @@ class FoundryJobsTests(unittest.TestCase):
     def test_prepare_recovers_missing_latest_release_as_draft(self) -> None:
         metadata = {"tag": "v1/v0.7.4", "version": "0.7.4"}
         completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="")
-        environment = {"REACTORCIDE_REPO": "catalystcommunity/foundry"}
+        environment = {
+            "GITHUB_PAT": "test-github-token",
+            "REACTORCIDE_REPO": "catalystcommunity/foundry",
+        }
         with mock.patch.dict(os.environ, environment, clear=False):
             with mock.patch.object(jobs, "_prepare_release_repository", return_value={}):
                 with mock.patch.object(jobs, "_ensure_gh"):
@@ -812,7 +815,10 @@ class FoundryJobsTests(unittest.TestCase):
             for target in jobs.RELEASE_PLATFORMS
         }
         completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="")
-        environment = {"REACTORCIDE_REPO": "catalystcommunity/foundry"}
+        environment = {
+            "GITHUB_PAT": "test-github-token",
+            "REACTORCIDE_REPO": "catalystcommunity/foundry",
+        }
         with mock.patch.dict(os.environ, environment, clear=False):
             with mock.patch.object(
                 jobs,
