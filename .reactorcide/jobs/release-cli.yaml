@@ -1,0 +1,18 @@
+name: foundry-release-cli
+description: "Build and upload one Foundry CLI platform archive"
+job:
+  image: containers.catalystsquad.com/public/reactorcide/runnerbase:latest
+  command: "runnerlib run --job-command true"
+  timeout: 1800
+  priority: 15
+  working_dir: /job
+  resources:
+    cpu:
+      request: "6"
+      limit: "6"
+    memory:
+      limit: "8GB"
+  disable_run_local: true
+environment:
+  FOUNDRY_RELEASE_JOB: cli
+  PYTHONUNBUFFERED: "1"

@@ -1,5 +1,5 @@
 name: foundry-release-server
-description: "On merge to main: semver-tag, publish the Foundry image and binaries, bump chart appVersion"
+description: "Build and publish the Foundry multi-architecture image"
 job:
   image: containers.catalystsquad.com/public/reactorcide/runnerbase:latest
   command: "runnerlib run --job-command true"
@@ -7,12 +7,18 @@ job:
   priority: 15
   working_dir: /job
   capabilities:
-    - docker
+    - builder
+  resources:
+    cpu:
+      request: "6"
+      limit: "6"
+    memory:
+      limit: "8GB"
   disable_run_local: true
 environment:
-  FOUNDRY_RELEASE_JOB: server
+  FOUNDRY_RELEASE_JOB: image
+  PYTHONUNBUFFERED: "1"
   REGISTRY: "containers.catalystsquad.com"
   IMAGE_PATH: "public/catalystcommunity/foundry"
   REGISTRY_USER: "${secret:catalystcommunity/registry:user}"
   REGISTRY_PASSWORD: "${secret:catalystcommunity/registry:password}"
-  GITHUB_PAT: "${secret:catalystcommunity/ci:githubpat}"
