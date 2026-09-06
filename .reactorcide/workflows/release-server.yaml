@@ -1,9 +1,7 @@
 id: foundry-release-server
 name: Foundry Release Server
-description: "On merge to main: semver-tag, build and push the foundry image, bump the chart appVersion."
+description: "Prepare, build, and publish the Foundry server release."
 
-# The node name must stay foundry-release-server: the foundry-registry secret
-# grant matches that exact job name.
 on:
   events:
     - pull_request_merged
@@ -16,7 +14,79 @@ paths:
     - "v1/**"
     - "csil/**"
     - "Dockerfile"
+    - "Dockerfile.release"
 
 jobs:
+  prepare:
+    job_file: release-control.yaml
+    environment:
+      FOUNDRY_RELEASE_JOB: prepare
+      ASSET_CACHE_ENDPOINT: "${secret:catalystcommunity/asset-cache:endpoint}"
+      ASSET_CACHE_BUCKET: "${secret:catalystcommunity/asset-cache:bucket}"
+      ASSET_CACHE_ACCESS_KEY: "${secret:catalystcommunity/asset-cache:access_key}"
+      ASSET_CACHE_SECRET_KEY: "${secret:catalystcommunity/asset-cache:secret_key}"
+
+  cli-linux-amd64:
+    job_file: release-cli.yaml
+    depends_on:
+      - prepare
+    environment:
+      FOUNDRY_RELEASE_PLATFORM: linux/amd64
+
+  cli-linux-arm64:
+    job_file: release-cli.yaml
+    depends_on:
+      - prepare
+    environment:
+      FOUNDRY_RELEASE_PLATFORM: linux/arm64
+
+  cli-darwin-amd64:
+    job_file: release-cli.yaml
+    depends_on:
+      - prepare
+    environment:
+      FOUNDRY_RELEASE_PLATFORM: darwin/amd64
+
+  cli-darwin-arm64:
+    job_file: release-cli.yaml
+    depends_on:
+      - prepare
+    environment:
+      FOUNDRY_RELEASE_PLATFORM: darwin/arm64
+
+  cli-windows-amd64:
+    job_file: release-cli.yaml
+    depends_on:
+      - prepare
+    environment:
+      FOUNDRY_RELEASE_PLATFORM: windows/amd64
+
+  cli-windows-arm64:
+    job_file: release-cli.yaml
+    depends_on:
+      - prepare
+    environment:
+      FOUNDRY_RELEASE_PLATFORM: windows/arm64
+
+  asset-seal:
+    job_file: release-asset-control.yaml
+    depends_on:
+      - cli-linux-amd64
+      - cli-linux-arm64
+      - cli-darwin-amd64
+      - cli-darwin-arm64
+      - cli-windows-amd64
+      - cli-windows-arm64
+
+  # Keep this node name. The registry grant matches it exactly.
   foundry-release-server:
     job_file: release-server.yaml
+    depends_on:
+      - asset-seal
+
+  publish:
+    job_file: release-control.yaml
+    depends_on:
+      - foundry-release-server
+    environment:
+      FOUNDRY_RELEASE_JOB: publish

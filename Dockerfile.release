@@ -1,0 +1,13 @@
+# syntax=docker/dockerfile:1
+
+# Package the verified binaries from the release asset cache. The build context
+# contains linux-amd64/foundry and linux-arm64/foundry.
+FROM gcr.io/distroless/static:nonroot
+
+ARG TARGETOS
+ARG TARGETARCH
+COPY ${TARGETOS}-${TARGETARCH}/foundry /usr/local/bin/foundry
+
+USER nonroot:nonroot
+ENTRYPOINT ["/usr/local/bin/foundry"]
+CMD ["gateway", "controller"]
