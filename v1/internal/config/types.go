@@ -186,6 +186,13 @@ func (c *ComponentConfig) Validate() error {
 	return nil
 }
 
+// UpgradesAllowed reports whether Foundry can upgrade the component.
+// Older stack files do not contain allow_upgrades, so an omitted value must
+// keep the safe, backwards-compatible default of true.
+func (c ComponentConfig) UpgradesAllowed() bool {
+	return c.AllowUpgrades == nil || *c.AllowUpgrades
+}
+
 // Validate performs validation on ObsConfig
 func (o *ObsConfig) Validate() error {
 	// Observability config is optional, but if present, validate its fields

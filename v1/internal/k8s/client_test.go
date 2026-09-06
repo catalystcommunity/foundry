@@ -2,6 +2,7 @@ package k8s
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 
@@ -15,6 +16,7 @@ import (
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/rest"
+	k8stesting "k8s.io/client-go/testing"
 )
 
 // mockSecretResolver implements SecretResolver for testing
@@ -336,6 +338,71 @@ func TestGetNodes(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestEnsureARM64NodeTaints(t *testing.T) {
+	armNode := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "arm-worker",
+			Labels: map[string]string{corev1.LabelArchStable: ARM64ArchitectureValue},
+		},
+		Spec: corev1.NodeSpec{Taints: []corev1.Taint{{Key: "dedicated", Value: "build", Effect: corev1.TaintEffectNoSchedule}}},
+	}
+	armNodeWithWrongTaint := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "arm-control-plane",
+			Labels: map[string]string{corev1.LabelArchStable: ARM64ArchitectureValue},
+		},
+		Spec: corev1.NodeSpec{Taints: []corev1.Taint{{Key: ARM64ArchitectureTaintKey, Value: "old", Effect: corev1.TaintEffectPreferNoSchedule}}},
+	}
+	amdNode := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "amd-worker",
+			Labels: map[string]string{corev1.LabelArchStable: "amd64"},
+		},
+	}
+
+	fakeClient := fake.NewSimpleClientset(armNode, armNodeWithWrongTaint, amdNode)
+	client := &Client{clientset: fakeClient}
+
+	updated, err := client.EnsureARM64NodeTaints(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, 2, updated)
+
+	for _, nodeName := range []string{"arm-worker", "arm-control-plane"} {
+		node, err := fakeClient.CoreV1().Nodes().Get(context.Background(), nodeName, metav1.GetOptions{})
+		require.NoError(t, err)
+		assert.Contains(t, node.Spec.Taints, corev1.Taint{
+			Key: ARM64ArchitectureTaintKey, Value: ARM64ArchitectureValue, Effect: corev1.TaintEffectNoSchedule,
+		})
+	}
+	amd, err := fakeClient.CoreV1().Nodes().Get(context.Background(), "amd-worker", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Empty(t, amd.Spec.Taints)
+
+	updated, err = client.EnsureARM64NodeTaints(context.Background())
+	require.NoError(t, err)
+	assert.Zero(t, updated)
+}
+
+func TestEnsureARM64NodeTaintsReturnsUpdateError(t *testing.T) {
+	node := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "arm-worker",
+			Labels: map[string]string{corev1.LabelArchStable: ARM64ArchitectureValue},
+		},
+	}
+	fakeClient := fake.NewSimpleClientset(node)
+	fakeClient.PrependReactor("update", "nodes", func(k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, errors.New("API unavailable")
+	})
+	client := &Client{clientset: fakeClient}
+
+	updated, err := client.EnsureARM64NodeTaints(context.Background())
+
+	assert.Zero(t, updated)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to update taints on node arm-worker")
 }
 
 func TestGetPods(t *testing.T) {

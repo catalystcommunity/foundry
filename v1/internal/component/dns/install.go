@@ -124,7 +124,11 @@ func configFromComponentConfig(cfg component.ComponentConfig) (*Config, *ssh.Con
 		host = h
 	}
 
-	// Extract ImageTag
+	// A component version pin selects the container tag. image_tag remains a
+	// more specific compatibility override.
+	if version, ok := cfg["version"].(string); ok && version != "" {
+		dnsConfig.ImageTag = version
+	}
 	if tag, ok := cfg["image_tag"].(string); ok && tag != "" {
 		dnsConfig.ImageTag = tag
 	}
@@ -446,7 +450,7 @@ CREATE UNIQUE INDEX namealgoindex ON tsigkeys(name, algorithm);`
 	return nil
 }
 
-// enableAndStartServices enables and starts the PowerDNS systemd services.
+// enableAndStartServices enables and restarts the PowerDNS systemd services.
 func enableAndStartServices(conn *ssh.Connection) error {
 	adapter := &sshExecutorAdapter{conn: conn}
 	services := []string{"powerdns-auth", "powerdns-recursor"}
@@ -457,9 +461,9 @@ func enableAndStartServices(conn *ssh.Connection) error {
 			return fmt.Errorf("failed to enable %s: %w", svc, err)
 		}
 
-		// Start service
-		if err := systemd.StartService(adapter, svc); err != nil {
-			return fmt.Errorf("failed to start %s: %w", svc, err)
+		// Restart also starts a new service and applies updated images and units.
+		if err := systemd.RestartService(adapter, svc); err != nil {
+			return fmt.Errorf("failed to restart %s: %w", svc, err)
 		}
 	}
 

@@ -218,6 +218,7 @@ func installK8sComponent(ctx context.Context, cmd *cli.Command, name string, sta
 	if stackConfig.Cluster.VIP != "" {
 		cfg["cluster_vip"] = stackConfig.Cluster.VIP
 	}
+	applyConfiguredComponentValues(stackConfig, name, cfg)
 
 	// Create component-specific instance with clients and install
 	var componentWithClients component.Component
@@ -390,6 +391,28 @@ func installK8sComponent(ctx context.Context, cmd *cli.Command, name string, sta
 	}
 
 	return nil
+}
+
+// applyConfiguredComponentValues adds the component settings from the stack
+// file. Explicit command values take precedence over the stack settings.
+func applyConfiguredComponentValues(stackConfig *config.Config, name string, runtimeConfig component.ComponentConfig) {
+	if stackConfig == nil {
+		return
+	}
+	configured, ok := stackConfig.Components[name]
+	if !ok {
+		return
+	}
+	for key, value := range configured.Config {
+		if _, exists := runtimeConfig[key]; !exists {
+			runtimeConfig[key] = value
+		}
+	}
+	if configured.Version != nil {
+		if _, exists := runtimeConfig["version"]; !exists {
+			runtimeConfig["version"] = *configured.Version
+		}
+	}
 }
 
 // resolveSecretRefs walks a nested config value and replaces any string that is a

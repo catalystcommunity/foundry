@@ -72,6 +72,21 @@ func TestGenerateAPIKey(t *testing.T) {
 	assert.NotEqual(t, key1, key2)
 }
 
+func TestConfigFromComponentConfigUsesVersionPin(t *testing.T) {
+	cfg, _, err := configFromComponentConfig(component.ComponentConfig{
+		"version": "4.9.2",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "4.9.2", cfg.ImageTag)
+
+	cfg, _, err = configFromComponentConfig(component.ComponentConfig{
+		"version":   "4.9.2",
+		"image_tag": "custom",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "custom", cfg.ImageTag)
+}
+
 func TestConfigFromComponentConfig(t *testing.T) {
 	tests := []struct {
 		name      string

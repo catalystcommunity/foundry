@@ -51,9 +51,10 @@ type ComponentMap map[string]ComponentConfig
 
 // ComponentConfig represents a structured data type
 type ComponentConfig struct {
-	Version *string        `json:"version,omitempty" yaml:"version,omitempty"`
-	Hosts   []string       `json:"hosts,omitempty" yaml:"hosts,omitempty"`
-	Config  map[string]any `json:"config" yaml:",inline"`
+	Version       *string        `json:"version,omitempty" yaml:"version,omitempty"`
+	AllowUpgrades *bool          `json:"allow_upgrades,omitempty" yaml:"allow_upgrades,omitempty"`
+	Hosts         []string       `json:"hosts,omitempty" yaml:"hosts,omitempty"`
+	Config        map[string]any `json:"config" yaml:",inline"`
 }
 
 // ObsConfig represents a structured data type

@@ -10,6 +10,15 @@ import (
 // JoinControlPlane joins an additional control plane node to an existing K3s cluster
 // This is used to add additional control plane nodes for HA configurations
 func JoinControlPlane(ctx context.Context, executor SSHExecutor, existingServerURL string, tokens *Tokens, cfg *Config) error {
+	return reconcileJoinedControlPlane(ctx, executor, existingServerURL, tokens, cfg, false)
+}
+
+// UpgradeJoinedControlPlane reconciles and upgrades an additional server.
+func UpgradeJoinedControlPlane(ctx context.Context, executor SSHExecutor, existingServerURL string, tokens *Tokens, cfg *Config) error {
+	return reconcileJoinedControlPlane(ctx, executor, existingServerURL, tokens, cfg, true)
+}
+
+func reconcileJoinedControlPlane(ctx context.Context, executor SSHExecutor, existingServerURL string, tokens *Tokens, cfg *Config, upgrade bool) error {
 	// Ensure we have the cluster token for control plane joins
 	if tokens == nil || tokens.ClusterToken == "" {
 		return fmt.Errorf("cluster token is required for joining control plane nodes")
@@ -45,6 +54,29 @@ func JoinControlPlane(ctx context.Context, executor SSHExecutor, existingServerU
 	if isInstalled {
 		// K3s is already installed - apply updates idempotently
 		fmt.Println("   K3s already installed, applying updates...")
+		if upgrade {
+			currentVersion, err := GetInstalledVersion(executor)
+			if err != nil {
+				return err
+			}
+			upgradeCommands, err := GenerateK3sUpgradeCommands(cfg, currentVersion)
+			if err != nil {
+				return fmt.Errorf("unsafe K3s upgrade target: %w", err)
+			}
+			for step, upgradeCommand := range upgradeCommands {
+				fmt.Printf("   Applying K3s server upgrade step %d/%d...\n", step+1, len(upgradeCommands))
+				result, err := executor.Exec(upgradeCommand)
+				if err != nil {
+					return fmt.Errorf("failed to execute K3s upgrade step %d: %w", step+1, err)
+				}
+				if result.ExitCode != 0 {
+					return fmt.Errorf("K3s upgrade failed at step %d with exit code %d: %s", step+1, result.ExitCode, result.Stderr)
+				}
+				if err := waitForK3sReady(executor, DefaultRetryConfig()); err != nil {
+					return fmt.Errorf("k3s failed to become ready after upgrade step %d: %w", step+1, err)
+				}
+			}
+		}
 
 		// Track if we need to restart K3s
 		needsRestart := false

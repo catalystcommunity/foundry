@@ -78,6 +78,7 @@ type HelmClient interface {
 // K8sClient defines the Kubernetes operations needed for SeaweedFS component
 type K8sClient interface {
 	GetPods(ctx context.Context, namespace string) ([]*k8s.Pod, error)
+	CreateNamespace(ctx context.Context, name string) error
 	ApplyManifest(ctx context.Context, manifest string) error
 	DeleteJob(ctx context.Context, namespace, name string) error
 	WaitForJobComplete(ctx context.Context, namespace, name string, timeout time.Duration) error
@@ -115,7 +116,7 @@ func (c *Component) Install(ctx context.Context, cfg component.ComponentConfig) 
 
 // Upgrade upgrades SeaweedFS
 func (c *Component) Upgrade(ctx context.Context, cfg component.ComponentConfig) error {
-	return fmt.Errorf("upgrade not yet implemented")
+	return c.Install(ctx, cfg)
 }
 
 // Status returns the current status of SeaweedFS

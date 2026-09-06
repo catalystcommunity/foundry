@@ -70,13 +70,14 @@ func (c *Component) Install(ctx context.Context, cfg component.ComponentConfig) 
 		return fmt.Errorf("failed to create systemd service: %w", err)
 	}
 
-	// Enable and start service
+	// Enable and restart the service. Restart also starts a new service and
+	// ensures that an existing service uses the pulled image and new unit file.
 	if err := systemd.EnableService(conn, "openbao"); err != nil {
 		return fmt.Errorf("failed to enable service: %w", err)
 	}
 
-	if err := systemd.StartService(conn, "openbao"); err != nil {
-		return fmt.Errorf("failed to start service: %w", err)
+	if err := systemd.RestartService(conn, "openbao"); err != nil {
+		return fmt.Errorf("failed to restart service: %w", err)
 	}
 
 	// Wait for service to be ready

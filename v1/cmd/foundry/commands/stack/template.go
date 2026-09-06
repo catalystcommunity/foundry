@@ -167,14 +167,40 @@ dns:
 #     replica_count: 3
 #     data_path: /var/lib/longhorn
 
-# Component Configuration (minimal - auto-installed during stack install)
+# Component upgrade settings. Set allow_upgrades to false only if Foundry must
+# keep the installed version. Add version only if you must use an exact version.
 components:
   openbao:
-    config: {}
+    allow_upgrades: true
+  dns:
+    allow_upgrades: true
   zot:
-    config: {}
+    allow_upgrades: true
   k3s:
-    config: {}
+    allow_upgrades: true
+  gateway-api:
+    allow_upgrades: true
+  storage:
+    allow_upgrades: true
+  prometheus:
+    allow_upgrades: true
+  contour:
+    allow_upgrades: true
+  gateway-controller:
+    allow_upgrades: true
+    enabled: true
+  cert-manager:
+    allow_upgrades: true
+  seaweedfs:
+    allow_upgrades: true
+  external-dns:
+    allow_upgrades: true
+  loki:
+    allow_upgrades: true
+  grafana:
+    allow_upgrades: true
+  velero:
+    allow_upgrades: true
 
 # Setup State (do not modify - managed by foundry)
 setup_state:

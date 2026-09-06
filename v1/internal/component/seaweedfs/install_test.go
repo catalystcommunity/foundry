@@ -2,6 +2,9 @@ package seaweedfs
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -41,6 +44,7 @@ func TestInstall_Success(t *testing.T) {
 	require.Len(t, helmClient.reposAdded, 1)
 	assert.Equal(t, seaweedfsRepoName, helmClient.reposAdded[0].Name)
 	assert.Equal(t, seaweedfsRepoURL, helmClient.reposAdded[0].URL)
+	assert.Equal(t, []string{"seaweedfs"}, k8sClient.namespacesCreated)
 
 	// Verify chart was installed
 	require.Len(t, helmClient.chartsInstalled, 1)
@@ -74,15 +78,25 @@ func TestInstall_AlreadyInstalled(t *testing.T) {
 		MasterReplicas: 1,
 		VolumeReplicas: 1,
 		FilerReplicas:  1,
+		S3Enabled:      true,
+		S3Port:         8333,
 		AccessKey:      "test-key",
 		SecretKey:      "test-secret",
+		Buckets:        []string{"loki"},
 		Values:         map[string]interface{}{},
 	}
 	err := Install(context.Background(), helmClient, k8sClient, cfg)
 	require.NoError(t, err)
 
-	// Should not install again
+	// A deployed release must still be reconciled.
 	assert.Empty(t, helmClient.chartsInstalled)
+	require.Len(t, helmClient.upgradeCalls, 1)
+	require.Len(t, k8sClient.manifests, 2)
+	assert.Contains(t, k8sClient.manifests[1], "head-bucket")
+	assert.Contains(t, k8sClient.manifests[1], "create-bucket")
+	assert.Contains(t, k8sClient.manifests[1], "secretKeyRef")
+	assert.NotContains(t, k8sClient.manifests[1], "test-secret")
+	assert.NotContains(t, k8sClient.manifests[1], "|| true")
 }
 
 func TestInstall_NilHelmClient(t *testing.T) {
@@ -206,6 +220,8 @@ func TestBuildHelmValues_Basic(t *testing.T) {
 		StorageSize:    "50Gi",
 		S3Enabled:      true,
 		S3Port:         8333,
+		AccessKey:      "test-key",
+		SecretKey:      "test-secret",
 		Values:         map[string]interface{}{},
 	}
 
@@ -236,6 +252,45 @@ func TestBuildHelmValues_Basic(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, true, s3Config["enabled"])
 	assert.Equal(t, 8333, s3Config["port"])
+	assert.Equal(t, true, s3Config["enableAuth"])
+	assert.Equal(t, seaweedfsS3Secret, s3Config["existingConfigSecret"])
+}
+
+func TestBuildS3SecretManifest(t *testing.T) {
+	cfg := &Config{
+		Namespace: "seaweedfs",
+		AccessKey: "test-key",
+		SecretKey: "test-secret",
+	}
+
+	manifest, err := buildS3SecretManifest(cfg)
+	require.NoError(t, err)
+	assert.False(t, strings.Contains(manifest, "test-secret"))
+
+	var secret struct {
+		Metadata struct {
+			Name      string `json:"name"`
+			Namespace string `json:"namespace"`
+		} `json:"metadata"`
+		Data map[string]string `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(manifest), &secret))
+	assert.Equal(t, seaweedfsS3Secret, secret.Metadata.Name)
+	assert.Equal(t, "seaweedfs", secret.Metadata.Namespace)
+
+	encodedConfig, ok := secret.Data["seaweedfs_s3_config"]
+	require.True(t, ok)
+	decodedConfig, err := base64.StdEncoding.DecodeString(encodedConfig)
+	require.NoError(t, err)
+	assert.Contains(t, string(decodedConfig), `"accessKey":"test-key"`)
+	assert.Contains(t, string(decodedConfig), `"secretKey":"test-secret"`)
+}
+
+func TestBuildS3SecretManifest_RequiresCredentials(t *testing.T) {
+	_, err := buildS3SecretManifest(&Config{Namespace: "seaweedfs"})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "access_key and secret_key are required")
 }
 
 func TestBuildHelmValues_MultiReplica(t *testing.T) {

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestGenerateRegistriesYAML(t *testing.T) {
@@ -378,6 +379,89 @@ func TestGenerateK3sInstallCommand(t *testing.T) {
 	assert.Contains(t, got, "--token test-token")
 	assert.Contains(t, got, "--tls-san 192.168.1.100")
 	assert.Contains(t, got, "--disable=traefik")
+}
+
+func TestGenerateK3sInstallCommandWithVersionPin(t *testing.T) {
+	cfg := &Config{
+		Version:      "v1.34.3+k3s1",
+		VIP:          "192.168.1.100",
+		ClusterInit:  true,
+		ClusterToken: "test-token",
+	}
+
+	got := GenerateK3sInstallCommand(cfg)
+
+	assert.Contains(t, got, "INSTALL_K3S_VERSION=v1.34.3+k3s1 sh -s - server")
+}
+
+func TestK3sUpgradeSelector(t *testing.T) {
+	tests := []struct {
+		name    string
+		current string
+		target  string
+		want    string
+		wantErr bool
+	}{
+		{name: "unpinned stays in current minor", current: "v1.34.3+k3s1", want: "INSTALL_K3S_CHANNEL=v1.34 "},
+		{name: "same minor pin", current: "v1.34.3+k3s1", target: "v1.34.10+k3s1", want: "INSTALL_K3S_VERSION=v1.34.10+k3s1 "},
+		{name: "next minor pin", current: "v1.34.3+k3s1", target: "v1.35.4+k3s1", want: "INSTALL_K3S_VERSION=v1.35.4+k3s1 "},
+		{name: "downgrade", current: "v1.35.4+k3s1", target: "v1.34.10+k3s1", wantErr: true},
+		{name: "skipped minor", current: "v1.34.3+k3s1", target: "v1.36.3+k3s1", wantErr: true},
+		{name: "invalid current", current: "unknown", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := K3sUpgradeSelector(tt.current, tt.target)
+			if tt.wantErr {
+				assert.Error(t, err)
+				return
+			}
+			assert.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestK3sVersionsShareMinor(t *testing.T) {
+	same, err := K3sVersionsShareMinor("v1.34.3+k3s1", "v1.34.10+k3s1")
+	require.NoError(t, err)
+	assert.True(t, same)
+
+	same, err = K3sVersionsShareMinor("v1.34.3+k3s1", "v1.35.1+k3s1")
+	require.NoError(t, err)
+	assert.False(t, same)
+}
+
+func TestK3sUpgradeSelectorsPlansEachMinor(t *testing.T) {
+	selectors, err := K3sUpgradeSelectors("v1.34.3+k3s1", "v1.36.3+k3s1")
+	require.NoError(t, err)
+	assert.Equal(t, []string{
+		"INSTALL_K3S_CHANNEL=v1.35 ",
+		"INSTALL_K3S_VERSION=v1.36.3+k3s1 ",
+	}, selectors)
+}
+
+func TestK3sUpgradeSelectorsDoesNothingAtExactTarget(t *testing.T) {
+	selectors, err := K3sUpgradeSelectors("v1.36.3+k3s1", "v1.36.3+k3s1")
+	require.NoError(t, err)
+	assert.Empty(t, selectors)
+}
+
+func TestK3sUpgradeSelectorsRejectsPatchDowngrade(t *testing.T) {
+	_, err := K3sUpgradeSelectors("v1.36.4+k3s1", "v1.36.3+k3s1")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "downgrade")
+}
+
+func TestHighestK3sVersionSelectsClusterConvergenceTarget(t *testing.T) {
+	version, err := HighestK3sVersion([]string{
+		"v1.34.3+k3s1",
+		"v1.36.3+k3s1",
+		"v1.35.8+k3s1",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "v1.36.3+k3s1", version)
 }
 
 func TestGenerateResolvConfContent(t *testing.T) {

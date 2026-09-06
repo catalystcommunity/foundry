@@ -62,6 +62,7 @@ ComponentMap = {* text => ComponentConfig}
 ; The Go type uses yaml:",inline" to flatten config into the parent object
 ComponentConfig = {
     ? version: text,
+    ? allow_upgrades: bool @go_name("AllowUpgrades"),
     ? hosts: [* text],
     config: {* text => any}
 }

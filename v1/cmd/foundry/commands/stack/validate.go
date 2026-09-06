@@ -180,8 +180,9 @@ func validateComponentDependencies(cfg *config.Config) error {
 		"dns",
 		"zot",
 		"k3s",
+		"gateway-api",
 		"contour",
-		"certmanager",
+		"cert-manager",
 	}
 
 	order, err := component.ResolveInstallationOrder(component.DefaultRegistry, componentNames)

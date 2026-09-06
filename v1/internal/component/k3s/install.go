@@ -45,6 +45,24 @@ func IsK3sAgentInstalled(executor SSHExecutor) (bool, error) {
 	return result.ExitCode == 0 && strings.TrimSpace(result.Stdout) == "active", nil
 }
 
+// GetInstalledVersion returns the version reported by the K3s binary.
+func GetInstalledVersion(executor SSHExecutor) (string, error) {
+	result, err := executor.Exec("k3s --version")
+	if err != nil {
+		return "", fmt.Errorf("failed to get K3s version: %w", err)
+	}
+	if result.ExitCode != 0 {
+		return "", fmt.Errorf("failed to get K3s version: exit code %d: %s", result.ExitCode, result.Stderr)
+	}
+
+	for _, field := range strings.Fields(result.Stdout) {
+		if versionPattern.MatchString(field) {
+			return field, nil
+		}
+	}
+	return "", fmt.Errorf("failed to parse K3s version from %q", strings.TrimSpace(result.Stdout))
+}
+
 // IsKubeVIPInstalled checks if kube-vip is already deployed in the cluster
 func IsKubeVIPInstalled(executor SSHExecutor) (bool, error) {
 	// Check if kube-vip daemonset exists
@@ -59,6 +77,16 @@ func IsKubeVIPInstalled(executor SSHExecutor) (bool, error) {
 
 // InstallControlPlane installs K3s control plane on a node
 func InstallControlPlane(ctx context.Context, executor SSHExecutor, cfg *Config) error {
+	return reconcileControlPlane(ctx, executor, cfg, false)
+}
+
+// UpgradeControlPlane reconciles an installed server and permits the K3s
+// installer to upgrade it. The caller is responsible for serial cluster order.
+func UpgradeControlPlane(ctx context.Context, executor SSHExecutor, cfg *Config) error {
+	return reconcileControlPlane(ctx, executor, cfg, true)
+}
+
+func reconcileControlPlane(ctx context.Context, executor SSHExecutor, cfg *Config, upgrade bool) error {
 	// Validate configuration
 	if err := cfg.Validate(); err != nil {
 		return fmt.Errorf("config validation failed: %w", err)
@@ -78,6 +106,29 @@ func InstallControlPlane(ctx context.Context, executor SSHExecutor, cfg *Config)
 	if isInstalled {
 		// K3s is already installed - apply updates idempotently
 		fmt.Println("   K3s already installed, applying updates...")
+		if upgrade {
+			currentVersion, err := GetInstalledVersion(executor)
+			if err != nil {
+				return err
+			}
+			upgradeCommands, err := GenerateK3sUpgradeCommands(cfg, currentVersion)
+			if err != nil {
+				return fmt.Errorf("unsafe K3s upgrade target: %w", err)
+			}
+			for step, upgradeCommand := range upgradeCommands {
+				fmt.Printf("   Applying K3s server upgrade step %d/%d...\n", step+1, len(upgradeCommands))
+				result, err := executor.Exec(upgradeCommand)
+				if err != nil {
+					return fmt.Errorf("failed to execute K3s upgrade step %d: %w", step+1, err)
+				}
+				if result.ExitCode != 0 {
+					return fmt.Errorf("K3s upgrade failed at step %d with exit code %d: %s", step+1, result.ExitCode, result.Stderr)
+				}
+				if err := waitForK3sReady(executor, DefaultRetryConfig()); err != nil {
+					return fmt.Errorf("k3s failed to become ready after upgrade step %d: %w", step+1, err)
+				}
+			}
+		}
 
 		// Track if we need to restart K3s
 		needsRestart := false

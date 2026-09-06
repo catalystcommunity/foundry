@@ -176,7 +176,7 @@ SubState=running`)
 				"mkdir -p /etc/openbao",
 				"docker pull quay.io/openbao/openbao:2.0.0",
 				"systemctl enable openbao",
-				"systemctl start openbao",
+				"systemctl restart openbao",
 			},
 		},
 		{

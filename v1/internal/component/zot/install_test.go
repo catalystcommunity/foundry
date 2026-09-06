@@ -143,7 +143,7 @@ func TestInstall_Success(t *testing.T) {
 	// Verify service was enabled and started
 	assert.True(t, executor.hasCommand("sudo systemctl daemon-reload"))
 	assert.True(t, executor.hasCommand("sudo systemctl enable foundry-zot"))
-	assert.True(t, executor.hasCommand("sudo systemctl start foundry-zot"))
+	assert.True(t, executor.hasCommand("sudo systemctl restart foundry-zot"))
 
 	// Verify status was checked
 	assert.True(t, executor.hasCommand("systemctl show foundry-zot"))
@@ -235,7 +235,7 @@ func TestInstall_ImagePullError(t *testing.T) {
 
 func TestInstall_ServiceStartError(t *testing.T) {
 	executor := newMockExecutor()
-	executor.errors["systemctl start foundry-zot"] = fmt.Errorf("service failed to start")
+	executor.errors["systemctl restart foundry-zot"] = fmt.Errorf("service failed to restart")
 	runtime := newMockRuntime()
 	cfg := &ParsedConfig{Config: DefaultConfig()}
 

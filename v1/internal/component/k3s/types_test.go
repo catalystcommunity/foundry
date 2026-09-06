@@ -150,6 +150,25 @@ func TestConfig_Validate(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "valid pinned version",
+			config: &Config{
+				Version:     "v1.34.3+k3s1",
+				VIP:         "192.168.1.100",
+				ClusterInit: true,
+			},
+			wantErr: false,
+		},
+		{
+			name: "invalid pinned version",
+			config: &Config{
+				Version:     "newest",
+				VIP:         "192.168.1.100",
+				ClusterInit: true,
+			},
+			wantErr: true,
+			errMsg:  "version",
+		},
+		{
 			name: "valid joining node with cluster token",
 			config: &Config{
 				VIP:          "192.168.1.100",
