@@ -94,10 +94,11 @@ type LonghornConfig struct {
 	// DefaultDataLocality controls data locality (disabled, best-effort, strict-local)
 	DefaultDataLocality string `json:"default_data_locality" yaml:"default_data_locality"`
 
-	// IngressEnabled enables Ingress for the Longhorn UI
+	// IngressEnabled enables external Gateway API access for the Longhorn UI.
+	// The field name is retained for configuration compatibility.
 	IngressEnabled bool `json:"ingress_enabled" yaml:"ingress_enabled"`
 
-	// IngressHost is the hostname for Longhorn UI Ingress
+	// IngressHost is the external hostname for the Longhorn UI.
 	IngressHost string `json:"ingress_host" yaml:"ingress_host"`
 
 	// ServiceMonitorEnabled enables ServiceMonitor for Prometheus metrics (default: true, requires CRD)
@@ -129,6 +130,7 @@ type HelmClient interface {
 type K8sClient interface {
 	GetPods(ctx context.Context, namespace string) ([]*k8s.Pod, error)
 	ApplyManifest(ctx context.Context, manifest string) error
+	DeleteResource(ctx context.Context, gvr schema.GroupVersionResource, namespace, name string) error
 	MergePatchResource(ctx context.Context, gvr schema.GroupVersionResource, namespace, name string, patch []byte) error
 	ServiceMonitorCRDExists(ctx context.Context) (bool, error)
 }

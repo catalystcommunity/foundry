@@ -161,6 +161,46 @@ func TestDefaultComponentConfigsShowUpgradeControls(t *testing.T) {
 	assert.Equal(t, true, components["gateway-controller"].Config["enabled"])
 }
 
+func TestDefaultComponentValuesDoNotEnableIngress(t *testing.T) {
+	cfg := &config.Config{
+		Cluster: config.ClusterConfig{PrimaryDomain: "example.com"},
+		Components: config.ComponentMap{
+			"storage": {Config: map[string]any{"values": map[string]interface{}{
+				"ingress": map[string]interface{}{"enabled": true},
+			}}},
+			"seaweedfs": {Config: map[string]any{"values": map[string]interface{}{
+				"filer": map[string]interface{}{"ingress": map[string]interface{}{"enabled": true}},
+				"s3":    map[string]interface{}{"ingress": map[string]interface{}{"enabled": true}},
+			}}},
+			"prometheus": {Config: map[string]any{"values": map[string]interface{}{
+				"prometheus": map[string]interface{}{"ingress": map[string]interface{}{"enabled": true}},
+			}}},
+			"loki": {Config: map[string]any{"values": map[string]interface{}{
+				"gateway": map[string]interface{}{"ingress": map[string]interface{}{"enabled": true}},
+			}}},
+			"grafana": {Config: map[string]any{"values": map[string]interface{}{
+				"ingress": map[string]interface{}{"enabled": true},
+			}}},
+		},
+	}
+
+	storageValues := buildStorageConfig(context.Background(), cfg)["values"].(map[string]interface{})
+	assert.NotContains(t, storageValues, "ingress")
+
+	seaweedValues := buildSeaweedFSConfig(cfg)["values"].(map[string]interface{})
+	assert.NotContains(t, seaweedValues["filer"].(map[string]interface{}), "ingress")
+	assert.NotContains(t, seaweedValues["s3"].(map[string]interface{}), "ingress")
+
+	prometheusValues := buildPrometheusConfig(cfg)["values"].(map[string]interface{})
+	assert.NotContains(t, prometheusValues["prometheus"].(map[string]interface{}), "ingress")
+
+	lokiValues := buildLokiConfig(cfg)["values"].(map[string]interface{})
+	assert.NotContains(t, lokiValues["gateway"].(map[string]interface{}), "ingress")
+
+	grafanaValues := buildGrafanaConfig(cfg)["values"].(map[string]interface{})
+	assert.NotContains(t, grafanaValues, "ingress")
+}
+
 func TestApplyComponentVersion(t *testing.T) {
 	version := "v1.34.3+k3s1"
 	cfg := &config.Config{Components: config.ComponentMap{

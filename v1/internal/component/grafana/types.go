@@ -35,10 +35,11 @@ type Config struct {
 	// LokiURL is the Loki data source URL
 	LokiURL string `json:"loki_url" yaml:"loki_url"`
 
-	// IngressEnabled enables Ingress for Grafana
+	// IngressEnabled enables external Gateway API access for Grafana. The field
+	// name is retained for configuration compatibility.
 	IngressEnabled bool `json:"ingress_enabled" yaml:"ingress_enabled"`
 
-	// IngressHost is the hostname for Grafana Ingress
+	// IngressHost is the external hostname for Grafana.
 	IngressHost string `json:"ingress_host" yaml:"ingress_host"`
 
 	// DefaultDashboardsEnabled enables default dashboards

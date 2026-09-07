@@ -574,7 +574,7 @@ func TestGenerateGatewayManifest_WithHTTPS(t *testing.T) {
 	assert.Contains(t, manifest, "name: https")
 	assert.Contains(t, manifest, "port: 443")
 	assert.Contains(t, manifest, "protocol: HTTPS")
-	assert.Contains(t, manifest, "hostname: \"*.catalyst.local\"")
+	assert.NotContains(t, manifest, "hostname:")
 	assert.Contains(t, manifest, "gateway-wildcard-tls")
 	assert.Contains(t, manifest, "mode: Terminate")
 }

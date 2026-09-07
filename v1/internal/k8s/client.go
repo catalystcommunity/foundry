@@ -2,12 +2,14 @@ package k8s
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -250,8 +252,8 @@ func (c *Client) CreateNamespace(ctx context.Context, name string) error {
 	return nil
 }
 
-// ApplyManifest applies a YAML manifest to the cluster
-// This supports single resources or multi-document YAML (separated by ---)
+// ApplyManifest reconciles a YAML manifest with the cluster by using
+// server-side apply. It supports one resource or multiple YAML documents.
 func (c *Client) ApplyManifest(ctx context.Context, manifest string) error {
 	if manifest == "" {
 		return fmt.Errorf("manifest is empty")
@@ -297,6 +299,29 @@ func (c *Client) MergePatchResource(ctx context.Context, gvr schema.GroupVersion
 	return nil
 }
 
+// DeleteResource deletes one dynamic resource. A missing resource is already
+// in the requested state and does not cause an error.
+func (c *Client) DeleteResource(ctx context.Context, gvr schema.GroupVersionResource, namespace, name string) error {
+	if name == "" {
+		return fmt.Errorf("resource name is empty")
+	}
+
+	resource := c.dynamicClient.Resource(gvr)
+	var err error
+	if namespace == "" {
+		err = resource.Delete(ctx, name, metav1.DeleteOptions{})
+	} else {
+		err = resource.Namespace(namespace).Delete(ctx, name, metav1.DeleteOptions{})
+	}
+	if apierrors.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("failed to delete resource %s/%s: %w", gvr.Resource, name, err)
+	}
+	return nil
+}
+
 // applySingleManifest applies a single YAML document to the cluster
 func (c *Client) applySingleManifest(ctx context.Context, manifest string) error {
 	// Parse the manifest as unstructured object
@@ -327,25 +352,31 @@ func (c *Client) applySingleManifest(ctx context.Context, manifest string) error
 		namespace = metav1.NamespaceDefault
 	}
 
-	// Try to create the resource first
-	var err error
-	if isClusterScoped {
-		_, err = c.dynamicClient.Resource(gvr).Create(ctx, &obj, metav1.CreateOptions{})
-		if err != nil && strings.Contains(err.Error(), "already exists") {
-			// Resource exists - for idempotency, just return success
-			// (we could fetch and update, but for issuers/certs that's usually not needed)
-			return nil
-		}
-	} else {
-		_, err = c.dynamicClient.Resource(gvr).Namespace(namespace).Create(ctx, &obj, metav1.CreateOptions{})
-		if err != nil && strings.Contains(err.Error(), "already exists") {
-			// Resource exists - for idempotency, just return success
-			return nil
-		}
+	if obj.GetName() == "" {
+		return fmt.Errorf("manifest missing metadata.name")
 	}
 
+	data, err := json.Marshal(obj.Object)
 	if err != nil {
-		return fmt.Errorf("failed to apply manifest (kind=%s, name=%s): %w", gvk.Kind, obj.GetName(), err)
+		return fmt.Errorf("failed to marshal manifest (kind=%s, name=%s): %w", gvk.Kind, obj.GetName(), err)
+	}
+	force := true
+	patchOptions := metav1.PatchOptions{
+		FieldManager: "foundry",
+		Force:        &force,
+	}
+
+	// Server-side apply creates missing resources and reconciles existing ones
+	// without deleting fields that other controllers own.
+	var applyErr error
+	if isClusterScoped {
+		_, applyErr = c.dynamicClient.Resource(gvr).Patch(ctx, obj.GetName(), types.ApplyPatchType, data, patchOptions)
+	} else {
+		_, applyErr = c.dynamicClient.Resource(gvr).Namespace(namespace).Patch(ctx, obj.GetName(), types.ApplyPatchType, data, patchOptions)
+	}
+
+	if applyErr != nil {
+		return fmt.Errorf("failed to apply manifest (kind=%s, name=%s): %w", gvk.Kind, obj.GetName(), applyErr)
 	}
 
 	return nil

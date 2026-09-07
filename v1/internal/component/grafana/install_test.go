@@ -219,12 +219,42 @@ func TestBuildHelmValues_WithIngress(t *testing.T) {
 
 	ingress, ok := values["ingress"].(map[string]interface{})
 	require.True(t, ok)
-	assert.Equal(t, true, ingress["enabled"])
-	assert.Equal(t, "contour", ingress["ingressClassName"])
+	assert.Equal(t, false, ingress["enabled"])
+	assert.NotContains(t, ingress, "ingressClassName")
+	assert.NotContains(t, ingress, "hosts")
 
-	hosts, ok := ingress["hosts"].([]string)
+	extraObjects, ok := values["extraObjects"].([]interface{})
 	require.True(t, ok)
-	assert.Contains(t, hosts, "grafana.example.com")
+	require.Len(t, extraObjects, 2)
+	route, ok := extraObjects[0].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, "gateway.networking.k8s.io/v1", route["apiVersion"])
+	assert.Equal(t, "HTTPRoute", route["kind"])
+	routeSpec, ok := route["spec"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, []interface{}{"grafana.example.com"}, routeSpec["hostnames"])
+	parentRefs, ok := routeSpec["parentRefs"].([]interface{})
+	require.True(t, ok)
+	require.Len(t, parentRefs, 1)
+	parentRef, ok := parentRefs[0].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, "contour", parentRef["name"])
+	assert.Equal(t, "projectcontour", parentRef["namespace"])
+	assert.Equal(t, "https", parentRef["sectionName"])
+
+	redirect, ok := extraObjects[1].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, "HTTPRoute", redirect["kind"])
+	redirectMetadata, ok := redirect["metadata"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, "grafana-http-redirect", redirectMetadata["name"])
+	redirectSpec, ok := redirect["spec"].(map[string]interface{})
+	require.True(t, ok)
+	redirectParents, ok := redirectSpec["parentRefs"].([]interface{})
+	require.True(t, ok)
+	redirectParent, ok := redirectParents[0].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, "http", redirectParent["sectionName"])
 
 	// Check grafana.ini for root_url
 	grafanaIni, ok := values["grafana.ini"].(map[string]interface{})
@@ -232,6 +262,38 @@ func TestBuildHelmValues_WithIngress(t *testing.T) {
 	server, ok := grafanaIni["server"].(map[string]interface{})
 	require.True(t, ok)
 	assert.Equal(t, "https://grafana.example.com", server["root_url"])
+}
+
+func TestBuildHelmValues_WithIngressPreservesExtraObjects(t *testing.T) {
+	existing := map[string]interface{}{
+		"apiVersion": "v1",
+		"kind":       "ConfigMap",
+		"metadata": map[string]interface{}{
+			"name": "user-object",
+		},
+	}
+	cfg := &Config{
+		AdminUser:      "admin",
+		IngressEnabled: true,
+		IngressHost:    "grafana.example.com",
+		StorageSize:    "5Gi",
+		Values: map[string]interface{}{
+			"extraObjects": []interface{}{existing},
+		},
+	}
+
+	values := buildHelmValues(cfg)
+
+	extraObjects, ok := values["extraObjects"].([]interface{})
+	require.True(t, ok)
+	require.Len(t, extraObjects, 3)
+	assert.Equal(t, existing, extraObjects[0])
+	route, ok := extraObjects[1].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, "HTTPRoute", route["kind"])
+	redirect, ok := extraObjects[2].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, "HTTPRoute", redirect["kind"])
 }
 
 func TestBuildHelmValues_WithSidecar(t *testing.T) {

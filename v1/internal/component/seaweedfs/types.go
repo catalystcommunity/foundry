@@ -11,6 +11,7 @@ import (
 	"github.com/catalystcommunity/foundry/v1/internal/helm"
 	"github.com/catalystcommunity/foundry/v1/internal/k8s"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 // Config holds SeaweedFS component configuration
@@ -51,13 +52,14 @@ type Config struct {
 	// Buckets is a list of buckets to create on startup
 	Buckets []string `json:"buckets" yaml:"buckets"`
 
-	// IngressEnabled enables Ingress for SeaweedFS UIs
+	// IngressEnabled enables external Gateway API access for SeaweedFS. The
+	// field name is retained for configuration compatibility.
 	IngressEnabled bool `json:"ingress_enabled" yaml:"ingress_enabled"`
 
-	// IngressHostFiler is the hostname for Filer UI Ingress
+	// IngressHostFiler is the external hostname for the Filer UI.
 	IngressHostFiler string `json:"ingress_host_filer" yaml:"ingress_host_filer"`
 
-	// IngressHostS3 is the hostname for S3 API Ingress
+	// IngressHostS3 is the external hostname for the S3 API.
 	IngressHostS3 string `json:"ingress_host_s3" yaml:"ingress_host_s3"`
 
 	// ServiceMonitorEnabled enables ServiceMonitor for Prometheus metrics (default: true, requires CRD)
@@ -82,6 +84,7 @@ type K8sClient interface {
 	GetSecret(ctx context.Context, namespace, name string) (*corev1.Secret, error)
 	CreateNamespace(ctx context.Context, name string) error
 	ApplyManifest(ctx context.Context, manifest string) error
+	DeleteResource(ctx context.Context, gvr schema.GroupVersionResource, namespace, name string) error
 	DeleteJob(ctx context.Context, namespace, name string) error
 	WaitForJobComplete(ctx context.Context, namespace, name string, timeout time.Duration) error
 	ServiceMonitorCRDExists(ctx context.Context) (bool, error)

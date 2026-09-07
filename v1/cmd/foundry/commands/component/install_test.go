@@ -139,6 +139,36 @@ func TestApplyConfiguredComponentValues(t *testing.T) {
 	assert.Equal(t, pinnedVersion, runtimeConfig["version"])
 }
 
+func TestApplyClusterRuntimeValuesForContour(t *testing.T) {
+	stackConfig := &config.Config{
+		Cluster: config.ClusterConfig{
+			VIP:           "192.168.1.100",
+			PrimaryDomain: "example.test",
+		},
+	}
+	runtimeConfig := component.ComponentConfig{}
+
+	applyClusterRuntimeValues(stackConfig, "contour", runtimeConfig)
+
+	assert.Equal(t, "192.168.1.100", runtimeConfig["cluster_vip"])
+	assert.Equal(t, "example.test", runtimeConfig["gateway_domain"])
+}
+
+func TestApplyClusterRuntimeValuesDoesNotSetGatewayDomainForOtherComponents(t *testing.T) {
+	stackConfig := &config.Config{
+		Cluster: config.ClusterConfig{
+			VIP:           "192.168.1.100",
+			PrimaryDomain: "example.test",
+		},
+	}
+	runtimeConfig := component.ComponentConfig{}
+
+	applyClusterRuntimeValues(stackConfig, "grafana", runtimeConfig)
+
+	assert.Equal(t, "192.168.1.100", runtimeConfig["cluster_vip"])
+	assert.NotContains(t, runtimeConfig, "gateway_domain")
+}
+
 func TestInstallCommand_DependencyCheck(t *testing.T) {
 	// Create a temporary directory for the test config
 	tmpDir := t.TempDir()

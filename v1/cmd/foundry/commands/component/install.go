@@ -214,10 +214,9 @@ func installK8sComponent(ctx context.Context, cmd *cli.Command, name string, sta
 		cfg["version"] = version
 	}
 
-	// Add cluster VIP for components that need it
-	if stackConfig.Cluster.VIP != "" {
-		cfg["cluster_vip"] = stackConfig.Cluster.VIP
-	}
+	// Add cluster settings that components derive at runtime. These values do
+	// not belong in the component block because the cluster owns them.
+	applyClusterRuntimeValues(stackConfig, name, cfg)
 	applyConfiguredComponentValues(stackConfig, name, cfg)
 
 	// Create component-specific instance with clients and install
@@ -391,6 +390,20 @@ func installK8sComponent(ctx context.Context, cmd *cli.Command, name string, sta
 	}
 
 	return nil
+}
+
+// applyClusterRuntimeValues passes cluster-owned values to components that
+// need them. Component settings cannot replace these values.
+func applyClusterRuntimeValues(stackConfig *config.Config, name string, runtimeConfig component.ComponentConfig) {
+	if stackConfig == nil {
+		return
+	}
+	if stackConfig.Cluster.VIP != "" {
+		runtimeConfig["cluster_vip"] = stackConfig.Cluster.VIP
+	}
+	if name == "contour" && stackConfig.Cluster.PrimaryDomain != "" {
+		runtimeConfig["gateway_domain"] = stackConfig.Cluster.PrimaryDomain
+	}
 }
 
 // applyConfiguredComponentValues adds the component settings from the stack

@@ -8,9 +8,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/catalystcommunity/foundry/v1/internal/component/gatewayroute"
 	"github.com/catalystcommunity/foundry/v1/internal/helm"
 	"github.com/catalystcommunity/foundry/v1/internal/k8s"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 const (
@@ -128,6 +130,10 @@ func Install(ctx context.Context, helmClient HelmClient, k8sClient K8sClient, cf
 		}); err != nil {
 			return fmt.Errorf("failed to install seaweedfs: %w", err)
 		}
+	}
+
+	if err := reconcileGatewayRoutes(ctx, k8sClient, cfg); err != nil {
+		return err
 	}
 
 	// Step 2: Verify pods are running.
@@ -256,42 +262,12 @@ func buildHelmValues(cfg *Config) map[string]interface{} {
 		s3Config["existingConfigSecret"] = seaweedfsS3Secret
 	}
 
-	// S3 ingress configuration
-	if cfg.IngressEnabled && cfg.IngressHostS3 != "" {
-		s3Config["ingress"] = map[string]interface{}{
-			"enabled":   true,
-			"className": "contour",
-			"host":      cfg.IngressHostS3,
-			"annotations": map[string]interface{}{
-				"cert-manager.io/cluster-issuer": "foundry-ca-issuer",
-			},
-			"tls": []map[string]interface{}{
-				{
-					"hosts":      []string{cfg.IngressHostS3},
-					"secretName": "seaweedfs-s3-tls",
-				},
-			},
-		}
-	}
+	// Foundry reconciles S3 Gateway API routes after the chart installation.
+	s3Config["ingress"] = map[string]interface{}{"enabled": false}
 	values["s3"] = s3Config
 
-	// Filer ingress configuration
-	if cfg.IngressEnabled && cfg.IngressHostFiler != "" {
-		filerConfig["ingress"] = map[string]interface{}{
-			"enabled":   true,
-			"className": "contour",
-			"host":      cfg.IngressHostFiler,
-			"annotations": map[string]interface{}{
-				"cert-manager.io/cluster-issuer": "foundry-ca-issuer",
-			},
-			"tls": []map[string]interface{}{
-				{
-					"hosts":      []string{cfg.IngressHostFiler},
-					"secretName": "seaweedfs-filer-tls",
-				},
-			},
-		}
-	}
+	// Foundry reconciles Filer Gateway API routes after the chart installation.
+	filerConfig["ingress"] = map[string]interface{}{"enabled": false}
 
 	// Enable global monitoring with ServiceMonitors for Prometheus (if configured)
 	if cfg.ServiceMonitorEnabled {
@@ -303,6 +279,70 @@ func buildHelmValues(cfg *Config) map[string]interface{} {
 	}
 
 	return values
+}
+
+func reconcileGatewayRoutes(ctx context.Context, k8sClient K8sClient, cfg *Config) error {
+	httpRouteGVR := schema.GroupVersionResource{Group: "gateway.networking.k8s.io", Version: "v1", Resource: "httproutes"}
+	if !cfg.IngressEnabled {
+		if k8sClient == nil {
+			return nil
+		}
+		for _, name := range []string{"seaweedfs-filer", "seaweedfs-filer-http-redirect", "seaweedfs-s3"} {
+			if err := k8sClient.DeleteResource(ctx, httpRouteGVR, cfg.Namespace, name); err != nil {
+				return fmt.Errorf("remove SeaweedFS Gateway API route %s: %w", name, err)
+			}
+		}
+		return nil
+	}
+	if k8sClient == nil {
+		return fmt.Errorf("kubernetes client is required to configure SeaweedFS Gateway API routes")
+	}
+
+	ownership := gatewayroute.Ownership{Component: "seaweedfs"}
+	routes := []map[string]interface{}{
+		gatewayroute.Backend(gatewayroute.BackendOptions{
+			Name:           "seaweedfs-filer",
+			Namespace:      cfg.Namespace,
+			Hostname:       cfg.IngressHostFiler,
+			ParentSections: []string{"https"},
+			ServiceName:    "seaweedfs-filer",
+			ServicePort:    8888,
+			Ownership:      ownership,
+		}),
+		gatewayroute.RedirectToHTTPS(gatewayroute.RedirectOptions{
+			Name:      "seaweedfs-filer-http-redirect",
+			Namespace: cfg.Namespace,
+			Hostname:  cfg.IngressHostFiler,
+			Ownership: ownership,
+		}),
+	}
+	if cfg.S3Enabled && cfg.IngressHostS3 != "" {
+		// S3 redirects can invalidate signed requests. Serve the API directly on
+		// both listeners and let clients select HTTP or HTTPS.
+		routes = append(routes, gatewayroute.Backend(gatewayroute.BackendOptions{
+			Name:           "seaweedfs-s3",
+			Namespace:      cfg.Namespace,
+			Hostname:       cfg.IngressHostS3,
+			ParentSections: []string{"http", "https"},
+			ServiceName:    "seaweedfs-s3",
+			ServicePort:    cfg.S3Port,
+			Ownership:      ownership,
+		}))
+	}
+
+	manifest, err := gatewayroute.Manifest(routes...)
+	if err != nil {
+		return fmt.Errorf("build SeaweedFS Gateway API routes: %w", err)
+	}
+	if err := k8sClient.ApplyManifest(ctx, manifest); err != nil {
+		return fmt.Errorf("apply SeaweedFS Gateway API routes: %w", err)
+	}
+	if !cfg.S3Enabled || cfg.IngressHostS3 == "" {
+		if err := k8sClient.DeleteResource(ctx, httpRouteGVR, cfg.Namespace, "seaweedfs-s3"); err != nil {
+			return fmt.Errorf("remove disabled SeaweedFS S3 Gateway API route: %w", err)
+		}
+	}
+	return nil
 }
 
 // buildS3SecretManifest returns a Kubernetes Secret with the S3 identity and

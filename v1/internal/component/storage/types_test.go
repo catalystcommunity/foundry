@@ -400,6 +400,8 @@ type mockK8sClient struct {
 	serviceMonitorCRDExistsErr error
 	patches                    []resourcePatch
 	patchErr                   error
+	deletes                    []resourceDelete
+	deleteErr                  error
 }
 
 type resourcePatch struct {
@@ -409,6 +411,12 @@ type resourcePatch struct {
 	patch     []byte
 }
 
+type resourceDelete struct {
+	gvr       schema.GroupVersionResource
+	namespace string
+	name      string
+}
+
 func (m *mockK8sClient) GetPods(ctx context.Context, namespace string) ([]*k8s.Pod, error) {
 	return m.pods, m.podsErr
 }
@@ -416,6 +424,11 @@ func (m *mockK8sClient) GetPods(ctx context.Context, namespace string) ([]*k8s.P
 func (m *mockK8sClient) ApplyManifest(ctx context.Context, manifest string) error {
 	m.manifests = append(m.manifests, manifest)
 	return m.manifestsErr
+}
+
+func (m *mockK8sClient) DeleteResource(ctx context.Context, gvr schema.GroupVersionResource, namespace, name string) error {
+	m.deletes = append(m.deletes, resourceDelete{gvr: gvr, namespace: namespace, name: name})
+	return m.deleteErr
 }
 
 func (m *mockK8sClient) MergePatchResource(ctx context.Context, gvr schema.GroupVersionResource, namespace, name string, patch []byte) error {

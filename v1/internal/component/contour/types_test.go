@@ -108,9 +108,10 @@ func TestComponent_Dependencies(t *testing.T) {
 	comp := NewComponent(nil, nil)
 	deps := comp.Dependencies()
 
-	require.Len(t, deps, 2)
+	require.Len(t, deps, 3)
 	assert.Contains(t, deps, "k3s")
 	assert.Contains(t, deps, "gateway-api")
+	assert.Contains(t, deps, "cert-manager")
 }
 
 func TestComponent_Install_NilHelmClient(t *testing.T) {

@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -339,6 +340,8 @@ func TestBuildLonghornValues(t *testing.T) {
 			DataPath:                     "/var/lib/longhorn",
 			GuaranteedInstanceManagerCPU: 12,
 			DefaultDataLocality:          "best-effort",
+			IngressEnabled:               true,
+			IngressHost:                  "longhorn.example.com",
 		},
 		Values: map[string]interface{}{},
 	}
@@ -364,6 +367,60 @@ func TestBuildLonghornValues(t *testing.T) {
 	ingress, ok := values["ingress"].(map[string]interface{})
 	require.True(t, ok)
 	assert.Equal(t, false, ingress["enabled"])
+}
+
+func TestReconcileLonghornGatewayRoutes(t *testing.T) {
+	k8sClient := &mockK8sClient{}
+	cfg := &LonghornConfig{
+		IngressEnabled: true,
+		IngressHost:    "longhorn.example.com",
+	}
+
+	err := reconcileLonghornGatewayRoutes(context.Background(), k8sClient, "longhorn-system", cfg)
+
+	require.NoError(t, err)
+	require.Len(t, k8sClient.manifests, 1)
+	manifest := k8sClient.manifests[0]
+	assert.Contains(t, manifest, `"name":"longhorn"`)
+	assert.Contains(t, manifest, `"namespace":"longhorn-system"`)
+	assert.Contains(t, manifest, `"hostnames":["longhorn.example.com"]`)
+	assert.Contains(t, manifest, `"name":"longhorn-frontend"`)
+	assert.Contains(t, manifest, `"name":"longhorn-http-redirect"`)
+	assert.Len(t, strings.Split(manifest, "\n---\n"), 2)
+}
+
+func TestReconcileLonghornGatewayRoutesApplyError(t *testing.T) {
+	k8sClient := &mockK8sClient{manifestsErr: assert.AnError}
+	cfg := &LonghornConfig{
+		IngressEnabled: true,
+		IngressHost:    "longhorn.example.com",
+	}
+
+	err := reconcileLonghornGatewayRoutes(context.Background(), k8sClient, "longhorn-system", cfg)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "apply Longhorn Gateway API routes")
+}
+
+func TestReconcileLonghornGatewayRoutesRemovesDisabledRoutes(t *testing.T) {
+	k8sClient := &mockK8sClient{}
+
+	err := reconcileLonghornGatewayRoutes(context.Background(), k8sClient, "longhorn-system", &LonghornConfig{})
+
+	require.NoError(t, err)
+	require.Len(t, k8sClient.deletes, 2)
+	assert.Equal(t, "longhorn", k8sClient.deletes[0].name)
+	assert.Equal(t, "longhorn-http-redirect", k8sClient.deletes[1].name)
+	assert.Equal(t, "httproutes", k8sClient.deletes[0].gvr.Resource)
+}
+
+func TestReconcileLonghornGatewayRoutesDeleteError(t *testing.T) {
+	k8sClient := &mockK8sClient{deleteErr: assert.AnError}
+
+	err := reconcileLonghornGatewayRoutes(context.Background(), k8sClient, "longhorn-system", &LonghornConfig{})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "remove Longhorn Gateway API route longhorn")
 }
 
 func TestBuildLonghornValues_CustomValues(t *testing.T) {
