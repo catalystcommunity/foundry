@@ -10,6 +10,7 @@ import (
 	"github.com/catalystcommunity/foundry/v1/internal/component"
 	"github.com/catalystcommunity/foundry/v1/internal/helm"
 	"github.com/catalystcommunity/foundry/v1/internal/k8s"
+	corev1 "k8s.io/api/core/v1"
 )
 
 // Config holds SeaweedFS component configuration
@@ -78,6 +79,7 @@ type HelmClient interface {
 // K8sClient defines the Kubernetes operations needed for SeaweedFS component
 type K8sClient interface {
 	GetPods(ctx context.Context, namespace string) ([]*k8s.Pod, error)
+	GetSecret(ctx context.Context, namespace, name string) (*corev1.Secret, error)
 	CreateNamespace(ctx context.Context, name string) error
 	ApplyManifest(ctx context.Context, manifest string) error
 	DeleteJob(ctx context.Context, namespace, name string) error

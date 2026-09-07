@@ -463,6 +463,24 @@ class FoundryJobsTests(unittest.TestCase):
         self.assertEqual(set(state["downloads"]), jobs._expected_cache_asset_names())
         self.assertIn("complete.json", state["manifest"])
 
+    def test_prepare_cache_rejects_asset_cache_request_failure(self) -> None:
+        cache = mock.Mock()
+        cache.get_bytes.side_effect = RuntimeError(
+            "Asset-cache request failed with HTTP 403"
+        )
+        metadata = {
+            "tag": "v1/v1.2.3",
+            "version": "1.2.3",
+            "source_commit": "abcdef0123456789",
+        }
+        with mock.patch.object(
+            jobs.ASSET_CACHE.S3Cache,
+            "from_environment",
+            return_value=cache,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "HTTP 403"):
+                jobs._prepare_release_cache(metadata)
+
     def test_seal_verifies_and_promotes_all_six_cached_assets(self) -> None:
         metadata = {
             "tag": "v1/v1.2.3",
@@ -911,6 +929,20 @@ class FoundryJobsTests(unittest.TestCase):
         self.assertIn("FOUNDRY_RELEASE_JOB: publish", workflow)
         self.assertIn("asset-seal:", workflow)
         self.assertIn("Dockerfile.release", workflow)
+
+    def test_release_workflow_limits_cli_builds_to_three_at_once(self) -> None:
+        workflow = (
+            REPOSITORY_ROOT / ".reactorcide" / "workflows" / "release-server.yaml"
+        ).read_text(encoding="utf-8")
+        for os_name in ("linux", "darwin", "windows"):
+            dependency = (
+                f"  cli-{os_name}-arm64:\n"
+                "    job_file: release-cli.yaml\n"
+                "    depends_on:\n"
+                "      - prepare\n"
+                f"      - cli-{os_name}-amd64\n"
+            )
+            self.assertIn(dependency, workflow)
 
     def test_cli_build_jobs_use_signed_cache_urls_without_secrets(self) -> None:
         job = (
