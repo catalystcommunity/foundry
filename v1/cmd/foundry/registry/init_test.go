@@ -129,7 +129,7 @@ func TestInitComponents_Dependencies(t *testing.T) {
 		},
 		{
 			name:         "contour",
-			dependencies: []string{"k3s", "gateway-api"},
+			dependencies: []string{"k3s", "gateway-api", "cert-manager"},
 		},
 		{
 			name:         "gateway-controller",

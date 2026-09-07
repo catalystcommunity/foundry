@@ -56,10 +56,11 @@ type Config struct {
 	// GrafanaAgentEnabled uses Grafana Agent instead of Promtail
 	GrafanaAgentEnabled bool `json:"grafana_agent_enabled" yaml:"grafana_agent_enabled"`
 
-	// IngressEnabled enables Ingress for Loki
+	// IngressEnabled enables external Gateway API access for Loki. The field
+	// name is retained for configuration compatibility.
 	IngressEnabled bool `json:"ingress_enabled" yaml:"ingress_enabled"`
 
-	// IngressHost is the hostname for Loki Ingress
+	// IngressHost is the external hostname for Loki.
 	IngressHost string `json:"ingress_host" yaml:"ingress_host"`
 
 	// Values allows passing additional Helm values

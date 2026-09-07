@@ -65,10 +65,11 @@ type Config struct {
 	// ScrapeInterval is the default scrape interval (e.g., "30s")
 	ScrapeInterval string `json:"scrape_interval" yaml:"scrape_interval"`
 
-	// IngressEnabled enables Ingress for Prometheus
+	// IngressEnabled enables external Gateway API access for Prometheus. The
+	// field name is retained for configuration compatibility.
 	IngressEnabled bool `json:"ingress_enabled" yaml:"ingress_enabled"`
 
-	// IngressHost is the hostname for Prometheus Ingress
+	// IngressHost is the external hostname for Prometheus.
 	IngressHost string `json:"ingress_host" yaml:"ingress_host"`
 
 	// ExternalTargets is a list of external services to scrape metrics from

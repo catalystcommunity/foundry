@@ -225,12 +225,44 @@ func TestBuildHelmValues_WithIngress(t *testing.T) {
 	ingress, ok := prometheus["ingress"].(map[string]interface{})
 	require.True(t, ok)
 
-	assert.Equal(t, true, ingress["enabled"])
-	assert.Equal(t, "contour", ingress["ingressClassName"])
+	assert.Equal(t, false, ingress["enabled"])
 
-	hosts, ok := ingress["hosts"].([]string)
+	extraManifests, ok := values["extraManifests"].([]interface{})
 	require.True(t, ok)
-	assert.Contains(t, hosts, "prometheus.example.com")
+	require.Len(t, extraManifests, 2)
+	route := extraManifests[0].(map[string]interface{})
+	assert.Equal(t, "HTTPRoute", route["kind"])
+	spec := route["spec"].(map[string]interface{})
+	assert.Equal(t, []interface{}{"prometheus.example.com"}, spec["hostnames"])
+	parent := spec["parentRefs"].([]interface{})[0].(map[string]interface{})
+	assert.Equal(t, "https", parent["sectionName"])
+	redirect := extraManifests[1].(map[string]interface{})
+	redirectSpec := redirect["spec"].(map[string]interface{})
+	redirectParent := redirectSpec["parentRefs"].([]interface{})[0].(map[string]interface{})
+	assert.Equal(t, "http", redirectParent["sectionName"])
+}
+
+func TestBuildHelmValues_WithIngressPreservesExtraManifests(t *testing.T) {
+	existing := map[string]interface{}{"apiVersion": "v1", "kind": "ConfigMap"}
+	cfg := &Config{
+		RetentionDays:       15,
+		RetentionSize:       "10Gi",
+		ScrapeInterval:      "30s",
+		IngressEnabled:      true,
+		IngressHost:         "prometheus.example.com",
+		AlertmanagerEnabled: false,
+		Values: map[string]interface{}{
+			"extraManifests": []interface{}{existing},
+		},
+	}
+
+	values := buildHelmValues(cfg)
+
+	extraManifests := values["extraManifests"].([]interface{})
+	require.Len(t, extraManifests, 3)
+	assert.Equal(t, existing, extraManifests[0])
+	assert.Equal(t, "HTTPRoute", extraManifests[1].(map[string]interface{})["kind"])
+	assert.Equal(t, "HTTPRoute", extraManifests[2].(map[string]interface{})["kind"])
 }
 
 func TestBuildHelmValues_AlertmanagerDisabled(t *testing.T) {

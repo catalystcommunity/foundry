@@ -444,10 +444,13 @@ spec:
 
 	// Add HTTPS listener if TLS is configured
 	if withTLS && domain != "" {
-		manifest += fmt.Sprintf(`  - name: https
+		// Do not set a listener hostname. Contour excludes matching hostnames
+		// from the hostname-free HTTP listener when another listener claims
+		// them. Both the HTTP redirect routes and HTTPS backend routes must be
+		// able to use the same hostname.
+		manifest += `  - name: https
     port: 443
     protocol: HTTPS
-    hostname: "*.%s"
     tls:
       mode: Terminate
       certificateRefs:
@@ -455,7 +458,7 @@ spec:
     allowedRoutes:
       namespaces:
         from: All
-`, domain)
+`
 	}
 
 	// Add custom L4 listeners

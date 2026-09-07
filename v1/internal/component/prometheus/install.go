@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/catalystcommunity/foundry/v1/internal/component/gatewayroute"
 	"github.com/catalystcommunity/foundry/v1/internal/helm"
 )
 
@@ -188,24 +189,37 @@ func buildHelmValues(cfg *Config) map[string]interface{} {
 
 	values["prometheus"] = map[string]interface{}{
 		"prometheusSpec": prometheusSpec,
+		"ingress": map[string]interface{}{
+			"enabled": false,
+		},
 	}
 
-	// Ingress configuration
+	// The legacy ingress_enabled setting controls external access. Use Gateway
+	// API routes and keep the chart Ingress disabled.
 	if cfg.IngressEnabled {
-		values["prometheus"].(map[string]interface{})["ingress"] = map[string]interface{}{
-			"enabled":          true,
-			"ingressClassName": "contour",
-			"hosts":            []string{cfg.IngressHost},
-			"annotations": map[string]interface{}{
-				"cert-manager.io/cluster-issuer": "foundry-ca-issuer",
-			},
-			"tls": []map[string]interface{}{
-				{
-					"hosts":      []string{cfg.IngressHost},
-					"secretName": "prometheus-tls",
-				},
-			},
+		ownership := gatewayroute.Ownership{
+			Component:        "prometheus",
+			ManagedBy:        "Helm",
+			ReleaseName:      releaseName,
+			ReleaseNamespace: cfg.Namespace,
 		}
+		gatewayroute.AppendObjects(values, "extraManifests",
+			gatewayroute.Backend(gatewayroute.BackendOptions{
+				Name:           "prometheus",
+				Namespace:      cfg.Namespace,
+				Hostname:       cfg.IngressHost,
+				ParentSections: []string{"https"},
+				ServiceName:    "kube-prometheus-stack-prometheus",
+				ServicePort:    9090,
+				Ownership:      ownership,
+			}),
+			gatewayroute.RedirectToHTTPS(gatewayroute.RedirectOptions{
+				Name:      "prometheus-http-redirect",
+				Namespace: cfg.Namespace,
+				Hostname:  cfg.IngressHost,
+				Ownership: ownership,
+			}),
+		)
 	}
 
 	// Alertmanager configuration

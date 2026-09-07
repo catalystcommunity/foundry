@@ -2,6 +2,7 @@ package k8s
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"testing"
@@ -13,6 +14,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/rest"
@@ -550,6 +552,35 @@ metadata:
 	}
 }
 
+func TestApplyManifestUsesServerSideApply(t *testing.T) {
+	dynamicClient := dynamicfake.NewSimpleDynamicClient(runtime.NewScheme())
+	dynamicClient.PrependReactor("patch", "configmaps", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		patchAction, ok := action.(k8stesting.PatchAction)
+		require.True(t, ok)
+		assert.Equal(t, types.ApplyPatchType, patchAction.GetPatchType())
+
+		var object map[string]interface{}
+		require.NoError(t, json.Unmarshal(patchAction.GetPatch(), &object))
+		return true, &unstructured.Unstructured{Object: object}, nil
+	})
+	client := &Client{dynamicClient: dynamicClient}
+
+	err := client.ApplyManifest(context.Background(), `
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: example
+  namespace: apps
+data:
+  value: reconciled
+`)
+
+	require.NoError(t, err)
+	actions := dynamicClient.Actions()
+	require.Len(t, actions, 1)
+	assert.Equal(t, "apps", actions[0].GetNamespace())
+}
+
 func TestMergePatchResource(t *testing.T) {
 	gvr := schema.GroupVersionResource{Group: "longhorn.io", Version: "v1beta2", Resource: "nodes"}
 	longhornNode := &unstructured.Unstructured{Object: map[string]interface{}{
@@ -593,6 +624,39 @@ func TestMergePatchResource_ValidatesInput(t *testing.T) {
 	assert.EqualError(t, err, "resource name is empty")
 	err = client.MergePatchResource(context.Background(), gvr, "", "worker", nil)
 	assert.EqualError(t, err, "resource patch is empty")
+}
+
+func TestDeleteResource(t *testing.T) {
+	gvr := schema.GroupVersionResource{Group: "gateway.networking.k8s.io", Version: "v1", Resource: "httproutes"}
+	t.Run("deletes the exact namespaced resource", func(t *testing.T) {
+		dynamicClient := dynamicfake.NewSimpleDynamicClient(runtime.NewScheme())
+		dynamicClient.PrependReactor("delete", "httproutes", func(action k8stesting.Action) (bool, runtime.Object, error) {
+			deleteAction, ok := action.(k8stesting.DeleteAction)
+			require.True(t, ok)
+			assert.Equal(t, "example", deleteAction.GetName())
+			return true, nil, nil
+		})
+		client := &Client{dynamicClient: dynamicClient}
+
+		err := client.DeleteResource(context.Background(), gvr, "apps", "example")
+
+		require.NoError(t, err)
+		require.Len(t, dynamicClient.Actions(), 1)
+		assert.Equal(t, "apps", dynamicClient.Actions()[0].GetNamespace())
+	})
+
+	t.Run("returns delete errors", func(t *testing.T) {
+		dynamicClient := dynamicfake.NewSimpleDynamicClient(runtime.NewScheme())
+		dynamicClient.PrependReactor("delete", "httproutes", func(k8stesting.Action) (bool, runtime.Object, error) {
+			return true, nil, errors.New("API unavailable")
+		})
+		client := &Client{dynamicClient: dynamicClient}
+
+		err := client.DeleteResource(context.Background(), gvr, "apps", "example")
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to delete resource httproutes/example")
+	})
 }
 
 func TestNodeFromCoreV1(t *testing.T) {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/catalystcommunity/foundry/v1/internal/component/gatewayroute"
 	"github.com/catalystcommunity/foundry/v1/internal/helm"
 )
 
@@ -160,22 +161,33 @@ func buildHelmValues(cfg *Config) map[string]interface{} {
 		},
 	}
 
-	// Ingress configuration
+	// The legacy ingress_enabled setting controls external access. Use Gateway
+	// API routes and keep the chart Ingress disabled.
+	values["ingress"] = map[string]interface{}{"enabled": false}
 	if cfg.IngressEnabled {
-		values["ingress"] = map[string]interface{}{
-			"enabled":          true,
-			"ingressClassName": "contour",
-			"hosts":            []string{cfg.IngressHost},
-			"annotations": map[string]interface{}{
-				"cert-manager.io/cluster-issuer": "foundry-ca-issuer",
-			},
-			"tls": []map[string]interface{}{
-				{
-					"hosts":      []string{cfg.IngressHost},
-					"secretName": "grafana-tls",
-				},
-			},
+		ownership := gatewayroute.Ownership{
+			Component:        "grafana",
+			ManagedBy:        "Helm",
+			ReleaseName:      releaseName,
+			ReleaseNamespace: cfg.Namespace,
 		}
+		gatewayroute.AppendObjects(values, "extraObjects",
+			gatewayroute.Backend(gatewayroute.BackendOptions{
+				Name:           "grafana",
+				Namespace:      cfg.Namespace,
+				Hostname:       cfg.IngressHost,
+				ParentSections: []string{"https"},
+				ServiceName:    "grafana",
+				ServicePort:    80,
+				Ownership:      ownership,
+			}),
+			gatewayroute.RedirectToHTTPS(gatewayroute.RedirectOptions{
+				Name:      "grafana-http-redirect",
+				Namespace: cfg.Namespace,
+				Hostname:  cfg.IngressHost,
+				Ownership: ownership,
+			}),
+		)
 	}
 
 	// Data sources configuration

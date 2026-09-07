@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/catalystcommunity/foundry/v1/internal/component/gatewayroute"
 	"github.com/catalystcommunity/foundry/v1/internal/helm"
 )
 
@@ -274,34 +275,30 @@ func buildHelmValues(cfg *Config) map[string]interface{} {
 	values["gateway"] = map[string]interface{}{
 		"enabled":  true,
 		"replicas": 1,
+		"ingress": map[string]interface{}{
+			"enabled": false,
+		},
 	}
 
-	// Ingress configuration
+	// Loki is an API, so serve it on both listeners. Redirects can change POST
+	// requests and break clients that push logs over HTTP.
 	if cfg.IngressEnabled {
-		values["gateway"].(map[string]interface{})["ingress"] = map[string]interface{}{
-			"enabled":          true,
-			"ingressClassName": "contour",
-			"annotations": map[string]interface{}{
-				"cert-manager.io/cluster-issuer": "foundry-ca-issuer",
-			},
-			"hosts": []map[string]interface{}{
-				{
-					"host": cfg.IngressHost,
-					"paths": []map[string]interface{}{
-						{
-							"path":     "/",
-							"pathType": "Prefix",
-						},
-					},
+		gatewayroute.AppendObjects(values, "extraObjects",
+			gatewayroute.Backend(gatewayroute.BackendOptions{
+				Name:           "loki",
+				Namespace:      cfg.Namespace,
+				Hostname:       cfg.IngressHost,
+				ParentSections: []string{"http", "https"},
+				ServiceName:    "loki-gateway",
+				ServicePort:    80,
+				Ownership: gatewayroute.Ownership{
+					Component:        "loki",
+					ManagedBy:        "Helm",
+					ReleaseName:      releaseName,
+					ReleaseNamespace: cfg.Namespace,
 				},
-			},
-			"tls": []map[string]interface{}{
-				{
-					"hosts":      []string{cfg.IngressHost},
-					"secretName": "loki-tls",
-				},
-			},
-		}
+			}),
+		)
 	}
 
 	// Disable test pod

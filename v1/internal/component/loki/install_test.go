@@ -308,8 +308,41 @@ func TestBuildHelmValues_WithIngress(t *testing.T) {
 
 	ingress, ok := gateway["ingress"].(map[string]interface{})
 	require.True(t, ok)
-	assert.Equal(t, true, ingress["enabled"])
-	assert.Equal(t, "contour", ingress["ingressClassName"])
+	assert.Equal(t, false, ingress["enabled"])
+
+	extraObjects, ok := values["extraObjects"].([]interface{})
+	require.True(t, ok)
+	require.Len(t, extraObjects, 1)
+	route := extraObjects[0].(map[string]interface{})
+	assert.Equal(t, "HTTPRoute", route["kind"])
+	spec := route["spec"].(map[string]interface{})
+	assert.Equal(t, []interface{}{"loki.example.com"}, spec["hostnames"])
+	parents := spec["parentRefs"].([]interface{})
+	require.Len(t, parents, 2)
+	assert.Equal(t, "http", parents[0].(map[string]interface{})["sectionName"])
+	assert.Equal(t, "https", parents[1].(map[string]interface{})["sectionName"])
+}
+
+func TestBuildHelmValues_WithIngressPreservesExtraObjects(t *testing.T) {
+	existing := map[string]interface{}{"apiVersion": "v1", "kind": "ConfigMap"}
+	cfg := &Config{
+		DeploymentMode: "SingleBinary",
+		StorageBackend: BackendFilesystem,
+		RetentionDays:  30,
+		IngressEnabled: true,
+		IngressHost:    "loki.example.com",
+		StorageSize:    "10Gi",
+		Values: map[string]interface{}{
+			"extraObjects": []interface{}{existing},
+		},
+	}
+
+	values := buildHelmValues(cfg)
+
+	extraObjects := values["extraObjects"].([]interface{})
+	require.Len(t, extraObjects, 2)
+	assert.Equal(t, existing, extraObjects[0])
+	assert.Equal(t, "HTTPRoute", extraObjects[1].(map[string]interface{})["kind"])
 }
 
 func TestBuildHelmValues_WithStorageClass(t *testing.T) {

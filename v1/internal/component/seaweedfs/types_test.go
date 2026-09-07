@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 func TestDefaultConfig(t *testing.T) {
@@ -343,6 +344,14 @@ type mockK8sClient struct {
 	manifests                  []string
 	createNamespaceErr         error
 	namespacesCreated          []string
+	deletedResources           []resourceDelete
+	deleteResourceErr          error
+}
+
+type resourceDelete struct {
+	gvr       schema.GroupVersionResource
+	namespace string
+	name      string
 }
 
 func (m *mockK8sClient) GetPods(ctx context.Context, namespace string) ([]*k8s.Pod, error) {
@@ -361,6 +370,11 @@ func (m *mockK8sClient) CreateNamespace(ctx context.Context, name string) error 
 func (m *mockK8sClient) ApplyManifest(ctx context.Context, manifest string) error {
 	m.manifests = append(m.manifests, manifest)
 	return m.applyManifestErr
+}
+
+func (m *mockK8sClient) DeleteResource(ctx context.Context, gvr schema.GroupVersionResource, namespace, name string) error {
+	m.deletedResources = append(m.deletedResources, resourceDelete{gvr: gvr, namespace: namespace, name: name})
+	return m.deleteResourceErr
 }
 
 func (m *mockK8sClient) DeleteJob(ctx context.Context, namespace, name string) error {

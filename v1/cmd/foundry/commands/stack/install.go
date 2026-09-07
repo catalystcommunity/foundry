@@ -60,13 +60,14 @@ func checkAllComponentsInstalled(ctx context.Context, state *setup.SetupState) b
 	}
 
 	// Kubernetes components expose status through the component registry.
-	// Order: gateway-api, storage, prometheus, contour, cert-manager, seaweedfs, external-dns, loki, grafana, velero
+	// Install cert-manager before Contour so Contour can create its Gateway
+	// certificate and HTTPS listener during the first stack installation.
 	kubernetesComponents := []string{
 		"gateway-api",
 		"storage",
 		"prometheus",
-		"contour",
 		"cert-manager",
+		"contour",
 		"seaweedfs",
 		"external-dns",
 		"loki",
@@ -607,7 +608,7 @@ func createConfigInteractive() (*config.Config, error) {
 func defaultComponentConfigs() config.ComponentMap {
 	names := []string{
 		"openbao", "dns", "zot", "k3s", "gateway-api", "storage",
-		"prometheus", "contour", "gateway-controller", "cert-manager",
+		"prometheus", "cert-manager", "contour", "gateway-controller",
 		"seaweedfs", "external-dns", "loki", "grafana", "velero",
 	}
 	components := make(config.ComponentMap, len(names))
@@ -927,6 +928,15 @@ func installComponents(ctx context.Context, cfg *config.Config, configPath strin
 			},
 		},
 		{
+			name: "cert-manager",
+			checkFunc: func(s *setup.SetupState) bool {
+				return checkComponentStatus("cert-manager")
+			},
+			setFunc: func(s *setup.SetupState) {
+				trackComponent("cert-manager")
+			},
+		},
+		{
 			name: "contour",
 			checkFunc: func(s *setup.SetupState) bool {
 				return checkComponentStatus("contour")
@@ -943,15 +953,6 @@ func installComponents(ctx context.Context, cfg *config.Config, configPath strin
 			},
 			setFunc: func(s *setup.SetupState) {
 				trackComponent("gateway-controller")
-			},
-		},
-		{
-			name: "cert-manager",
-			checkFunc: func(s *setup.SetupState) bool {
-				return checkComponentStatus("cert-manager")
-			},
-			setFunc: func(s *setup.SetupState) {
-				trackComponent("cert-manager")
 			},
 		},
 		{
@@ -1400,7 +1401,6 @@ resources:
 	} else {
 		componentConfig["values"] = defaultValues
 	}
-
 	return componentConfig
 }
 
@@ -1466,15 +1466,7 @@ persistence:
   defaultClass: true
   defaultClassReplicaCount: %d
   reclaimPolicy: Delete
-ingress:
-  enabled: true
-  ingressClassName: contour
-  host: %s
-  tls: true
-  tlsSecret: longhorn-tls
-  annotations:
-    cert-manager.io/cluster-issuer: foundry-ca-issuer
-`, replicaCount, replicaCount, ingressHost)
+`, replicaCount, replicaCount)
 
 	defaultValues := parseYAMLValues(defaultValuesYAML)
 
@@ -1505,6 +1497,7 @@ storageClass:
 	} else {
 		componentConfig["values"] = defaultValues
 	}
+	deleteNestedValue(componentConfig["values"].(map[string]interface{}), "ingress")
 
 	return componentConfig
 }
@@ -1584,7 +1577,7 @@ func buildSeaweedFSConfig(cfg *config.Config) component.ComponentConfig {
 	ingressHostS3 := fmt.Sprintf("s3.%s", cfg.Cluster.PrimaryDomain)
 
 	// Default Helm values for SeaweedFS (YAML format for readability)
-	defaultValuesYAML := fmt.Sprintf(`
+	defaultValuesYAML := `
 master:
   replicas: 1
   persistence:
@@ -1602,25 +1595,9 @@ filer:
   s3:
     enabled: true
     port: 8333
-  ingress:
-    enabled: true
-    className: contour
-    host: %s
-    tls: true
-    tlsSecretName: seaweedfs-filer-tls
-    annotations:
-      cert-manager.io/cluster-issuer: foundry-ca-issuer
 s3:
   enabled: true
-  ingress:
-    enabled: true
-    className: contour
-    host: %s
-    tls: true
-    tlsSecretName: seaweedfs-s3-tls
-    annotations:
-      cert-manager.io/cluster-issuer: foundry-ca-issuer
-`, ingressHostFiler, ingressHostS3)
+`
 
 	defaultValues := parseYAMLValues(defaultValuesYAML)
 
@@ -1642,6 +1619,9 @@ s3:
 	} else {
 		componentConfig["values"] = defaultValues
 	}
+	seaweedValues := componentConfig["values"].(map[string]interface{})
+	deleteNestedValue(seaweedValues, "filer", "ingress")
+	deleteNestedValue(seaweedValues, "s3", "ingress")
 
 	return componentConfig
 }
@@ -1730,17 +1710,6 @@ prometheus:
     ruleSelectorNilUsesHelmValues: false
     ruleSelector: {}
     ruleNamespaceSelector: {}
-  ingress:
-    enabled: true
-    ingressClassName: contour
-    hosts:
-      - %s
-    annotations:
-      cert-manager.io/cluster-issuer: foundry-ca-issuer
-    tls:
-      - hosts:
-          - %s
-        secretName: prometheus-tls
 alertmanager:
   enabled: false
 grafana:
@@ -1757,7 +1726,7 @@ prometheusOperator:
     requests:
       cpu: 100m
       memory: 128Mi
-`, retentionDays, storageClass, storageSize, ingressHost, ingressHost)
+`, retentionDays, storageClass, storageSize)
 
 	defaultValues := parseYAMLValues(defaultValuesYAML)
 
@@ -1777,6 +1746,7 @@ prometheusOperator:
 	} else {
 		componentConfig["values"] = defaultValues
 	}
+	deleteNestedValue(componentConfig["values"].(map[string]interface{}), "prometheus", "ingress")
 
 	return componentConfig
 }
@@ -1820,20 +1790,6 @@ singleBinary:
     storageClass: longhorn
 gateway:
   enabled: true
-  ingress:
-    enabled: true
-    ingressClassName: contour
-    hosts:
-      - host: %s
-        paths:
-          - path: /
-            pathType: Prefix
-    annotations:
-      cert-manager.io/cluster-issuer: foundry-ca-issuer
-    tls:
-      - hosts:
-          - %s
-        secretName: loki-gateway-tls
 # Disable unused components for SingleBinary mode
 read:
   replicas: 0
@@ -1841,7 +1797,7 @@ write:
   replicas: 0
 backend:
   replicas: 0
-`, seaweedfsEndpoint, seaweedfsRegion, accessKey, secretKey, ingressHost, ingressHost)
+`, seaweedfsEndpoint, seaweedfsRegion, accessKey, secretKey)
 
 	defaultValues := parseYAMLValues(defaultValuesYAML)
 
@@ -1865,6 +1821,7 @@ backend:
 	} else {
 		componentConfig["values"] = defaultValues
 	}
+	deleteNestedValue(componentConfig["values"].(map[string]interface{}), "gateway", "ingress")
 
 	return componentConfig
 }
@@ -1886,17 +1843,6 @@ persistence:
   enabled: true
   size: 5Gi
   storageClass: longhorn
-ingress:
-  enabled: true
-  ingressClassName: contour
-  hosts:
-    - %s
-  annotations:
-    cert-manager.io/cluster-issuer: foundry-ca-issuer
-  tls:
-    - hosts:
-        - %s
-      secretName: grafana-tls
 datasources:
   datasources.yaml:
     apiVersion: 1
@@ -1925,7 +1871,7 @@ dashboardProviders:
         editable: true
         options:
           path: /var/lib/grafana/dashboards/default
-`, ingressHost, ingressHost, prometheusURL, lokiURL)
+`, prometheusURL, lokiURL)
 
 	defaultValues := parseYAMLValues(defaultValuesYAML)
 
@@ -1945,6 +1891,7 @@ dashboardProviders:
 	} else {
 		componentConfig["values"] = defaultValues
 	}
+	deleteNestedValue(componentConfig["values"].(map[string]interface{}), "ingress")
 
 	return componentConfig
 }
@@ -3163,6 +3110,22 @@ func mergeValues(defaults, userValues map[string]interface{}) map[string]interfa
 	}
 
 	return result
+}
+
+// deleteNestedValue removes a chart value that Foundry no longer supports.
+func deleteNestedValue(values map[string]interface{}, path ...string) {
+	if len(path) == 0 {
+		return
+	}
+	current := values
+	for _, key := range path[:len(path)-1] {
+		next, ok := current[key].(map[string]interface{})
+		if !ok {
+			return
+		}
+		current = next
+	}
+	delete(current, path[len(path)-1])
 }
 
 // saveComponentConfig saves the component config (including values) back to stack config

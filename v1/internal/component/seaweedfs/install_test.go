@@ -25,17 +25,20 @@ func TestInstall_Success(t *testing.T) {
 	}
 
 	cfg := &Config{
-		Version:        "4.0.401",
-		Namespace:      "seaweedfs",
-		MasterReplicas: 1,
-		VolumeReplicas: 1,
-		FilerReplicas:  1,
-		StorageSize:    "50Gi",
-		S3Enabled:      true,
-		S3Port:         8333,
-		AccessKey:      "test-key",
-		SecretKey:      "test-secret",
-		Values:         map[string]interface{}{},
+		Version:          "4.0.401",
+		Namespace:        "seaweedfs",
+		MasterReplicas:   1,
+		VolumeReplicas:   1,
+		FilerReplicas:    1,
+		StorageSize:      "50Gi",
+		S3Enabled:        true,
+		S3Port:           8333,
+		AccessKey:        "test-key",
+		SecretKey:        "test-secret",
+		IngressEnabled:   true,
+		IngressHostFiler: "seaweedfs.example.com",
+		IngressHostS3:    "s3.example.com",
+		Values:           map[string]interface{}{},
 	}
 	err := Install(context.Background(), helmClient, k8sClient, cfg)
 	require.NoError(t, err)
@@ -270,6 +273,84 @@ func TestBuildHelmValues_Basic(t *testing.T) {
 	assert.Equal(t, 8333, s3Config["port"])
 	assert.Equal(t, true, s3Config["enableAuth"])
 	assert.Equal(t, seaweedfsS3Secret, s3Config["existingConfigSecret"])
+	assert.Equal(t, false, s3Config["ingress"].(map[string]interface{})["enabled"])
+	assert.Equal(t, false, filerConfig["ingress"].(map[string]interface{})["enabled"])
+}
+
+func TestReconcileGatewayRoutes(t *testing.T) {
+	k8sClient := &mockK8sClient{}
+	cfg := &Config{
+		Namespace:        "seaweedfs",
+		S3Enabled:        true,
+		S3Port:           8333,
+		IngressEnabled:   true,
+		IngressHostFiler: "seaweedfs.example.com",
+		IngressHostS3:    "s3.example.com",
+	}
+
+	err := reconcileGatewayRoutes(context.Background(), k8sClient, cfg)
+
+	require.NoError(t, err)
+	require.Len(t, k8sClient.manifests, 1)
+	manifest := k8sClient.manifests[0]
+	assert.Contains(t, manifest, `"name":"seaweedfs-filer"`)
+	assert.Contains(t, manifest, `"name":"seaweedfs-filer-http-redirect"`)
+	assert.Contains(t, manifest, `"name":"seaweedfs-s3"`)
+	assert.Contains(t, manifest, `"hostnames":["s3.example.com"]`)
+	assert.Len(t, strings.Split(manifest, "\n---\n"), 3)
+}
+
+func TestReconcileGatewayRoutesApplyError(t *testing.T) {
+	k8sClient := &mockK8sClient{applyManifestErr: assert.AnError}
+	cfg := &Config{
+		Namespace:        "seaweedfs",
+		IngressEnabled:   true,
+		IngressHostFiler: "seaweedfs.example.com",
+	}
+
+	err := reconcileGatewayRoutes(context.Background(), k8sClient, cfg)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "apply SeaweedFS Gateway API routes")
+}
+
+func TestReconcileGatewayRoutesRemovesDisabledRoutes(t *testing.T) {
+	k8sClient := &mockK8sClient{}
+	cfg := &Config{Namespace: "seaweedfs"}
+
+	err := reconcileGatewayRoutes(context.Background(), k8sClient, cfg)
+
+	require.NoError(t, err)
+	require.Len(t, k8sClient.deletedResources, 3)
+	assert.Equal(t, "seaweedfs-filer", k8sClient.deletedResources[0].name)
+	assert.Equal(t, "seaweedfs-filer-http-redirect", k8sClient.deletedResources[1].name)
+	assert.Equal(t, "seaweedfs-s3", k8sClient.deletedResources[2].name)
+	assert.Equal(t, "httproutes", k8sClient.deletedResources[0].gvr.Resource)
+}
+
+func TestReconcileGatewayRoutesDeleteError(t *testing.T) {
+	k8sClient := &mockK8sClient{deleteResourceErr: assert.AnError}
+	cfg := &Config{Namespace: "seaweedfs"}
+
+	err := reconcileGatewayRoutes(context.Background(), k8sClient, cfg)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "remove SeaweedFS Gateway API route seaweedfs-filer")
+}
+
+func TestReconcileGatewayRoutesRemovesDisabledS3Route(t *testing.T) {
+	k8sClient := &mockK8sClient{}
+	cfg := &Config{
+		Namespace:        "seaweedfs",
+		IngressEnabled:   true,
+		IngressHostFiler: "seaweedfs.example.com",
+	}
+
+	err := reconcileGatewayRoutes(context.Background(), k8sClient, cfg)
+
+	require.NoError(t, err)
+	require.Len(t, k8sClient.deletedResources, 1)
+	assert.Equal(t, "seaweedfs-s3", k8sClient.deletedResources[0].name)
 }
 
 func TestBuildS3SecretManifest(t *testing.T) {

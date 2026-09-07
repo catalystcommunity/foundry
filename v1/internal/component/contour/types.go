@@ -139,7 +139,9 @@ func (c *Component) Uninstall(ctx context.Context) error {
 
 // Dependencies returns the list of components that Contour depends on
 func (c *Component) Dependencies() []string {
-	return []string{"k3s", "gateway-api"} // Contour depends on Kubernetes and Gateway API CRDs
+	// cert-manager must exist before Contour creates the shared Gateway
+	// certificate and HTTPS listener.
+	return []string{"k3s", "gateway-api", "cert-manager"}
 }
 
 // Config type is generated from CSIL in types.gen.go

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/catalystcommunity/foundry/v1/internal/component/gatewayroute"
 	"github.com/catalystcommunity/foundry/v1/internal/helm"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
@@ -442,11 +443,62 @@ func installLonghorn(ctx context.Context, helmClient HelmClient, k8sClient K8sCl
 		}
 	}
 
+	if err := reconcileLonghornGatewayRoutes(ctx, k8sClient, namespace, cfg.Longhorn); err != nil {
+		return err
+	}
+
 	if err := configureLonghornNodeDisks(ctx, k8sClient, namespace, cfg.Longhorn.NodeDisks); err != nil {
 		return err
 	}
 
 	fmt.Println("  Longhorn installed successfully")
+	return nil
+}
+
+func reconcileLonghornGatewayRoutes(ctx context.Context, k8sClient K8sClient, namespace string, cfg *LonghornConfig) error {
+	if cfg == nil {
+		return nil
+	}
+	httpRouteGVR := schema.GroupVersionResource{Group: "gateway.networking.k8s.io", Version: "v1", Resource: "httproutes"}
+	if !cfg.IngressEnabled {
+		if k8sClient == nil {
+			return nil
+		}
+		for _, name := range []string{"longhorn", "longhorn-http-redirect"} {
+			if err := k8sClient.DeleteResource(ctx, httpRouteGVR, namespace, name); err != nil {
+				return fmt.Errorf("remove Longhorn Gateway API route %s: %w", name, err)
+			}
+		}
+		return nil
+	}
+	if k8sClient == nil {
+		return fmt.Errorf("kubernetes client is required to configure Longhorn Gateway API routes")
+	}
+
+	ownership := gatewayroute.Ownership{Component: "longhorn"}
+	manifest, err := gatewayroute.Manifest(
+		gatewayroute.Backend(gatewayroute.BackendOptions{
+			Name:           "longhorn",
+			Namespace:      namespace,
+			Hostname:       cfg.IngressHost,
+			ParentSections: []string{"https"},
+			ServiceName:    "longhorn-frontend",
+			ServicePort:    80,
+			Ownership:      ownership,
+		}),
+		gatewayroute.RedirectToHTTPS(gatewayroute.RedirectOptions{
+			Name:      "longhorn-http-redirect",
+			Namespace: namespace,
+			Hostname:  cfg.IngressHost,
+			Ownership: ownership,
+		}),
+	)
+	if err != nil {
+		return fmt.Errorf("build Longhorn Gateway API routes: %w", err)
+	}
+	if err := k8sClient.ApplyManifest(ctx, manifest); err != nil {
+		return fmt.Errorf("apply Longhorn Gateway API routes: %w", err)
+	}
 	return nil
 }
 
@@ -530,22 +582,10 @@ func buildLonghornValues(cfg *Config) map[string]interface{} {
 	}
 	values["persistence"] = persistence
 
-	// Ingress configuration
-	if cfg.Longhorn != nil && cfg.Longhorn.IngressEnabled && cfg.Longhorn.IngressHost != "" {
-		values["ingress"] = map[string]interface{}{
-			"enabled":          true,
-			"ingressClassName": "contour",
-			"host":             cfg.Longhorn.IngressHost,
-			"tls":              true,
-			"tlsSecret":        "longhorn-tls",
-			"annotations": map[string]interface{}{
-				"cert-manager.io/cluster-issuer": "foundry-ca-issuer",
-			},
-		}
-	} else {
-		values["ingress"] = map[string]interface{}{
-			"enabled": false,
-		}
+	// Foundry creates Gateway API routes after Helm reconciles the chart.
+	// Keep the chart Ingress disabled even when user values enable it.
+	values["ingress"] = map[string]interface{}{
+		"enabled": false,
 	}
 
 	// Enable metrics, and ServiceMonitor if configured (requires CRD from Prometheus Operator)
