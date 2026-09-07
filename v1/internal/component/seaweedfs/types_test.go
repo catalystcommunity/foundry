@@ -10,6 +10,7 @@ import (
 	"github.com/catalystcommunity/foundry/v1/internal/k8s"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
 )
 
 func TestDefaultConfig(t *testing.T) {
@@ -332,6 +333,8 @@ func (m *mockHelmClient) Uninstall(ctx context.Context, opts helm.UninstallOptio
 type mockK8sClient struct {
 	pods                       []*k8s.Pod
 	podsErr                    error
+	secret                     *corev1.Secret
+	secretErr                  error
 	applyManifestErr           error
 	deleteJobErr               error
 	waitJobErr                 error
@@ -344,6 +347,10 @@ type mockK8sClient struct {
 
 func (m *mockK8sClient) GetPods(ctx context.Context, namespace string) ([]*k8s.Pod, error) {
 	return m.pods, m.podsErr
+}
+
+func (m *mockK8sClient) GetSecret(ctx context.Context, namespace, name string) (*corev1.Secret, error) {
+	return m.secret, m.secretErr
 }
 
 func (m *mockK8sClient) CreateNamespace(ctx context.Context, name string) error {

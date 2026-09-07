@@ -793,38 +793,47 @@ def _cache_manifest_is_reusable(
 ) -> bool:
     try:
         content = cache.get_bytes(ASSET_CACHE.object_key(lane, ASSET_CACHE.MANIFEST))
+    except FileNotFoundError:
+        return False
+
+    try:
         manifest = ASSET_CACHE.decode_manifest(content)
-        assets = manifest.get("assets")
-        if manifest.get("source_commit") != source_commit or not isinstance(assets, list):
-            return False
-        by_name = {
-            item.get("name"): item
-            for item in assets
-            if isinstance(item, dict)
-        }
-        if set(by_name) != _expected_cache_asset_names():
-            return False
-        for name, item in by_name.items():
-            payload = cache.get_bytes(ASSET_CACHE.object_key(lane, str(name)))
-            recorded = cache.get_bytes(
-                ASSET_CACHE.object_key(lane, str(name) + ".sha256")
-            ).decode().strip()
-            digest = hashlib.sha256(payload).hexdigest()
-            if (
-                recorded != digest
-                or item.get("sha256") != digest
-                or item.get("size") != len(payload)
-            ):
-                return False
-        return True
     except (
-        FileNotFoundError,
         RuntimeError,
         UnicodeDecodeError,
         ValueError,
         json.JSONDecodeError,
     ):
         return False
+
+    assets = manifest.get("assets")
+    if manifest.get("source_commit") != source_commit or not isinstance(assets, list):
+        return False
+    by_name = {
+        item.get("name"): item
+        for item in assets
+        if isinstance(item, dict)
+    }
+    if set(by_name) != _expected_cache_asset_names():
+        return False
+    for name, item in by_name.items():
+        try:
+            payload = cache.get_bytes(ASSET_CACHE.object_key(lane, str(name)))
+            recorded = cache.get_bytes(
+                ASSET_CACHE.object_key(lane, str(name) + ".sha256")
+            ).decode().strip()
+        except FileNotFoundError:
+            return False
+        except UnicodeDecodeError:
+            return False
+        digest = hashlib.sha256(payload).hexdigest()
+        if (
+            recorded != digest
+            or item.get("sha256") != digest
+            or item.get("size") != len(payload)
+        ):
+            return False
+    return True
 
 
 def _prepare_release_cache(metadata: Mapping[str, str]) -> None:

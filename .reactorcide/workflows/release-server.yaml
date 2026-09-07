@@ -37,6 +37,7 @@ jobs:
     job_file: release-cli.yaml
     depends_on:
       - prepare
+      - cli-linux-amd64
     environment:
       FOUNDRY_RELEASE_PLATFORM: linux/arm64
 
@@ -51,6 +52,7 @@ jobs:
     job_file: release-cli.yaml
     depends_on:
       - prepare
+      - cli-darwin-amd64
     environment:
       FOUNDRY_RELEASE_PLATFORM: darwin/arm64
 
@@ -65,6 +67,7 @@ jobs:
     job_file: release-cli.yaml
     depends_on:
       - prepare
+      - cli-windows-amd64
     environment:
       FOUNDRY_RELEASE_PLATFORM: windows/arm64
 

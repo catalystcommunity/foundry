@@ -57,7 +57,14 @@ func Install(ctx context.Context, helmClient HelmClient, k8sClient K8sClient, cf
 		if err := k8sClient.CreateNamespace(ctx, cfg.Namespace); err != nil && !k8serrors.IsAlreadyExists(err) {
 			return fmt.Errorf("failed to create namespace for S3 credentials: %w", err)
 		}
-		secretManifest, err := buildS3SecretManifest(cfg)
+		var existingS3Config []byte
+		existingSecret, err := k8sClient.GetSecret(ctx, cfg.Namespace, seaweedfsS3Secret)
+		if err == nil && existingSecret != nil {
+			existingS3Config = existingSecret.Data["seaweedfs_s3_config"]
+		} else if err != nil && !k8serrors.IsNotFound(err) {
+			return fmt.Errorf("failed to read existing S3 credentials secret: %w", err)
+		}
+		secretManifest, err := buildS3SecretManifest(cfg, existingS3Config)
 		if err != nil {
 			return fmt.Errorf("failed to build S3 credentials secret: %w", err)
 		}
@@ -300,25 +307,12 @@ func buildHelmValues(cfg *Config) map[string]interface{} {
 
 // buildS3SecretManifest returns a Kubernetes Secret with the S3 identity and
 // the individual keys that the bucket setup Job uses.
-func buildS3SecretManifest(cfg *Config) (string, error) {
+func buildS3SecretManifest(cfg *Config, existingConfig []byte) (string, error) {
 	if cfg.AccessKey == "" || cfg.SecretKey == "" {
 		return "", fmt.Errorf("access_key and secret_key are required when S3 is enabled")
 	}
 
-	s3Config, err := json.Marshal(map[string]interface{}{
-		"identities": []interface{}{
-			map[string]interface{}{
-				"name": "foundry-admin",
-				"credentials": []interface{}{
-					map[string]interface{}{
-						"accessKey": cfg.AccessKey,
-						"secretKey": cfg.SecretKey,
-					},
-				},
-				"actions": []string{"Admin", "Read", "Write"},
-			},
-		},
-	})
+	s3Config, err := mergeS3IdentityConfig(existingConfig, cfg.AccessKey, cfg.SecretKey)
 	if err != nil {
 		return "", err
 	}
@@ -345,6 +339,54 @@ func buildS3SecretManifest(cfg *Config) (string, error) {
 		return "", err
 	}
 	return string(manifest), nil
+}
+
+func mergeS3IdentityConfig(existingConfig []byte, accessKey, secretKey string) ([]byte, error) {
+	config := make(map[string]interface{})
+	if len(existingConfig) > 0 {
+		if err := json.Unmarshal(existingConfig, &config); err != nil {
+			return nil, fmt.Errorf("existing SeaweedFS S3 configuration is invalid: %w", err)
+		}
+	}
+
+	identities := make([]interface{}, 0)
+	if existingIdentities, ok := config["identities"]; ok {
+		items, ok := existingIdentities.([]interface{})
+		if !ok {
+			return nil, fmt.Errorf("existing SeaweedFS S3 identities are invalid")
+		}
+		for _, item := range items {
+			identity, ok := item.(map[string]interface{})
+			if !ok {
+				return nil, fmt.Errorf("existing SeaweedFS S3 identity is invalid")
+			}
+			name, ok := identity["name"].(string)
+			if !ok || name == "" {
+				return nil, fmt.Errorf("existing SeaweedFS S3 identity name is invalid")
+			}
+			if name != "foundry-admin" {
+				identities = append(identities, identity)
+			}
+		}
+	}
+
+	identities = append(identities, map[string]interface{}{
+		"name": "foundry-admin",
+		"credentials": []interface{}{
+			map[string]interface{}{
+				"accessKey": accessKey,
+				"secretKey": secretKey,
+			},
+		},
+		"actions": []string{"Admin", "Read", "Write"},
+	})
+	config["identities"] = identities
+
+	encoded, err := json.Marshal(config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode SeaweedFS S3 configuration: %w", err)
+	}
+	return encoded, nil
 }
 
 // verifyInstallation verifies that SeaweedFS pods are running

@@ -115,6 +115,22 @@ func TestInstall_NilHelmClient(t *testing.T) {
 	assert.Contains(t, err.Error(), "helm client cannot be nil")
 }
 
+func TestInstall_RejectsS3SecretReadFailure(t *testing.T) {
+	helmClient := &mockHelmClient{}
+	k8sClient := &mockK8sClient{secretErr: assert.AnError}
+	cfg := &Config{
+		Namespace: "seaweedfs",
+		S3Enabled: true,
+		AccessKey: "test-key",
+		SecretKey: "test-secret",
+	}
+
+	err := Install(context.Background(), helmClient, k8sClient, cfg)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to read existing S3 credentials secret")
+}
+
 func TestInstall_NilConfig(t *testing.T) {
 	helmClient := &mockHelmClient{}
 	k8sClient := &mockK8sClient{
@@ -263,7 +279,7 @@ func TestBuildS3SecretManifest(t *testing.T) {
 		SecretKey: "test-secret",
 	}
 
-	manifest, err := buildS3SecretManifest(cfg)
+	manifest, err := buildS3SecretManifest(cfg, nil)
 	require.NoError(t, err)
 	assert.False(t, strings.Contains(manifest, "test-secret"))
 
@@ -287,10 +303,58 @@ func TestBuildS3SecretManifest(t *testing.T) {
 }
 
 func TestBuildS3SecretManifest_RequiresCredentials(t *testing.T) {
-	_, err := buildS3SecretManifest(&Config{Namespace: "seaweedfs"})
+	_, err := buildS3SecretManifest(&Config{Namespace: "seaweedfs"}, nil)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "access_key and secret_key are required")
+}
+
+func TestMergeS3IdentityConfig_PreservesSupplementalIdentities(t *testing.T) {
+	existing := []byte(`{
+		"identities": [
+			{
+				"name": "asset-cache",
+				"credentials": [{"accessKey": "cache-key", "secretKey": "cache-secret"}],
+				"actions": ["Read", "Write", "List"]
+			},
+			{
+				"name": "foundry-admin",
+				"credentials": [{"accessKey": "old-key", "secretKey": "old-secret"}],
+				"actions": ["Admin"]
+			}
+		],
+		"extra": "preserved"
+	}`)
+
+	encoded, err := mergeS3IdentityConfig(existing, "new-key", "new-secret")
+	require.NoError(t, err)
+
+	var config struct {
+		Identities []struct {
+			Name        string `json:"name"`
+			Credentials []struct {
+				AccessKey string `json:"accessKey"`
+				SecretKey string `json:"secretKey"`
+			} `json:"credentials"`
+		} `json:"identities"`
+		Extra string `json:"extra"`
+	}
+	require.NoError(t, json.Unmarshal(encoded, &config))
+	require.Len(t, config.Identities, 2)
+	assert.Equal(t, "asset-cache", config.Identities[0].Name)
+	assert.Equal(t, "cache-key", config.Identities[0].Credentials[0].AccessKey)
+	assert.Equal(t, "foundry-admin", config.Identities[1].Name)
+	assert.Equal(t, "new-key", config.Identities[1].Credentials[0].AccessKey)
+	assert.Equal(t, "new-secret", config.Identities[1].Credentials[0].SecretKey)
+	assert.Equal(t, "preserved", config.Extra)
+	assert.NotContains(t, string(encoded), "old-secret")
+}
+
+func TestMergeS3IdentityConfig_RejectsInvalidExistingConfig(t *testing.T) {
+	_, err := mergeS3IdentityConfig([]byte(`{"identities":`), "new-key", "new-secret")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "existing SeaweedFS S3 configuration is invalid")
 }
 
 func TestBuildHelmValues_MultiReplica(t *testing.T) {
