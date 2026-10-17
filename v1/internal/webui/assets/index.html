@@ -24,6 +24,7 @@
       <nav aria-label="Primary">
         <button class="nav-button active" data-view="dashboard">State</button>
         <button class="nav-button" data-view="setup">Setup</button>
+        <button class="nav-button" data-view="policies">Policies</button>
       </nav>
       <div id="connection-state" class="connection">Connecting</div>
     </header>
@@ -52,6 +53,36 @@
           </section>
         </div>
         <div id="discovery-warnings" class="warning-list" role="status"></div>
+      </section>
+
+      <section id="policies-view" class="view" hidden>
+        <div class="page-heading">
+          <div><p class="eyebrow">Kyverno</p><h1>Policy catalog</h1></div>
+          <button id="refresh-policies" class="secondary">Refresh</button>
+        </div>
+        <section class="panel">
+          <div class="section-heading">
+            <div>
+              <h2>Foundry policies</h2>
+              <p class="muted">Select Enforce, Audit, or Disabled for each policy. Foundry changes only policies that it owns.</p>
+            </div>
+            <a id="policy-source" class="source-link" target="_blank" rel="noopener noreferrer">View source snapshot</a>
+          </div>
+          <div id="policy-list" class="policy-list"></div>
+        </section>
+        <div class="apply-bar">
+          <span id="policy-apply-message">No policy changes.</span>
+          <button id="apply-policies" type="button" disabled>Save and apply policies</button>
+        </div>
+        <section class="job-console" id="policy-job-console" hidden>
+          <h2>Progress</h2>
+          <pre id="policy-job-log" class="job-log" aria-live="polite"></pre>
+          <div class="prompt-box" id="policy-job-prompt" hidden>
+            <label id="policy-job-prompt-message" for="policy-job-prompt-value">Input required</label>
+            <input id="policy-job-prompt-value" type="password" autocomplete="off">
+            <button id="policy-job-prompt-send" type="button">Send</button>
+          </div>
+        </section>
       </section>
 
       <section id="setup-view" class="view" hidden>

@@ -255,6 +255,7 @@ func newServer(configPath string, auth *webui.AuthStore, mode string) (*webui.Se
 				Yes:        true,
 			})
 		},
+		ApplyPolicies: stackcmd.ApplyPolicies,
 	})
 }
 

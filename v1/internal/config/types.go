@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/catalystcommunity/foundry/v1/internal/host"
+	"github.com/catalystcommunity/foundry/v1/internal/kyverno"
 )
 
 // Host is a type alias referencing the host package's Host type.
@@ -84,6 +85,10 @@ func (c *Config) Validate() error {
 		}
 	}
 
+	if err := validatePolicies(c.Policies); err != nil {
+		return fmt.Errorf("policies validation failed: %w", err)
+	}
+
 	// Cross-validation: K8s VIP must be unique (not in any host list).
 	// This depends only on c.Hosts, so it applies whether or not a network
 	// block is present - a VIP that collides with a host IP breaks kube-vip
@@ -94,6 +99,52 @@ func (c *Config) Validate() error {
 		}
 	}
 
+	return nil
+}
+
+func validatePolicies(policies []PolicyConfig) error {
+	catalog, err := kyverno.LoadCatalog()
+	if err != nil {
+		return err
+	}
+	_, err = catalog.ResolveSelections(PolicySelections(policies))
+	return err
+}
+
+// PolicySelections converts persisted policy settings to reconciliation inputs.
+func PolicySelections(policies []PolicyConfig) []kyverno.Selection {
+	selections := make([]kyverno.Selection, 0, len(policies))
+	for _, policy := range policies {
+		selection := kyverno.Selection{
+			Name: policy.Name, State: kyverno.State(policy.State),
+		}
+		if policy.Manifest != nil {
+			selection.Manifest = *policy.Manifest
+		}
+		selections = append(selections, selection)
+	}
+	return selections
+}
+
+// ApplyPolicyDefaults fills omitted catalog entries and canonicalizes policy states.
+func ApplyPolicyDefaults(cfg *Config) error {
+	catalog, err := kyverno.LoadCatalog()
+	if err != nil {
+		return err
+	}
+	resolved, err := catalog.ResolveSelections(PolicySelections(cfg.Policies))
+	if err != nil {
+		return err
+	}
+	cfg.Policies = make([]PolicyConfig, 0, len(resolved))
+	for _, policy := range resolved {
+		entry := PolicyConfig{Name: policy.Name, State: string(policy.State)}
+		if policy.Manifest != "" {
+			manifest := policy.Manifest
+			entry.Manifest = &manifest
+		}
+		cfg.Policies = append(cfg.Policies, entry)
+	}
 	return nil
 }
 

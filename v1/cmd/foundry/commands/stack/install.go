@@ -24,6 +24,7 @@ import (
 	"github.com/catalystcommunity/foundry/v1/internal/component/gatewayapi"
 	"github.com/catalystcommunity/foundry/v1/internal/component/gatewaycontroller"
 	"github.com/catalystcommunity/foundry/v1/internal/component/grafana"
+	kyvernocomponent "github.com/catalystcommunity/foundry/v1/internal/component/kyverno"
 	"github.com/catalystcommunity/foundry/v1/internal/component/loki"
 	"github.com/catalystcommunity/foundry/v1/internal/component/openbao"
 	"github.com/catalystcommunity/foundry/v1/internal/component/prometheus"
@@ -46,7 +47,11 @@ import (
 )
 
 // checkAllComponentsInstalled checks if all components are actually installed
-func checkAllComponentsInstalled(ctx context.Context, state *setup.SetupState) bool {
+func checkAllComponentsInstalled(ctx context.Context, cfg *config.Config) bool {
+	state := cfg.SetupState
+	if state == nil {
+		return false
+	}
 	// Host components do not expose a common status client.
 	hostComponentsComplete := state.OpenBAOInstalled &&
 		state.OpenBAOInitialized &&
@@ -64,6 +69,7 @@ func checkAllComponentsInstalled(ctx context.Context, state *setup.SetupState) b
 	// certificate and HTTPS listener during the first stack installation.
 	kubernetesComponents := []string{
 		"gateway-api",
+		"kyverno",
 		"storage",
 		"prometheus",
 		"cert-manager",
@@ -76,6 +82,9 @@ func checkAllComponentsInstalled(ctx context.Context, state *setup.SetupState) b
 	}
 
 	for _, name := range kubernetesComponents {
+		if toggleableComponents[name] && !componentEnabled(cfg, name) {
+			continue
+		}
 		comp := component.Get(name)
 		if comp != nil {
 			status, err := comp.Status(ctx)
@@ -242,14 +251,20 @@ func RunInstall(ctx context.Context, options InstallOptions) error {
 	if cfg.SetupState == nil {
 		cfg.SetupState = &setup.SetupState{}
 	}
+	if err := config.ApplyPolicyDefaults(cfg); err != nil {
+		return fmt.Errorf("load policy defaults: %w", err)
+	}
 
 	// Check if all components are actually installed (don't rely solely on StackComplete flag)
-	allComponentsInstalled := checkAllComponentsInstalled(ctx, cfg.SetupState)
+	allComponentsInstalled := checkAllComponentsInstalled(ctx, cfg)
 	upgradeMode := options.Upgrade
 	if allComponentsInstalled && !upgradeMode {
 		fmt.Println("\n✓ Stack is already complete!")
 		fmt.Println("\nTo upgrade components with new configuration, use: foundry stack install --upgrade")
-		return nil
+		if options.DryRun {
+			return printStackPlan(cfg, setup.DetermineNextStep(cfg.SetupState))
+		}
+		return reconcileConfiguredPolicies(ctx, cfg)
 	}
 
 	// Determine next step
@@ -607,7 +622,7 @@ func createConfigInteractive() (*config.Config, error) {
 
 func defaultComponentConfigs() config.ComponentMap {
 	names := []string{
-		"openbao", "dns", "zot", "k3s", "gateway-api", "storage",
+		"openbao", "dns", "zot", "k3s", "gateway-api", "kyverno", "storage",
 		"prometheus", "cert-manager", "contour", "gateway-controller",
 		"seaweedfs", "external-dns", "loki", "grafana", "velero",
 	}
@@ -779,6 +794,7 @@ func ensureNetworkPlanned(ctx context.Context, cfg *config.Config, nonInteractiv
 // These components are enabled when the enabled field is absent.
 var toggleableComponents = map[string]bool{
 	"gateway-controller": true,
+	"kyverno":            true,
 }
 
 // componentEnabled reports whether a toggleable component is enabled. An
@@ -904,6 +920,15 @@ func installComponents(ctx context.Context, cfg *config.Config, configPath strin
 				trackComponent("gateway-api")
 			},
 		},
+		{
+			name: "kyverno",
+			checkFunc: func(s *setup.SetupState) bool {
+				return checkComponentStatus("kyverno")
+			},
+			setFunc: func(s *setup.SetupState) {
+				trackComponent("kyverno")
+			},
+		},
 		// Storage must come before prometheus because prometheus is configured to use
 		// the longhorn storage class which is provided by the storage component
 		{
@@ -1022,7 +1047,13 @@ func installComponents(ctx context.Context, cfg *config.Config, configPath strin
 					reason = "upgrades disabled by components." + comp.name + ".allow_upgrades"
 				}
 				fmt.Printf("\n[%d/%d] %s: ✓ %s (skipping)\n", i+1, len(components), comp.name, reason)
-				// DNS is installed but ensure zones exist (sync config with reality)
+				// Reconcile policy settings even when chart upgrades are disabled.
+				if comp.name == "kyverno" {
+					if err := reconcileConfiguredPolicies(ctx, cfg); err != nil {
+						return err
+					}
+				}
+				// DNS is installed but ensure zones exist (sync config with reality).
 				if comp.name == "dns" {
 					configDir, err := config.GetConfigDir()
 					if err != nil {
@@ -1145,6 +1176,8 @@ func installK8sComponent(ctx context.Context, cfg *config.Config, componentName 
 	switch componentName {
 	case "gateway-api":
 		componentWithClients = gatewayapi.NewComponent(k8sClient)
+	case "kyverno":
+		componentWithClients = kyvernocomponent.NewComponent(helmClient, k8sClient)
 	case "contour":
 		componentWithClients = contour.NewComponent(helmClient, k8sClient)
 	case "gateway-controller":
@@ -1180,6 +1213,16 @@ func installK8sComponent(ctx context.Context, cfg *config.Config, componentName 
 	if componentName == "cert-manager" {
 		componentConfig["helm_client"] = helmClient
 		componentConfig["k8s_client"] = k8sClient
+	}
+
+	if componentName == "kyverno" {
+		if configured, ok := cfg.Components["kyverno"]; ok {
+			for key, value := range configured.Config {
+				componentConfig[key] = value
+			}
+		}
+		applyComponentVersion(cfg, componentName, componentConfig)
+		componentConfig["policies"] = config.PolicySelections(cfg.Policies)
 	}
 
 	// Pass cluster VIP and domain to Contour for LoadBalancer and Gateway configuration
@@ -1922,7 +1965,7 @@ initContainers:
     volumeMounts:
       - mountPath: /target
         name: plugins
-deployNodeAgent: false  # Disable node agent (not needed for S3)
+deployNodeAgent: false  # Enable filesystem backups with deploy_node_agent
 resources:
   requests:
     memory: 128Mi
@@ -1961,6 +2004,12 @@ schedules:
 		"schedule_name": "daily-backup",
 	}
 
+	// Pass the typed switch to the component parser. It takes precedence over
+	// values.deployNodeAgent, including when the user explicitly disables it.
+	if value, ok := cfg.Components["velero"].Config["deploy_node_agent"]; ok {
+		componentConfig["deploy_node_agent"] = value
+	}
+
 	// Merge user-provided values over defaults (user values take precedence)
 	if userValues := getUserValuesFromConfig(cfg, "velero"); userValues != nil {
 		componentConfig["values"] = mergeValues(defaultValues, userValues)
@@ -1987,6 +2036,7 @@ func installSingleComponent(ctx context.Context, cfg *config.Config, componentNa
 	// Kubernetes components are installed via kubeconfig, not SSH to a host
 	k8sComponents := map[string]bool{
 		"gateway-api":        true,
+		"kyverno":            true,
 		"contour":            true,
 		"gateway-controller": true,
 		"cert-manager":       true,
@@ -3151,6 +3201,7 @@ func saveComponentConfig(cfg *config.Config, componentName string, componentConf
 		"cluster_vip":    true, // Runtime derived from cluster config
 		"gateway_domain": true, // Runtime derived from cluster config
 		"version":        true, // Persisted by ComponentConfig.Version
+		"policies":       true, // Persisted in the top-level policy list
 	}
 
 	// Copy component config settings

@@ -1,0 +1,47 @@
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: require-network-policy
+  annotations:
+    policies.kyverno.io/title: Require NetworkPolicy
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Deployment, NetworkPolicy
+    policies.kyverno.io/description: >-
+      Require each new Deployment to have a preexisting NetworkPolicy whose Pod
+      selector matches the Deployment labels.
+spec:
+  validationActions: [Audit]
+  evaluation:
+    background:
+      enabled: false
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        operations: ["CREATE"]
+        resources: ["deployments"]
+  variables:
+    - name: networkPolicies
+      expression: >-
+        resource.List('networking.k8s.io/v1', 'networkpolicies',
+        object.metadata.namespace).items.orValue([])
+    - name: podLabels
+      expression: object.spec.template.metadata.?labels.orValue({})
+  validations:
+    - expression: >-
+        variables.networkPolicies.exists(policy,
+          policy.spec.podSelector.?matchLabels.orValue({}).all(key, value,
+            key in variables.podLabels && variables.podLabels[key] == value) &&
+          policy.spec.podSelector.?matchExpressions.orValue([]).all(requirement,
+            requirement.operator == 'In' ?
+              requirement.key in variables.podLabels &&
+                variables.podLabels[requirement.key] in requirement.values :
+            requirement.operator == 'NotIn' ?
+              !(requirement.key in variables.podLabels) ||
+                !(variables.podLabels[requirement.key] in requirement.values) :
+            requirement.operator == 'Exists' ?
+              requirement.key in variables.podLabels :
+            requirement.operator == 'DoesNotExist' ?
+              !(requirement.key in variables.podLabels) : false))
+      message: Every Deployment requires a matching NetworkPolicy.

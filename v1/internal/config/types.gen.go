@@ -100,6 +100,13 @@ type TrueNASConfig struct {
 	APIKey string `json:"api_key" yaml:"api_key"`
 }
 
+// PolicyConfig represents a structured data type
+type PolicyConfig struct {
+	Name     string  `json:"name" yaml:"name"`
+	State    string  `json:"state" yaml:"state"`
+	Manifest *string `json:"manifest,omitempty" yaml:"manifest,omitempty"`
+}
+
 // Config represents a structured data type
 type Config struct {
 	Network       *NetworkConfig    `json:"network,omitempty" yaml:"network,omitempty"`
@@ -109,6 +116,7 @@ type Config struct {
 	Observability *ObsConfig        `json:"observability,omitempty" yaml:"observability,omitempty"`
 	Storage       *StorageConfig    `json:"storage,omitempty" yaml:"storage,omitempty"`
 	Management    *ManagementConfig `json:"management,omitempty" yaml:"management,omitempty"`
+	Policies      []PolicyConfig    `json:"policies,omitempty" yaml:"policies,omitempty"`
 	Hosts         []*host.Host      `json:"hosts" yaml:"hosts"`
 	SetupState    *setup.SetupState `json:"setup_state" yaml:"setup_state"`
 }

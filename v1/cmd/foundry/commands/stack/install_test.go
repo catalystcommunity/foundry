@@ -152,12 +152,13 @@ func TestComponentMarkedInstalled(t *testing.T) {
 func TestDefaultComponentConfigsShowUpgradeControls(t *testing.T) {
 	components := defaultComponentConfigs()
 
-	assert.Len(t, components, 15)
+	assert.Len(t, components, 16)
 	for name, componentConfig := range components {
 		require.NotNil(t, componentConfig.AllowUpgrades, name)
 		assert.True(t, *componentConfig.AllowUpgrades, name)
 		assert.Nil(t, componentConfig.Version, name)
 	}
+	assert.Contains(t, components, "kyverno")
 	assert.Equal(t, true, components["gateway-controller"].Config["enabled"])
 }
 
@@ -664,6 +665,31 @@ func TestComponentEnabled_GatewayController(t *testing.T) {
 
 	// gateway-controller supports an explicit enabled switch.
 	assert.True(t, toggleableComponents["gateway-controller"])
+}
+
+func TestComponentEnabledKyverno(t *testing.T) {
+	require.True(t, toggleableComponents["kyverno"])
+	cfg := createTestConfig(t)
+	assert.True(t, componentEnabled(cfg, "kyverno"))
+	for _, enabled := range []bool{true, false} {
+		cfg.Components = config.ComponentMap{"kyverno": {Config: map[string]any{"enabled": enabled}}}
+		assert.Equal(t, enabled, componentEnabled(cfg, "kyverno"))
+	}
+	// A disabled component must not even attempt to read a kubeconfig.
+	t.Setenv("FOUNDRY_CONFIG_DIR", t.TempDir())
+	require.NoError(t, reconcileConfiguredPolicies(context.Background(), cfg))
+	configPath := filepath.Join(t.TempDir(), "stack.yaml")
+	require.NoError(t, config.Save(cfg, configPath))
+	require.ErrorContains(t, ApplyPolicies(context.Background(), configPath), "Kyverno is disabled")
+}
+
+func TestPolicyReconcileDoesNotDependOnChartUpgradePermission(t *testing.T) {
+	cfg := createTestConfig(t)
+	denyUpgrade := false
+	cfg.Components = config.ComponentMap{"kyverno": {AllowUpgrades: &denyUpgrade}}
+	t.Setenv("FOUNDRY_CONFIG_DIR", t.TempDir())
+	// Reconciliation must proceed to kubeconfig access even with upgrades disabled.
+	require.ErrorContains(t, reconcileConfiguredPolicies(context.Background(), cfg), "read kubeconfig")
 }
 
 func TestBuildGatewayControllerConfig_FlowsStackKeys(t *testing.T) {
