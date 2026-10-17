@@ -18,6 +18,7 @@ import (
 	"github.com/catalystcommunity/foundry/v1/internal/console"
 	"github.com/catalystcommunity/foundry/v1/internal/discovery"
 	"github.com/catalystcommunity/foundry/v1/internal/host"
+	foundrykyverno "github.com/catalystcommunity/foundry/v1/internal/kyverno"
 	"github.com/catalystcommunity/foundry/v1/internal/setup"
 	"github.com/catalystcommunity/foundry/v1/internal/topology"
 )
@@ -41,26 +42,28 @@ type InspectFunc func(ctx context.Context, cfg *config.Config) discovery.Snapsho
 
 // Options configures a web UI server.
 type Options struct {
-	ConfigPath string
-	Auth       *AuthStore
-	Apply      ApplyFunc
-	Inspect    InspectFunc
-	Mode       string
+	ConfigPath    string
+	Auth          *AuthStore
+	Apply         ApplyFunc
+	ApplyPolicies ApplyFunc
+	Inspect       InspectFunc
+	Mode          string
 }
 
 // Server serves the Foundry UI and API.
 type Server struct {
-	configPath string
-	auth       *AuthStore
-	apply      ApplyFunc
-	inspect    InspectFunc
-	mode       string
-	jobsMu     sync.RWMutex
-	jobs       map[string]*Job
-	promptsMu  sync.Mutex
-	prompts    map[string]*pendingPrompt
-	applyMu    sync.Mutex
-	handler    http.Handler
+	configPath    string
+	auth          *AuthStore
+	apply         ApplyFunc
+	applyPolicies ApplyFunc
+	inspect       InspectFunc
+	mode          string
+	jobsMu        sync.RWMutex
+	jobs          map[string]*Job
+	promptsMu     sync.Mutex
+	prompts       map[string]*pendingPrompt
+	applyMu       sync.Mutex
+	handler       http.Handler
 }
 
 // Job reports one asynchronous apply operation.
@@ -131,6 +134,20 @@ type Plan struct {
 	Topology topology.Model `json:"topology"`
 }
 
+// PolicyView is one catalog policy with its current configured state.
+type PolicyView struct {
+	foundrykyverno.Policy
+	State    foundrykyverno.State `json:"state"`
+	Manifest string               `json:"manifest,omitempty"`
+}
+
+// PolicyCatalogView is the policy catalog returned to the browser.
+type PolicyCatalogView struct {
+	Version  int                   `json:"version"`
+	Source   foundrykyverno.Source `json:"source"`
+	Policies []PolicyView          `json:"policies"`
+}
+
 // New constructs an authenticated web UI server.
 func New(options Options) (*Server, error) {
 	if options.ConfigPath == "" {
@@ -140,13 +157,14 @@ func New(options Options) (*Server, error) {
 		return nil, fmt.Errorf("authentication store is required")
 	}
 	server := &Server{
-		configPath: options.ConfigPath,
-		auth:       options.Auth,
-		apply:      options.Apply,
-		inspect:    options.Inspect,
-		mode:       options.Mode,
-		jobs:       make(map[string]*Job),
-		prompts:    make(map[string]*pendingPrompt),
+		configPath:    options.ConfigPath,
+		auth:          options.Auth,
+		apply:         options.Apply,
+		applyPolicies: options.ApplyPolicies,
+		inspect:       options.Inspect,
+		mode:          options.Mode,
+		jobs:          make(map[string]*Job),
+		prompts:       make(map[string]*pendingPrompt),
 	}
 	if server.mode == "" {
 		server.mode = "local"
@@ -165,6 +183,8 @@ func (s *Server) routes() http.Handler {
 	mux.Handle("GET /api/v1/state", s.requireAuth(http.HandlerFunc(s.handleState)))
 	mux.Handle("GET /api/v1/runtime", s.requireAuth(http.HandlerFunc(s.handleRuntime)))
 	mux.Handle("GET /api/v1/overview", s.requireAuth(http.HandlerFunc(s.handleOverview)))
+	mux.Handle("GET /api/v1/policies", s.requireAuth(http.HandlerFunc(s.handlePolicies)))
+	mux.Handle("PUT /api/v1/policies", s.requireAuth(http.HandlerFunc(s.handlePoliciesUpdate)))
 	mux.Handle("POST /api/v1/plan", s.requireAuth(http.HandlerFunc(s.handlePlan)))
 	mux.Handle("POST /api/v1/apply", s.requireAuth(http.HandlerFunc(s.handleApply)))
 	mux.Handle("POST /api/v1/apply/current", s.requireAuth(http.HandlerFunc(s.handleApplyCurrent)))
@@ -283,6 +303,78 @@ func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.inspect(ctx, cfg))
 }
 
+func (s *Server) handlePolicies(w http.ResponseWriter, _ *http.Request) {
+	cfg, err := s.loadConfig()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	catalog, err := foundrykyverno.LoadCatalog()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	resolved, err := catalog.ResolveSelections(config.PolicySelections(cfg.Policies))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	selections := make(map[string]foundrykyverno.Selection, len(resolved))
+	for _, policy := range resolved {
+		selections[policy.Name] = policy
+	}
+	view := PolicyCatalogView{Version: catalog.Version, Source: catalog.Source}
+	for _, policy := range catalog.Policies {
+		selection := selections[policy.Name]
+		view.Policies = append(view.Policies, PolicyView{Policy: policy, State: selection.State, Manifest: selection.Manifest})
+	}
+	writeJSON(w, http.StatusOK, view)
+}
+
+func (s *Server) handlePoliciesUpdate(w http.ResponseWriter, r *http.Request) {
+	if s.applyPolicies == nil {
+		writeError(w, http.StatusServiceUnavailable, "policy reconciliation is not available")
+		return
+	}
+	var request struct {
+		Policies []config.PolicyConfig `json:"policies"`
+		Confirm  bool                  `json:"confirm"`
+	}
+	if err := decodeJSON(w, r, &request); err != nil {
+		return
+	}
+	if !request.Confirm {
+		writeError(w, http.StatusBadRequest, "policy apply requires explicit confirmation")
+		return
+	}
+	cfg, err := s.loadConfig()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	cfg.Policies = append([]config.PolicyConfig(nil), request.Policies...)
+	if err := config.ApplyPolicyDefaults(cfg); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := cfg.Validate(); err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("configuration is invalid: %v", err))
+		return
+	}
+	job, err := s.createApplyJob()
+	if err != nil {
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
+	if err := config.Save(cfg, s.configPath); err != nil {
+		s.failJob(job.ID, fmt.Errorf("save configuration: %w", err))
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("save configuration: %v", err))
+		return
+	}
+	go s.runApply(job.ID, s.applyPolicies, "Applying policies")
+	writeJSON(w, http.StatusAccepted, job)
+}
+
 func (s *Server) handlePlan(w http.ResponseWriter, r *http.Request) {
 	wizard, cfg, err := s.decodeAndMerge(w, r)
 	if err != nil {
@@ -358,7 +450,9 @@ func (s *Server) createApplyJob() (*Job, error) {
 	return &copy, nil
 }
 
-func (s *Server) startApply(jobID string) { go s.runApply(jobID) }
+func (s *Server) startApply(jobID string) {
+	go s.runApply(jobID, s.apply, "Applying the stack configuration")
+}
 
 func (s *Server) failJob(jobID string, err error) {
 	s.updateJob(jobID, func(job *Job) {
@@ -368,12 +462,12 @@ func (s *Server) failJob(jobID string, err error) {
 	})
 }
 
-func (s *Server) runApply(jobID string) {
+func (s *Server) runApply(jobID string, apply ApplyFunc, message string) {
 	s.applyMu.Lock()
 	defer s.applyMu.Unlock()
 	s.updateJob(jobID, func(job *Job) {
 		job.State = "running"
-		job.Message = "Applying the stack configuration"
+		job.Message = message
 	})
 
 	// Send anything the operation prints to the job log, and answer any
@@ -382,10 +476,10 @@ func (s *Server) runApply(jobID string) {
 	defer restorePrompter()
 
 	var err error
-	if s.apply != nil {
+	if apply != nil {
 		err = console.Capture(
 			func(line string) { s.appendJobLog(jobID, line) },
-			func() error { return s.apply(context.Background(), s.configPath) },
+			func() error { return apply(context.Background(), s.configPath) },
 		)
 	}
 	s.updateJob(jobID, func(job *Job) {
@@ -554,7 +648,7 @@ func (s *Server) loadConfig() (*config.Config, error) {
 func defaultConfig() *config.Config {
 	return &config.Config{
 		Components: config.ComponentMap{
-			"openbao": {}, "dns": {}, "zot": {}, "k3s": {},
+			"openbao": {}, "dns": {}, "zot": {}, "k3s": {}, "kyverno": {},
 		},
 		SetupState: &setup.SetupState{},
 	}

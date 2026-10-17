@@ -145,6 +145,52 @@ func TestRuntimeAndOverviewAreAuthenticated(t *testing.T) {
 	assert.Equal(t, http.StatusUnauthorized, response.Code)
 }
 
+func TestPolicyCatalogCanBeViewedAndApplied(t *testing.T) {
+	applied := make(chan struct{}, 1)
+	server, token, configPath := newTestServer(t, func(context.Context, string) error {
+		t.Error("policy settings must not apply the stack")
+		return nil
+	})
+	server.applyPolicies = func(context.Context, string) error {
+		applied <- struct{}{}
+		return nil
+	}
+
+	response := performRequest(server.Handler(), http.MethodGet, "/api/v1/policies", nil, token, "")
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	var catalog PolicyCatalogView
+	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &catalog))
+	require.Len(t, catalog.Policies, 46)
+	assert.Equal(t, "2716f4a26a3c27590a1d6d960dee4ce043e4fa4a", catalog.Source.Commit)
+
+	response = performRequest(server.Handler(), http.MethodPut, "/api/v1/policies", map[string]any{
+		"policies": []map[string]string{{"name": "disallow-host-path", "state": "Enforce"}},
+		"confirm":  false,
+	}, token, "")
+	assert.Equal(t, http.StatusBadRequest, response.Code)
+
+	response = performRequest(server.Handler(), http.MethodPut, "/api/v1/policies", map[string]any{
+		"policies": []map[string]string{{"name": "disallow-host-path", "state": "Enforce"}},
+		"confirm":  true,
+	}, token, "")
+	require.Equal(t, http.StatusAccepted, response.Code, response.Body.String())
+	select {
+	case <-applied:
+	case <-time.After(2 * time.Second):
+		t.Fatal("policy apply callback was not called")
+	}
+
+	saved, err := config.Load(configPath)
+	require.NoError(t, err)
+	require.Len(t, saved.Policies, 46)
+	states := make(map[string]string, len(saved.Policies))
+	for _, policy := range saved.Policies {
+		states[policy.Name] = policy.State
+	}
+	assert.Equal(t, "Enforce", states["disallow-host-path"])
+	assert.Equal(t, "Disabled", states["verify-image"])
+}
+
 func newTestServer(t *testing.T, apply ApplyFunc) (*Server, string, string) {
 	t.Helper()
 	configPath := filepath.Join(t.TempDir(), "stack.yaml")
@@ -161,6 +207,54 @@ func newTestServer(t *testing.T, apply ApplyFunc) (*Server, string, string) {
 	server, err := New(Options{ConfigPath: configPath, Auth: auth, Apply: apply})
 	require.NoError(t, err)
 	return server, token, configPath
+}
+
+func TestPolicyApplyUnavailableDoesNotSave(t *testing.T) {
+	server, token, path := newTestServer(t, nil)
+	before, err := os.ReadFile(path)
+	require.NoError(t, err)
+	response := performRequest(server.Handler(), http.MethodPut, "/api/v1/policies", map[string]any{
+		"confirm": true, "policies": []map[string]string{{"name": "disallow-default-namespace", "state": "Disabled"}},
+	}, token, "")
+	require.Equal(t, http.StatusServiceUnavailable, response.Code)
+	after, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, before, after)
+}
+
+func TestPolicyOverrideValidationAndPersistence(t *testing.T) {
+	server, token, path := newTestServer(t, nil)
+	server.applyPolicies = func(context.Context, string) error { return fmt.Errorf("cluster is offline") }
+	before, err := os.ReadFile(path)
+	require.NoError(t, err)
+	response := performRequest(server.Handler(), http.MethodPut, "/api/v1/policies", map[string]any{
+		"confirm": true, "policies": []map[string]string{{"name": "restrict-image-registries", "state": "Enforce"}},
+	}, token, "")
+	require.Equal(t, http.StatusBadRequest, response.Code)
+	assert.Contains(t, response.Body.String(), "requires a custom manifest")
+	after, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, before, after)
+
+	manifest := "apiVersion: policies.kyverno.io/v1\nkind: ValidatingPolicy\nmetadata:\n  name: require-labels\nspec:\n  validations:\n    - expression: 'true'\n"
+	response = performRequest(server.Handler(), http.MethodPut, "/api/v1/policies", map[string]any{
+		"confirm": true, "policies": []map[string]string{{"name": "require-labels", "state": "Audit", "manifest": manifest}},
+	}, token, "")
+	require.Equal(t, http.StatusAccepted, response.Code, response.Body.String())
+	var queued Job
+	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &queued))
+	failed := waitForJobState(t, server, token, queued.ID, "failed")
+	assert.Contains(t, failed.Message, "cluster is offline")
+	response = performRequest(server.Handler(), http.MethodGet, "/api/v1/policies", nil, token, "")
+	require.Equal(t, http.StatusOK, response.Code)
+	var catalog PolicyCatalogView
+	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &catalog))
+	for _, policy := range catalog.Policies {
+		if policy.Name == "require-labels" {
+			assert.Equal(t, manifest, policy.Manifest)
+			assert.Equal(t, "Audit", string(policy.State))
+		}
+	}
 }
 
 func validWizard() WizardConfig {

@@ -187,13 +187,15 @@ func buildHelmValues(cfg *Config) map[string]interface{} {
 	// deploy_node_agent for clusters without CSI volume snapshot support.
 	values["deployNodeAgent"] = cfg.DeployNodeAgent
 	if cfg.DeployNodeAgent {
-		values["nodeAgent"] = map[string]interface{}{
-			"resources": map[string]interface{}{
-				"requests": map[string]interface{}{
-					"memory": "256Mi",
+		values = mergeHelmValues(map[string]interface{}{
+			"nodeAgent": map[string]interface{}{
+				"resources": map[string]interface{}{
+					"requests": map[string]interface{}{
+						"memory": "256Mi",
+					},
 				},
 			},
-		}
+		}, values)
 	}
 
 	// Override kubectl image for upgrade jobs (chart default uses version that may not exist)
@@ -218,6 +220,25 @@ func buildHelmValues(cfg *Config) map[string]interface{} {
 	}
 
 	return values
+}
+
+// mergeHelmValues merges nested maps without changing either input. Custom
+// values, including explicit nulls, take precedence over defaults.
+func mergeHelmValues(defaults, custom map[string]interface{}) map[string]interface{} {
+	merged := make(map[string]interface{}, len(defaults)+len(custom))
+	for key, value := range defaults {
+		merged[key] = value
+	}
+	for key, value := range custom {
+		if customMap, ok := value.(map[string]interface{}); ok {
+			if defaultMap, ok := merged[key].(map[string]interface{}); ok {
+				merged[key] = mergeHelmValues(defaultMap, customMap)
+				continue
+			}
+		}
+		merged[key] = value
+	}
+	return merged
 }
 
 // buildBackupStorageLocation builds the backup storage location configuration

@@ -10,6 +10,7 @@ import (
 	"github.com/catalystcommunity/foundry/v1/internal/component/gatewaycontroller"
 	"github.com/catalystcommunity/foundry/v1/internal/component/grafana"
 	"github.com/catalystcommunity/foundry/v1/internal/component/k3s"
+	"github.com/catalystcommunity/foundry/v1/internal/component/kyverno"
 	"github.com/catalystcommunity/foundry/v1/internal/component/loki"
 	"github.com/catalystcommunity/foundry/v1/internal/component/openbao"
 	"github.com/catalystcommunity/foundry/v1/internal/component/openbaoinjector"
@@ -57,6 +58,12 @@ func InitComponents() error {
 	// Gateway API CRDs are installed as a cluster-level feature, independent of ingress controllers
 	gatewayAPIComp := gatewayapi.NewComponent(nil)
 	if err := component.Register(gatewayAPIComp); err != nil {
+		return err
+	}
+
+	// Register Kyverno - depends on K3s and manages the Foundry policy catalog.
+	kyvernoComp := kyverno.NewComponent(nil, nil)
+	if err := component.Register(kyvernoComp); err != nil {
 		return err
 	}
 

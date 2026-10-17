@@ -1,0 +1,328 @@
+version: 1
+source:
+  repository: https://github.com/kyverno/policies
+  commit: 2716f4a26a3c27590a1d6d960dee4ce043e4fa4a
+policies:
+  - name: disallow-host-process
+    title: Disallow HostProcess containers
+    description: Prevent Windows containers from running as host processes.
+    defaultState: Enforce
+    kind: ValidatingPolicy
+    path: validating/disallow-host-process.yaml
+    sourcePath: pod-security-vpol/baseline/disallow-host-process/disallow-host-process.yaml
+  - name: disallow-proc-mount
+    title: Disallow custom proc mounts
+    description: Prevent containers from using an unmasked proc filesystem.
+    defaultState: Enforce
+    kind: ValidatingPolicy
+    path: validating/disallow-proc-mount.yaml
+    sourcePath: pod-security-vpol/baseline/disallow-proc-mount/disallow-proc-mount.yaml
+  - name: disallow-host-probe-hosts
+    title: Disallow probe hosts
+    description: Prevent HTTP probes from overriding their destination host.
+    defaultState: Enforce
+    kind: ValidatingPolicy
+    path: validating/disallow-host-probe-hosts.yaml
+  - name: restrict-apparmor-profiles
+    title: Restrict AppArmor profiles
+    description: Allow only RuntimeDefault and Localhost AppArmor profiles.
+    defaultState: Enforce
+    kind: ValidatingPolicy
+    path: validating/restrict-apparmor-profiles.yaml
+    sourcePath: pod-security/baseline/restrict-apparmor-profiles/restrict-apparmor-profiles.yaml
+  - name: restrict-seccomp
+    title: Restrict seccomp profiles
+    description: Prevent Pods from selecting prohibited seccomp profiles.
+    defaultState: Enforce
+    kind: ValidatingPolicy
+    path: validating/restrict-seccomp.yaml
+    sourcePath: pod-security-vpol/baseline/restrict-seccomp/restrict-seccomp.yaml
+  - name: restrict-sysctls
+    title: Restrict sysctls
+    description: Prevent Pods from configuring unsafe kernel parameters.
+    defaultState: Enforce
+    kind: ValidatingPolicy
+    path: validating/restrict-sysctls.yaml
+    sourcePath: pod-security-vpol/baseline/restrict-sysctls/restrict-sysctls.yaml
+  - name: disallow-container-sock-mounts
+    title: Disallow container socket mounts
+    description: Prevent Pods from mounting common container runtime sockets.
+    defaultState: Enforce
+    kind: ValidatingPolicy
+    path: validating/disallow-container-sock-mounts.yaml
+    sourcePath: best-practices-vpol/disallow-cri-sock-mount/disallow-cri-sock-mount.yaml
+  - name: disallow-helm-tiller
+    title: Disallow Helm Tiller
+    description: Prevent workloads from using the retired privileged Helm Tiller service.
+    defaultState: Enforce
+    kind: ValidatingPolicy
+    path: validating/disallow-helm-tiller.yaml
+    sourcePath: best-practices-vpol/disallow-helm-tiller/disallow-helm-tiller.yaml
+  - name: deny-secret-service-account-token-type
+    title: Deny legacy ServiceAccount token Secrets
+    description: Prevent creation of long-lived ServiceAccount token Secrets.
+    defaultState: Enforce
+    kind: ValidatingPolicy
+    path: validating/deny-secret-service-account-token-type.yaml
+    sourcePath: other-vpol/deny-secret-service-account-token-type/deny-secret-service-account-token-type.yaml
+  - name: restrict-binding-system-groups
+    title: Restrict system group bindings
+    description: Prevent role bindings from granting access to broad Kubernetes system groups.
+    defaultState: Enforce
+    kind: ValidatingPolicy
+    path: validating/restrict-binding-system-groups.yaml
+    sourcePath: other-vpol/restrict-binding-system-groups/restrict-binding-system-groups.yaml
+  - name: disallow-capabilities
+    title: Disallow added capabilities
+    description: Prevent containers from adding Linux capabilities outside the baseline set.
+    defaultState: Audit
+    kind: ValidatingPolicy
+    path: validating/disallow-capabilities.yaml
+    sourcePath: pod-security-vpol/baseline/disallow-capabilities/disallow-capabilities.yaml
+  - name: disallow-host-namespaces
+    title: Disallow host namespaces
+    description: Prevent Pods from sharing host process, IPC, or network namespaces.
+    defaultState: Audit
+    kind: ValidatingPolicy
+    path: validating/disallow-host-namespaces.yaml
+    sourcePath: pod-security-vpol/baseline/disallow-host-namespaces/disallow-host-namespaces.yaml
+  - name: disallow-host-path
+    title: Disallow hostPath volumes
+    description: Prevent Pods from mounting paths from a node filesystem.
+    defaultState: Audit
+    kind: ValidatingPolicy
+    path: validating/disallow-host-path.yaml
+    sourcePath: pod-security-vpol/baseline/disallow-host-path/disallow-host-path.yaml
+  - name: disallow-host-ports
+    title: Disallow host ports
+    description: Prevent containers from binding directly to node ports.
+    defaultState: Audit
+    kind: ValidatingPolicy
+    path: validating/disallow-host-ports.yaml
+    sourcePath: pod-security-vpol/baseline/disallow-host-ports/disallow-host-ports.yaml
+  - name: disallow-privileged-containers
+    title: Disallow privileged containers
+    description: Prevent containers from running with privileged access.
+    defaultState: Audit
+    kind: ValidatingPolicy
+    path: validating/disallow-privileged-containers.yaml
+    sourcePath: pod-security-vpol/baseline/disallow-privileged-containers/disallow-privileged-containers.yaml
+  - name: disallow-privilege-escalation
+    title: Disallow privilege escalation
+    description: Require containers to disable process privilege escalation.
+    defaultState: Audit
+    kind: ValidatingPolicy
+    path: validating/disallow-privilege-escalation.yaml
+    sourcePath: pod-security-vpol/restricted/disallow-privilege-escalation/disallow-privilege-escalation.yaml
+  - name: require-run-as-nonroot
+    title: Require non-root containers
+    description: Require Pods and containers to declare that they run as non-root.
+    defaultState: Audit
+    kind: ValidatingPolicy
+    path: validating/require-run-as-nonroot.yaml
+    sourcePath: pod-security-vpol/restricted/require-run-as-nonroot/require-run-as-nonroot.yaml
+  - name: disallow-latest-tag
+    title: Disallow latest image tags
+    description: Prevent container images from using the mutable latest tag.
+    defaultState: Audit
+    kind: ValidatingPolicy
+    path: validating/disallow-latest-tag.yaml
+    sourcePath: best-practices-vpol/disallow-latest-tag/disallow-latest-tag.yaml
+  - name: disallow-default-namespace
+    title: Disallow the default namespace
+    description: Prevent workloads from being created in the default namespace.
+    defaultState: Enforce
+    kind: ValidatingPolicy
+    path: validating/disallow-default-namespace.yaml
+    sourcePath: best-practices-vpol/disallow-default-namespace/disallow-default-namespace.yaml
+  - name: drop-cap-net-raw
+    title: Require NET_RAW to be dropped
+    description: Require containers to drop the NET_RAW Linux capability.
+    defaultState: Audit
+    kind: ValidatingPolicy
+    path: validating/drop-cap-net-raw.yaml
+    sourcePath: best-practices-vpol/require-drop-cap-net-raw/require-drop-cap-net-raw.yaml
+  - name: require-requests-limits
+    title: Require resource requests and limits
+    description: Require containers to define CPU and memory requests and limits.
+    defaultState: Audit
+    kind: ValidatingPolicy
+    path: validating/require-requests-limits.yaml
+    sourcePath: best-practices-vpol/require-pod-requests-limits/require-pod-requests-limits.yaml
+  - name: require-pod-probes
+    title: Require Pod probes
+    description: Require each container to define a liveness, readiness, or startup probe.
+    defaultState: Audit
+    kind: ValidatingPolicy
+    path: validating/require-pod-probes.yaml
+    sourcePath: best-practices-vpol/require-probes/require-probes.yaml
+  - name: require-ro-rootfs
+    title: Require read-only root filesystems
+    description: Require containers to use read-only root filesystems.
+    defaultState: Audit
+    kind: ValidatingPolicy
+    path: validating/require-ro-rootfs.yaml
+    sourcePath: best-practices-vpol/require-ro-rootfs/require-ro-rootfs.yaml
+  - name: restrict-nodeport
+    title: Restrict NodePort Services
+    description: Prevent Services from exposing ports directly on every node.
+    defaultState: Audit
+    kind: ValidatingPolicy
+    path: validating/restrict-nodeport.yaml
+    sourcePath: best-practices-vpol/restrict-node-port/restrict-node-port.yaml
+  - name: restrict-external-ips
+    title: Restrict Service external IPs
+    description: Prevent Services from assigning arbitrary external IP addresses.
+    defaultState: Audit
+    kind: ValidatingPolicy
+    path: validating/restrict-external-ips.yaml
+    sourcePath: best-practices-vpol/restrict-service-external-ips/restrict-service-external-ips.yaml
+  - name: restrict-automount-sa-token
+    title: Restrict Pod token automount
+    description: Require Pods to disable automatic ServiceAccount token mounts.
+    defaultState: Audit
+    kind: ValidatingPolicy
+    path: validating/restrict-automount-sa-token.yaml
+    sourcePath: other/restrict-automount-sa-token/restrict-automount-sa-token.yaml
+  - name: secrets-not-from-env-vars
+    title: Disallow Secrets in environment variables
+    description: Prevent containers from loading Secret values through environment variables.
+    defaultState: Audit
+    kind: ValidatingPolicy
+    path: validating/secrets-not-from-env-vars.yaml
+    sourcePath: other-vpol/disallow-secrets-from-env-vars/disallow-secrets-from-env-vars.yaml
+  - name: require-ingress-https
+    title: Require HTTPS Ingress
+    description: Require Ingress resources to configure TLS.
+    defaultState: Audit
+    kind: ValidatingPolicy
+    path: validating/require-ingress-https.yaml
+    sourcePath: other-vpol/require-ingress-https/require-ingress-https.yaml
+  - name: restrict-binding-clusteradmin
+    title: Restrict cluster-admin bindings
+    description: Prevent new bindings to the built-in cluster-admin ClusterRole.
+    defaultState: Audit
+    kind: ValidatingPolicy
+    path: validating/restrict-binding-clusteradmin.yaml
+    sourcePath: other-vpol/restrict-binding-clusteradmin/restrict-binding-clusteradmin.yaml
+  - name: restrict-clusterrole-csr
+    title: Restrict CSR approval roles
+    description: Prevent ClusterRoles from granting certificate approval permissions.
+    defaultState: Audit
+    kind: ValidatingPolicy
+    path: validating/restrict-clusterrole-csr.yaml
+    sourcePath: other/restrict-clusterrole-csr/restrict-clusterrole-csr.yaml
+  - name: disallow-capabilities-strict
+    title: Require all capabilities to be dropped
+    description: Require containers to drop all Linux capabilities.
+    defaultState: Disabled
+    kind: ValidatingPolicy
+    path: validating/disallow-capabilities-strict.yaml
+    sourcePath: pod-security-vpol/restricted/disallow-capabilities-strict/disallow-capabilities-strict.yaml
+  - name: require-run-as-non-root-user
+    title: Require a non-root user ID
+    description: Require containers to set a non-zero runAsUser value.
+    defaultState: Disabled
+    kind: ValidatingPolicy
+    path: validating/require-run-as-non-root-user.yaml
+    sourcePath: pod-security-vpol/restricted/require-run-as-non-root-user/require-run-as-non-root-user.yaml
+  - name: restrict-seccomp-strict
+    title: Require seccomp profiles
+    description: Require Pods and containers to select an allowed seccomp profile.
+    defaultState: Disabled
+    kind: ValidatingPolicy
+    path: validating/restrict-seccomp-strict.yaml
+    sourcePath: pod-security-vpol/restricted/restrict-seccomp-strict/restrict-seccomp-strict.yaml
+  - name: restrict-volume-types
+    title: Restrict volume types
+    description: Allow only the volume types accepted by the restricted Pod Security Standard.
+    defaultState: Disabled
+    kind: ValidatingPolicy
+    path: validating/restrict-volume-types.yaml
+    sourcePath: pod-security-vpol/restricted/restrict-volume-types/restrict-volume-types.yaml
+  - name: disallow-selinux
+    title: Restrict SELinux options
+    description: Prevent Pods from setting prohibited SELinux options.
+    defaultState: Disabled
+    kind: ValidatingPolicy
+    path: validating/disallow-selinux.yaml
+    sourcePath: pod-security-vpol/baseline/disallow-selinux/disallow-selinux.yaml
+  - name: restrict-sa-automount-sa-token
+    title: Restrict ServiceAccount token automount
+    description: Require ServiceAccounts to disable automatic token mounts.
+    defaultState: Disabled
+    kind: ValidatingPolicy
+    path: validating/restrict-sa-automount-sa-token.yaml
+    sourcePath: other-vpol/restrict-sa-automount-sa-token/restrict-sa-automount-sa-token.yaml
+  - name: restrict-image-registries
+    requiresCustomization: true
+    title: Restrict image registries
+    description: Allow container images only from configured registries.
+    defaultState: Disabled
+    kind: ValidatingPolicy
+    path: validating/restrict-image-registries.yaml
+    sourcePath: best-practices-vpol/restrict-image-registries/restrict-image-registries.yaml
+  - name: require-labels
+    title: Require workload labels
+    description: Require workloads to contain a prescribed set of labels.
+    defaultState: Disabled
+    kind: ValidatingPolicy
+    path: validating/require-labels.yaml
+    sourcePath: best-practices-vpol/require-labels/require-labels.yaml
+  - name: require-image-checksum
+    title: Require image digests
+    description: Require container images to use immutable digest references.
+    defaultState: Disabled
+    kind: ValidatingPolicy
+    path: validating/require-image-checksum.yaml
+    sourcePath: other-vpol/require-image-checksum/require-image-checksum.yaml
+  - name: verify-image
+    requiresCustomization: true
+    title: Verify image signatures
+    description: Verify matching container image signatures against configured attestors.
+    defaultState: Disabled
+    kind: ImageValidatingPolicy
+    path: image-validating/verify-image.yaml
+    sourcePath: other/verify-image-ivpol/verify-image-ivpol.yaml
+  - name: require-network-policy
+    title: Require NetworkPolicy
+    description: Require each new Deployment to have a matching NetworkPolicy.
+    defaultState: Disabled
+    kind: ValidatingPolicy
+    path: validating/require-network-policy.yaml
+    sourcePath: other/require-netpol/require-netpol.yaml
+  - name: no-loadbalancer-service
+    title: Disallow LoadBalancer Services
+    description: Prevent Services from creating external load balancers.
+    defaultState: Disabled
+    kind: ValidatingPolicy
+    path: validating/no-loadbalancer-service.yaml
+    sourcePath: other-vpol/restrict-loadbalancer/restrict-loadbalancer.yaml
+  - name: restrict-wildcard-resources
+    title: Restrict wildcard resources
+    description: Prevent RBAC roles from granting access to all resource types.
+    defaultState: Disabled
+    kind: ValidatingPolicy
+    path: validating/restrict-wildcard-resources.yaml
+    sourcePath: other-vpol/restrict-wildcard-resources/restrict-wildcard-resources.yaml
+  - name: restrict-wildcard-verbs
+    title: Restrict wildcard verbs
+    description: Prevent RBAC roles from granting every action through a wildcard verb.
+    defaultState: Disabled
+    kind: ValidatingPolicy
+    path: validating/restrict-wildcard-verbs.yaml
+    sourcePath: other-vpol/restrict-wildcard-verbs/restrict-wildcard-verbs.yaml
+  - name: restrict-escalation-verbs-roles
+    title: Restrict RBAC escalation verbs
+    description: Prevent RBAC roles from granting bind, escalate, or impersonate permissions.
+    defaultState: Disabled
+    kind: ValidatingPolicy
+    path: validating/restrict-escalation-verbs-roles.yaml
+    sourcePath: other-vpol/restrict-escalation-verbs-roles/restrict-escalation-verbs-roles.yaml
+  - name: restrict-secret-role-verbs
+    title: Restrict Secret access verbs
+    description: Prevent RBAC roles from granting broad read access to Secrets.
+    defaultState: Disabled
+    kind: ValidatingPolicy
+    path: validating/restrict-secret-role-verbs.yaml
+    sourcePath: other-vpol/restrict-secret-role-verbs/restrict-secret-role-verbs.yaml

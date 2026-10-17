@@ -68,6 +68,10 @@ components:
   zot:
     version: latest
 
+  kyverno:
+    # Set enabled to false to skip Kyverno and policy reconciliation.
+    enabled: true
+
   # grafana:
   #   # Grafana alerting, passed through to Grafana's native file-based provisioning
   #   # verbatim (https://grafana.com/docs/grafana/latest/alerting/set-up/provision-alerting-resources/file-provisioning/).
@@ -119,6 +123,105 @@ components:
 #       worker-1:
 #         path: /data/persistent-storage
 #         storage_reserved: 107374182400  # Bytes (100 GiB)
+
+# Foundry installs these policies after it installs Kyverno.
+# Set state to Enforce, Audit, or Disabled.
+# Each policy can include an optional manifest: | YAML override.
+# Keep the catalog name and kind. Foundry sets the state and ownership label.
+# The registry and image verification examples require custom settings.
+policies:
+  - name: disallow-host-process
+    state: Enforce
+  - name: disallow-proc-mount
+    state: Enforce
+  - name: disallow-host-probe-hosts
+    state: Enforce
+  - name: restrict-apparmor-profiles
+    state: Enforce
+  - name: restrict-seccomp
+    state: Enforce
+  - name: restrict-sysctls
+    state: Enforce
+  - name: disallow-container-sock-mounts
+    state: Enforce
+  - name: disallow-helm-tiller
+    state: Enforce
+  - name: deny-secret-service-account-token-type
+    state: Enforce
+  - name: restrict-binding-system-groups
+    state: Enforce
+  - name: disallow-capabilities
+    state: Audit
+  - name: disallow-host-namespaces
+    state: Audit
+  - name: disallow-host-path
+    state: Audit
+  - name: disallow-host-ports
+    state: Audit
+  - name: disallow-privileged-containers
+    state: Audit
+  - name: disallow-privilege-escalation
+    state: Audit
+  - name: require-run-as-nonroot
+    state: Audit
+  - name: disallow-latest-tag
+    state: Audit
+  - name: disallow-default-namespace
+    state: Enforce
+  - name: drop-cap-net-raw
+    state: Audit
+  - name: require-requests-limits
+    state: Audit
+  - name: require-pod-probes
+    state: Audit
+  - name: require-ro-rootfs
+    state: Audit
+  - name: restrict-nodeport
+    state: Audit
+  - name: restrict-external-ips
+    state: Audit
+  - name: restrict-automount-sa-token
+    state: Audit
+  - name: secrets-not-from-env-vars
+    state: Audit
+  - name: require-ingress-https
+    state: Audit
+  - name: restrict-binding-clusteradmin
+    state: Audit
+  - name: restrict-clusterrole-csr
+    state: Audit
+  - name: disallow-capabilities-strict
+    state: Disabled
+  - name: require-run-as-non-root-user
+    state: Disabled
+  - name: restrict-seccomp-strict
+    state: Disabled
+  - name: restrict-volume-types
+    state: Disabled
+  - name: disallow-selinux
+    state: Disabled
+  - name: restrict-sa-automount-sa-token
+    state: Disabled
+  - name: restrict-image-registries
+    state: Disabled
+  - name: require-labels
+    state: Disabled
+  - name: require-image-checksum
+    state: Disabled
+  - name: verify-image
+    state: Disabled
+  - name: require-network-policy
+    state: Disabled
+  - name: no-loadbalancer-service
+    state: Disabled
+  - name: restrict-wildcard-resources
+    state: Disabled
+  - name: restrict-wildcard-verbs
+    state: Disabled
+  - name: restrict-escalation-verbs-roles
+    state: Disabled
+  - name: restrict-secret-role-verbs
+    state: Disabled
 
 setup_state:
   network_planned: false

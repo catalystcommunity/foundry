@@ -1,6 +1,7 @@
 const roles = ["management", "openbao", "dns", "zot", "cluster-control-plane", "cluster-worker"];
 let currentConfig = null;
 let reviewedConfig = null;
+let currentPolicyCatalog = null;
 
 const byId = (id) => document.getElementById(id);
 
@@ -35,7 +36,7 @@ async function start() {
   byId("login").hidden = true;
   byId("app").hidden = false;
   populateWizard(currentConfig);
-  await Promise.all([loadRuntime(), loadState(), loadOverview()]);
+  await Promise.all([loadRuntime(), loadState(), loadOverview(), loadPolicies()]);
 }
 
 function showLogin(message) {
@@ -56,6 +57,131 @@ document.querySelectorAll(".nav-button").forEach((button) => button.addEventList
   document.querySelectorAll(".nav-button").forEach((item) => item.classList.toggle("active", item === button));
   document.querySelectorAll(".view").forEach((view) => { view.hidden = view.id !== `${button.dataset.view}-view`; });
 }));
+
+async function loadPolicies() {
+  try {
+    currentPolicyCatalog = await request("/api/v1/policies");
+    renderPolicies(currentPolicyCatalog);
+    const source = byId("policy-source");
+    source.href = `${currentPolicyCatalog.source.repository}/tree/${currentPolicyCatalog.source.commit}`;
+    byId("policy-apply-message").textContent = "No policy changes.";
+    byId("apply-policies").disabled = true;
+  } catch (error) {
+    byId("policy-apply-message").textContent = error.message;
+  }
+}
+
+function renderPolicies(catalog) {
+  const list = byId("policy-list");
+  list.replaceChildren();
+  (catalog.policies || []).forEach((policy) => {
+    const card = document.createElement("article");
+    card.className = "policy-card";
+    card.dataset.name = policy.name;
+
+    const header = document.createElement("div");
+    header.className = "policy-card-header";
+    const copy = document.createElement("div");
+    const title = document.createElement("strong");
+    title.textContent = policy.name;
+    const description = document.createElement("p");
+    description.className = "muted";
+    description.textContent = policy.description;
+    copy.append(title, description);
+
+    const select = document.createElement("select");
+    select.setAttribute("aria-label", `State for ${policy.name}`);
+    ["Enforce", "Audit", "Disabled"].forEach((state) => select.add(new Option(state, state)));
+    select.value = policy.state;
+    select.addEventListener("change", () => {
+      byId("apply-policies").disabled = false;
+      byId("policy-apply-message").textContent = "Policy changes are ready to apply.";
+    });
+    header.append(copy, select);
+    card.append(header);
+
+    const details = document.createElement("details");
+    const summary = document.createElement("summary");
+    summary.textContent = "View bundled YAML and customize";
+    const manifest = document.createElement("pre");
+    manifest.className = "policy-yaml";
+    manifest.textContent = policy.yaml;
+    details.append(summary, manifest);
+    const help = document.createElement("p");
+    help.className = "muted";
+    help.textContent = "Optional YAML override. Keep the policy name and kind. Foundry sets the selected state and ownership label. Leave this field empty to use the bundled policy.";
+    if (policy.requires_customization) help.textContent += " This example requires custom settings before you can enable it.";
+    const editor = document.createElement("textarea");
+    editor.className = "policy-manifest";
+    editor.rows = 12;
+    editor.spellcheck = false;
+    editor.setAttribute("aria-label", `YAML override for ${policy.name}`);
+    editor.value = policy.manifest || "";
+    const changed = () => {
+      byId("apply-policies").disabled = false;
+      byId("policy-apply-message").textContent = "Policy changes are ready to apply.";
+    };
+    editor.addEventListener("input", changed);
+    const copyButton = document.createElement("button");
+    copyButton.type = "button";
+    copyButton.className = "secondary";
+    copyButton.textContent = "Copy bundled YAML to editor";
+    copyButton.addEventListener("click", () => { editor.value = policy.yaml; changed(); });
+    details.append(help, copyButton, editor);
+    if (policy.source_url) {
+      const link = document.createElement("a");
+      link.className = "source-link";
+      link.href = policy.source_url;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.textContent = "View upstream source";
+      details.append(link);
+    }
+    card.append(details);
+    list.append(card);
+  });
+}
+
+function readPolicies() {
+  return [...document.querySelectorAll(".policy-card")].map((card) => ({
+    name: card.dataset.name,
+    state: card.querySelector("select").value,
+    manifest: card.querySelector("textarea").value || undefined,
+  }));
+}
+
+byId("refresh-policies").addEventListener("click", loadPolicies);
+byId("apply-policies").addEventListener("click", async () => {
+  byId("apply-policies").disabled = true;
+  try {
+    const job = await request("/api/v1/policies", {
+      method: "PUT",
+      body: JSON.stringify({ policies: readPolicies(), confirm: true }),
+    });
+    byId("policy-job-console").hidden = false;
+    byId("policy-job-log").textContent = "";
+    byId("policy-apply-message").textContent = job.message;
+    pollPolicyJob(job.id);
+  } catch (error) {
+    byId("policy-apply-message").textContent = error.message;
+    byId("apply-policies").disabled = false;
+  }
+});
+
+async function pollPolicyJob(id) {
+  try {
+    const job = await request(`/api/v1/jobs/${encodeURIComponent(id)}`);
+    byId("policy-apply-message").textContent = job.message;
+    byId("policy-job-log").textContent = (job.log || []).join("\n");
+    renderPrompt(job.prompt ? { ...job.prompt, jobId: id } : null, "policy-job");
+    if (["queued", "running"].includes(job.state)) return setTimeout(() => pollPolicyJob(id), 1000);
+    if (job.state === "complete") await loadPolicies();
+    else byId("apply-policies").disabled = false;
+  } catch (error) {
+    byId("policy-apply-message").textContent = error.message;
+    byId("apply-policies").disabled = false;
+  }
+}
 
 async function loadState() {
   try {
@@ -252,9 +378,9 @@ function renderJobLog(lines) {
   if (atBottom) pane.scrollTop = pane.scrollHeight;
 }
 
-function renderPrompt(prompt) {
-  const box = byId("job-prompt");
-  const field = byId("job-prompt-value");
+function renderPrompt(prompt, prefix = "job") {
+  const box = byId(`${prefix}-prompt`);
+  const field = byId(`${prefix}-prompt-value`);
   if (!prompt) {
     activePrompt = null;
     box.hidden = true;
@@ -262,8 +388,8 @@ function renderPrompt(prompt) {
     return;
   }
   if (activePrompt && activePrompt.id === prompt.id) return;
-  activePrompt = prompt;
-  byId("job-prompt-message").textContent = prompt.message;
+  activePrompt = { ...prompt, prefix };
+  byId(`${prefix}-prompt-message`).textContent = prompt.message;
   field.type = prompt.secret ? "password" : "text";
   field.value = "";
   box.hidden = false;
@@ -272,11 +398,11 @@ function renderPrompt(prompt) {
 
 async function sendPromptAnswer() {
   if (!activePrompt) return;
-  const field = byId("job-prompt-value");
+  const field = byId(`${activePrompt.prefix}-prompt-value`);
   const value = field.value;
   const prompt = activePrompt;
   activePrompt = null;
-  byId("job-prompt").hidden = true;
+  byId(`${prompt.prefix}-prompt`).hidden = true;
   field.value = "";
   try {
     await request(`/api/v1/jobs/${encodeURIComponent(prompt.jobId)}/prompt`, {
@@ -284,11 +410,15 @@ async function sendPromptAnswer() {
       body: JSON.stringify({ prompt_id: prompt.id, value }),
     });
   } catch (error) {
-    byId("apply-message").textContent = error.message;
+    byId(prompt.prefix === "policy-job" ? "policy-apply-message" : "apply-message").textContent = error.message;
   }
 }
 
 byId("job-prompt-send").addEventListener("click", sendPromptAnswer);
+byId("policy-job-prompt-send").addEventListener("click", sendPromptAnswer);
+byId("policy-job-prompt-value").addEventListener("keydown", (event) => {
+  if (event.key === "Enter") { event.preventDefault(); sendPromptAnswer(); }
+});
 byId("job-prompt-value").addEventListener("keydown", (event) => {
   if (event.key === "Enter") { event.preventDefault(); sendPromptAnswer(); }
 });
