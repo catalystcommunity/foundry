@@ -117,15 +117,8 @@ func reconcileControlPlane(ctx context.Context, executor SSHExecutor, cfg *Confi
 			}
 			for step, upgradeCommand := range upgradeCommands {
 				fmt.Printf("   Applying K3s server upgrade step %d/%d...\n", step+1, len(upgradeCommands))
-				result, err := executor.Exec(upgradeCommand)
-				if err != nil {
-					return fmt.Errorf("failed to execute K3s upgrade step %d: %w", step+1, err)
-				}
-				if result.ExitCode != 0 {
-					return fmt.Errorf("K3s upgrade failed at step %d with exit code %d: %s", step+1, result.ExitCode, result.Stderr)
-				}
-				if err := waitForK3sReady(executor, DefaultRetryConfig()); err != nil {
-					return fmt.Errorf("k3s failed to become ready after upgrade step %d: %w", step+1, err)
+				if err := withVIPSafeRestart(ctx, executor, cfg, upgradeCommand); err != nil {
+					return fmt.Errorf("K3s upgrade failed at step %d: %w", step+1, err)
 				}
 			}
 		}
@@ -170,12 +163,8 @@ func reconcileControlPlane(ctx context.Context, executor SSHExecutor, cfg *Confi
 		// Restart K3s if any config changed
 		if needsRestart {
 			fmt.Println("   Restarting k3s to apply config changes...")
-			if _, err := executor.Exec("sudo systemctl restart k3s"); err != nil {
+			if err := withVIPSafeRestart(ctx, executor, cfg, "sudo systemctl restart k3s"); err != nil {
 				return fmt.Errorf("failed to restart k3s: %w", err)
-			}
-			// Wait for k3s to be ready after restart
-			if err := waitForK3sReady(executor, DefaultRetryConfig()); err != nil {
-				return fmt.Errorf("k3s failed to become ready after restart: %w", err)
 			}
 		} else {
 			fmt.Println("   ✓ No config changes, skipping restart")

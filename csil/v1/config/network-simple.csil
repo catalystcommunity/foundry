@@ -111,6 +111,13 @@ TrueNASConfig = {
     api_key: text @go_name("APIKey")
 }
 
+; State selection for one Foundry-provided Kyverno policy
+PolicyConfig = {
+    name: text,
+    state: text,
+    ? manifest: text
+}
+
 ; Main stack configuration loaded from YAML
 ; Note: External types use @go_type to reference their package types
 Config = {
@@ -121,6 +128,7 @@ Config = {
     ? observability: ObsConfig,
     ? storage: StorageConfig,
     ? management: ManagementConfig,
+    ? policies: [* PolicyConfig],
     hosts: [* any] .size(1..) @go_type("[]*host.Host") @go_name("Hosts"),
     setup_state: any @go_type("*setup.SetupState") @go_name("SetupState")
 }
