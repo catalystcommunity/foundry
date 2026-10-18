@@ -9,6 +9,7 @@ import (
 	"github.com/catalystcommunity/foundry/v1/internal/console"
 	"github.com/catalystcommunity/foundry/v1/internal/container"
 	"github.com/catalystcommunity/foundry/v1/internal/host"
+	"github.com/catalystcommunity/foundry/v1/internal/nodeconfig"
 	"github.com/catalystcommunity/foundry/v1/internal/ssh"
 	"github.com/catalystcommunity/foundry/v1/internal/sudo"
 	"github.com/urfave/cli/v3"
@@ -166,6 +167,11 @@ func runConfigure(ctx context.Context, cmd *cli.Command) error {
 		fmt.Println("  ✓ sudo package installed")
 		fmt.Println("  ✓ User '" + h.User + "' added to sudoers")
 		fmt.Println("  ✓ Passwordless sudo configured")
+	}
+
+	fmt.Println("Configuring inotify instance limit...")
+	if err := nodeconfig.EnsureInotifyInstances(conn); err != nil {
+		return err
 	}
 
 	// Build list of configuration commands

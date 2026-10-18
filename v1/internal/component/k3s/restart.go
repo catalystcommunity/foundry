@@ -18,6 +18,7 @@ const restartStateAnnotation = "foundry.catalystcommunity.org/k3s-restart-state"
 const (
 	k3sInvocationCommand = "sudo systemctl show k3s --property=InvocationID --value"
 	flannelStampCommand  = "sudo stat -c '%y' /run/flannel/subnet.env"
+	localRestartKubectl  = "sudo k3s kubectl --request-timeout=15s"
 )
 
 // Keep the recovery data on the DaemonSet, not only in the CLI process. If the
@@ -62,6 +63,39 @@ func restartExec(executor SSHExecutor, command string) (string, error) {
 // Workers do not run kube-vip and do not use this guard.
 func withVIPSafeRestart(ctx context.Context, executor SSHExecutor, cfg *Config, command string) (err error) {
 	return runVIPSafeRestart(ctx, executor, cfg, command, DefaultRetryConfig())
+}
+
+// reconcileVIPNetwork also checks servers when their version and config match.
+// A restart outside Foundry can leave a Ready node with the VIP as its tunnel IP.
+func reconcileVIPNetwork(ctx context.Context, executor SSHExecutor, cfg *Config, retry RetryConfig) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	data, err := restartExec(executor, localRestartKubectl+" -n kube-system get daemonset kube-vip --ignore-not-found -o json")
+	if err != nil || data == "" {
+		return err
+	}
+	var ds appsv1.DaemonSet
+	if err := json.Unmarshal([]byte(data), &ds); err != nil {
+		return err
+	}
+	if ds.Annotations[restartStateAnnotation] != "" {
+		return fmt.Errorf("kube-vip has an unfinished restart guard; inspect annotation %s before retrying", restartStateAnnotation)
+	}
+	node, _, err := localRestartNode(executor)
+	if err != nil {
+		return err
+	}
+	data, err = restartExec(executor, "ip -j -d link show type vxlan")
+	if err != nil {
+		return err
+	}
+	if err := validateFlannelNetwork(data, *node, cfg.VIP); err == nil {
+		return nil
+	} else {
+		fmt.Printf("   Repairing Flannel on %s: %v\n", node.Name, err)
+	}
+	return runVIPSafeRestart(ctx, executor, cfg, "sudo systemctl restart k3s", retry)
 }
 
 func runVIPSafeRestart(ctx context.Context, executor SSHExecutor, cfg *Config, command string, retry RetryConfig) (err error) {
@@ -143,7 +177,7 @@ func retryRestartCheck(ctx context.Context, retry RetryConfig, check func() erro
 }
 
 func prepareVIPRestart(executor SSHExecutor, vip string) (*vipRestartGuard, error) {
-	local := "sudo k3s kubectl --request-timeout=15s"
+	local := localRestartKubectl
 	data, err := restartExec(executor, local+" -n kube-system get daemonset kube-vip --ignore-not-found -o json")
 	if err != nil {
 		return nil, err
@@ -161,29 +195,9 @@ func prepareVIPRestart(executor SSHExecutor, vip string) (*vipRestartGuard, erro
 	if net.ParseIP(vip) == nil {
 		return nil, fmt.Errorf("invalid cluster VIP %q", vip)
 	}
-	machineID, err := restartExec(executor, "cat /etc/machine-id")
-	if err != nil || machineID == "" {
-		return nil, fmt.Errorf("cannot identify the local node machine ID: %v", err)
-	}
-	data, err = restartExec(executor, local+" get nodes -o json")
+	node, nodes, err := localRestartNode(executor)
 	if err != nil {
 		return nil, err
-	}
-	var nodes corev1.NodeList
-	if err := json.Unmarshal([]byte(data), &nodes); err != nil {
-		return nil, err
-	}
-	var node *corev1.Node
-	for i := range nodes.Items {
-		if nodes.Items[i].Status.NodeInfo.MachineID == machineID {
-			if node != nil {
-				return nil, fmt.Errorf("multiple nodes have local machine ID")
-			}
-			node = &nodes.Items[i]
-		}
-	}
-	if node == nil {
-		return nil, fmt.Errorf("local machine ID does not match a Kubernetes node")
 	}
 	guard := &vipRestartGuard{executor: executor, kubectl: local, node: *node, vip: vip, before: ds}
 	pods, err := guard.pods()
@@ -221,6 +235,34 @@ func prepareVIPRestart(executor SSHExecutor, vip string) (*vipRestartGuard, erro
 		}
 	}
 	return nil, fmt.Errorf("no other Ready kube-vip node with a reachable API; refusing automatic restart")
+}
+
+func localRestartNode(executor SSHExecutor) (*corev1.Node, *corev1.NodeList, error) {
+	machineID, err := restartExec(executor, "cat /etc/machine-id")
+	if err != nil || machineID == "" {
+		return nil, nil, fmt.Errorf("cannot identify the local node machine ID: %v", err)
+	}
+	data, err := restartExec(executor, localRestartKubectl+" get nodes -o json")
+	if err != nil {
+		return nil, nil, err
+	}
+	var nodes corev1.NodeList
+	if err := json.Unmarshal([]byte(data), &nodes); err != nil {
+		return nil, nil, err
+	}
+	var node *corev1.Node
+	for i := range nodes.Items {
+		if nodes.Items[i].Status.NodeInfo.MachineID == machineID {
+			if node != nil {
+				return nil, nil, fmt.Errorf("multiple nodes have local machine ID")
+			}
+			node = &nodes.Items[i]
+		}
+	}
+	if node == nil {
+		return nil, nil, fmt.Errorf("local machine ID does not match a Kubernetes node")
+	}
+	return node, &nodes, nil
 }
 
 func nodeReady(node corev1.Node) bool {
@@ -409,6 +451,18 @@ func (g *vipRestartGuard) networkReady() error {
 	if err != nil {
 		return err
 	}
+	nodeData, err := restartExec(g.executor, g.kubectl+" get node "+shellQuote(g.node.Name)+" -o json")
+	if err != nil {
+		return err
+	}
+	var node corev1.Node
+	if err := json.Unmarshal([]byte(nodeData), &node); err != nil {
+		return err
+	}
+	return validateFlannelNetwork(data, node, g.vip)
+}
+
+func validateFlannelNetwork(data string, node corev1.Node, vip string) error {
 	var links []struct {
 		Name string `json:"ifname"`
 		Info struct {
@@ -425,10 +479,14 @@ func (g *vipRestartGuard) networkReady() error {
 			continue
 		}
 		ip := net.ParseIP(link.Info.Data.Local)
-		if ip == nil || ip.Equal(net.ParseIP(g.vip)) {
+		if ip == nil || ip.Equal(net.ParseIP(vip)) {
 			return fmt.Errorf("Flannel has invalid tunnel address %q", link.Info.Data.Local)
 		}
-		for _, address := range g.node.Status.Addresses {
+		advertised := node.Annotations["flannel.alpha.coreos.com/public-ip"]
+		if !ip.Equal(net.ParseIP(advertised)) {
+			return fmt.Errorf("Flannel advertises %q but its tunnel uses %s", advertised, ip)
+		}
+		for _, address := range node.Status.Addresses {
 			if address.Type == corev1.NodeInternalIP && ip.Equal(net.ParseIP(address.Address)) {
 				return nil
 			}

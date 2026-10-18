@@ -36,6 +36,8 @@ type restartSSH struct {
 	staleFlannel   bool
 	installerNoop  bool
 	missingStamp   bool
+	brokenBefore   bool
+	staleAddress   bool
 }
 
 func newRestartSSH(t *testing.T) *restartSSH {
@@ -47,6 +49,7 @@ func newRestartSSH(t *testing.T) *restartSSH {
 			ip = "192.0.2.11"
 		}
 		f.nodes.Items = append(f.nodes.Items, corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: name}, Status: corev1.NodeStatus{NodeInfo: corev1.NodeSystemInfo{MachineID: name}, Addresses: []corev1.NodeAddress{{Type: corev1.NodeInternalIP, Address: ip}}, Conditions: []corev1.NodeCondition{{Type: corev1.NodeReady, Status: corev1.ConditionTrue}}}})
+		f.nodes.Items[len(f.nodes.Items)-1].Annotations = map[string]string{"flannel.alpha.coreos.com/public-ip": ip}
 	}
 	return f
 }
@@ -82,6 +85,12 @@ func (f *restartSSH) Exec(command string) (*ssh.ExecResult, error) {
 		return ok(f.ds)
 	case strings.HasSuffix(command, "get nodes -o json"):
 		return ok(f.nodes)
+	case strings.HasSuffix(command, "get node 'local' -o json"):
+		node := f.nodes.Items[0].DeepCopy()
+		if f.staleAddress {
+			node.Annotations["flannel.alpha.coreos.com/public-ip"] = "192.0.2.100"
+		}
+		return ok(node)
 	case strings.Contains(command, "get pods -l"):
 		list := corev1.PodList{}
 		for _, node := range f.nodes.Items {
@@ -128,7 +137,7 @@ func (f *restartSSH) Exec(command string) (*ssh.ExecResult, error) {
 			return &ssh.ExecResult{Stdout: "[]"}, nil
 		}
 		ip := "192.0.2.10"
-		if f.badTunnel {
+		if f.badTunnel || (f.brokenBefore && !f.restarted) {
 			ip = "192.0.2.100"
 		}
 		return &ssh.ExecResult{Stdout: `[{"ifname":"flannel.1","linkinfo":{"info_data":{"local":"` + ip + `"}}}]`}, nil
@@ -137,7 +146,7 @@ func (f *restartSSH) Exec(command string) (*ssh.ExecResult, error) {
 			return fail()
 		}
 		return &ssh.ExecResult{Stdout: "ok"}, nil
-	case command == "test-restart":
+	case command == "test-restart", command == "sudo systemctl restart k3s":
 		f.restarted = true
 		if !f.noDeployment {
 			require.NotEmpty(f.t, f.ds.Annotations[restartStateAnnotation])
@@ -174,6 +183,7 @@ func TestVIPSafeRestart(t *testing.T) {
 		{"wrong tunnel", func(f *restartSSH) { f.badTunnel = true }, "post-restart Flannel", true, true},
 		{"missing tunnel", func(f *restartSSH) { f.missingTunnel = true }, "post-restart Flannel", true, true},
 		{"stale Flannel state", func(f *restartSSH) { f.staleFlannel = true }, "fresh startup state", true, true},
+		{"stale advertised address", func(f *restartSSH) { f.staleAddress = true }, "Flannel advertises", true, true},
 		{"installer skipped restart", func(f *restartSSH) { f.installerNoop = true }, "", true, false},
 		{"missing Flannel state", func(f *restartSSH) { f.missingStamp = true }, "before restart", false, false},
 		{"lost patch reply", func(f *restartSSH) { f.patchLostReply = true }, "connection lost", false, false},
@@ -231,6 +241,8 @@ func TestControlPlaneRestartEntryPoints(t *testing.T) {
 					original := f.ds.DeepCopy()
 					executor := &mockInstallSSHExecutor{execFunc: func(command string) (*ssh.ExecResult, error) {
 						switch {
+						case strings.Contains(command, "fs.inotify.max_user_instances"):
+							return &ssh.ExecResult{}, nil
 						case strings.Contains(command, "systemctl is-active k3s"):
 							return &ssh.ExecResult{Stdout: "active"}, nil
 						case command == "k3s --version":
@@ -308,4 +320,90 @@ func TestExcludeVIPNodePreservesAffinity(t *testing.T) {
 		assert.Equal(t, []string{"local"}, term.MatchFields[0].Values)
 	}
 	assert.Empty(t, terms[2].MatchFields, "an empty original term must remain unsatisfiable")
+}
+
+func TestReconcileVIPNetwork(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		setup     func(*restartSSH)
+		wantErr   string
+		restarted bool
+	}{
+		{"healthy", func(*restartSSH) {}, "", false},
+		{"healthy single server", func(f *restartSSH) { f.nodes.Items = f.nodes.Items[:1] }, "", false},
+		{"no kube-vip", func(f *restartSSH) { f.noDeployment = true }, "", false},
+		{"repair VIP tunnel", func(f *restartSSH) { f.brokenBefore = true }, "", true},
+		{"repair without peer", func(f *restartSSH) { f.brokenBefore = true; f.nodes.Items = f.nodes.Items[:1] }, "no other Ready", false},
+		{"restart failure", func(f *restartSSH) { f.brokenBefore = true; f.restartFailure = true }, "remains excluded", true},
+		{"repair failure", func(f *restartSSH) { f.badTunnel = true }, "post-restart Flannel", true},
+		{"unfinished guard", func(f *restartSSH) { f.ds.Annotations[restartStateAnnotation] = "unfinished" }, "unfinished restart guard", false},
+		{"unknown machine", func(f *restartSSH) { f.nodes.Items[0].Status.NodeInfo.MachineID = "unknown" }, "does not match", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newRestartSSH(t)
+			tc.setup(f)
+			err := reconcileVIPNetwork(context.Background(), f, &Config{VIP: "192.0.2.100"}, RetryConfig{MaxRetries: 1})
+			if tc.wantErr == "" {
+				require.NoError(t, err)
+				assert.Empty(t, f.ds.Annotations[restartStateAnnotation])
+			} else {
+				require.ErrorContains(t, err, tc.wantErr)
+			}
+			assert.Equal(t, tc.restarted, f.restarted)
+		})
+	}
+}
+
+func TestValidateFlannelNetwork(t *testing.T) {
+	for _, tc := range []struct{ name, tunnel, advertised, wantErr string }{
+		{"node IP", "192.0.2.10", "192.0.2.10", ""},
+		{"VIP", "192.0.2.100", "192.0.2.100", "invalid tunnel address"},
+		{"invalid IP", "invalid", "192.0.2.10", "invalid tunnel address"},
+		{"stale advertisement", "192.0.2.10", "192.0.2.100", "Flannel advertises"},
+		{"missing advertisement", "192.0.2.10", "", "Flannel advertises"},
+		{"other address", "192.0.2.11", "192.0.2.11", "not a node InternalIP"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			node := newRestartSSH(t).nodes.Items[0]
+			node.Annotations["flannel.alpha.coreos.com/public-ip"] = tc.advertised
+			data := `[{"ifname":"flannel.1","linkinfo":{"info_data":{"local":"` + tc.tunnel + `"}}}]`
+			err := validateFlannelNetwork(data, node, "192.0.2.100")
+			if tc.wantErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestControlPlaneRepairsNetworkWithoutConfigChanges(t *testing.T) {
+	for _, joined := range []bool{false, true} {
+		t.Run(map[bool]string{false: "first", true: "joined"}[joined], func(t *testing.T) {
+			f := newRestartSSH(t)
+			f.brokenBefore = true
+			executor := &mockInstallSSHExecutor{execFunc: func(command string) (*ssh.ExecResult, error) {
+				switch {
+				case strings.Contains(command, "fs.inotify.max_user_instances"):
+					return &ssh.ExecResult{}, nil
+				case strings.Contains(command, "systemctl is-active k3s"):
+					return &ssh.ExecResult{Stdout: "active"}, nil
+				case strings.Contains(command, "kubectl apply"):
+					return &ssh.ExecResult{}, nil
+				default:
+					return f.Exec(command)
+				}
+			}}
+			cfg := &Config{VIP: "192.168.1.100", Interface: "eth0", ClusterInit: true}
+			var err error
+			if joined {
+				err = JoinControlPlane(context.Background(), executor, "https://192.168.1.100:6443", &Tokens{ClusterToken: "test-token"}, cfg)
+			} else {
+				err = InstallControlPlane(context.Background(), executor, cfg)
+			}
+			require.NoError(t, err)
+			assert.True(t, f.restarted)
+			assert.Empty(t, f.ds.Annotations[restartStateAnnotation])
+		})
+	}
 }

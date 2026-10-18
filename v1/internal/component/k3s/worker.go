@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+
+	"github.com/catalystcommunity/foundry/v1/internal/nodeconfig"
 )
 
 // JoinWorker joins a worker node to an existing K3s cluster
@@ -40,6 +42,9 @@ func reconcileWorker(ctx context.Context, executor SSHExecutor, serverURL string
 	// Fail fast if the memory cgroup is unavailable (common on Raspberry Pi OS):
 	// without it the k3s-agent service crash-loops and never becomes ready
 	if err := EnsureMemoryCgroup(executor); err != nil {
+		return err
+	}
+	if err := nodeconfig.EnsureInotifyInstances(executor); err != nil {
 		return err
 	}
 
