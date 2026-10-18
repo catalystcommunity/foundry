@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/catalystcommunity/foundry/v1/internal/nodeconfig"
 )
 
 // JoinControlPlane joins an additional control plane node to an existing K3s cluster
@@ -44,6 +46,9 @@ func reconcileJoinedControlPlane(ctx context.Context, executor SSHExecutor, exis
 	if err := EnsureMemoryCgroup(executor); err != nil {
 		return err
 	}
+	if err := nodeconfig.EnsureInotifyInstances(executor); err != nil {
+		return err
+	}
 
 	// Check if K3s is already installed (idempotency)
 	isInstalled, err := IsK3sInstalled(executor)
@@ -52,6 +57,9 @@ func reconcileJoinedControlPlane(ctx context.Context, executor SSHExecutor, exis
 	}
 
 	if isInstalled {
+		if err := reconcileVIPNetwork(ctx, executor, cfg, DefaultRetryConfig()); err != nil {
+			return fmt.Errorf("reconcile control-plane network: %w", err)
+		}
 		// K3s is already installed - apply updates idempotently
 		fmt.Println("   K3s already installed, applying updates...")
 		if upgrade {
