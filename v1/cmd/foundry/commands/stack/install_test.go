@@ -707,3 +707,15 @@ func TestBuildGatewayControllerConfig_FlowsStackKeys(t *testing.T) {
 	interval, _ := cc.GetString("interval")
 	assert.Equal(t, "30s", interval)
 }
+
+func TestBuildContourConfigRetainsResourceSettings(t *testing.T) {
+	cfg := createTestConfig(t)
+	values := map[string]interface{}{"contour": map[string]interface{}{"resources": map[string]interface{}{"limits": map[string]interface{}{"memory": "1Gi"}}}}
+	cfg.Components["contour"] = config.ComponentConfig{Config: map[string]interface{}{"values": values, "replica_count": 3, "cluster_vip": "wrong", "gateway_domain": "wrong"}}
+	result := buildContourConfig(cfg)
+	assert.Equal(t, values, result["values"])
+	assert.Equal(t, 3, result["replica_count"])
+	assert.Equal(t, cfg.Cluster.VIP, result["cluster_vip"])
+	assert.Equal(t, cfg.Cluster.PrimaryDomain, result["gateway_domain"])
+	assert.Equal(t, "wrong", cfg.Components["contour"].Config["cluster_vip"])
+}

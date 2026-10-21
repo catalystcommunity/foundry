@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/catalystcommunity/foundry/v1/internal/component"
 	"github.com/catalystcommunity/foundry/v1/internal/component/certmanager"
@@ -1186,9 +1187,30 @@ func isDependencyInstalled(dep string, cfg *config.Config) bool {
 		return cfg.SetupState.ZotInstalled
 	case "k3s", "kubernetes":
 		return cfg.SetupState.K8sInstalled
+	case "gateway-api":
+		// Gateway API installs CRDs directly; it has no Helm release.
+		if !cfg.SetupState.K8sInstalled {
+			return false
+		}
+		dir, err := config.GetConfigDir()
+		if err != nil {
+			return false
+		}
+		data, err := os.ReadFile(filepath.Join(dir, "kubeconfig"))
+		if err != nil {
+			return false
+		}
+		client, err := k8s.NewClientFromKubeconfig(data)
+		if err != nil {
+			return false
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		installed, _, err := gatewayapi.CheckCRDsInstalled(ctx, client)
+		return err == nil && installed
 	// K8s-based components - check via Helm release status
 	case "storage", "seaweedfs", "prometheus", "loki", "grafana", "external-dns", "velero",
-		"gateway-api", "contour", "cert-manager":
+		"contour", "cert-manager":
 		// First check if K3s is installed
 		if !cfg.SetupState.K8sInstalled {
 			return false
@@ -1232,7 +1254,6 @@ func isHelmReleaseInstalled(componentName string, cfg *config.Config) bool {
 		"grafana":      {"grafana", "grafana"},
 		"external-dns": {"external-dns", "external-dns"},
 		"velero":       {"velero", "velero"},
-		"gateway-api":  {"gateway-api", "gateway-system"},
 		"contour":      {"contour", "projectcontour"},
 		"cert-manager": {"cert-manager", "cert-manager"},
 	}

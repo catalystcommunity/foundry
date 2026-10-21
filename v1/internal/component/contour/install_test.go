@@ -2,6 +2,7 @@ package contour
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -19,6 +20,9 @@ type mockHelmClient struct {
 	listErr         error
 	reposAdded      []helm.RepoAddOptions
 	chartsInstalled []helm.InstallOptions
+	chartsUpgraded  []helm.UpgradeOptions
+	upgradeErr      error
+	uninstalls      int
 }
 
 func (m *mockHelmClient) AddRepo(ctx context.Context, opts helm.RepoAddOptions) error {
@@ -32,7 +36,8 @@ func (m *mockHelmClient) Install(ctx context.Context, opts helm.InstallOptions) 
 }
 
 func (m *mockHelmClient) Upgrade(ctx context.Context, opts helm.UpgradeOptions) error {
-	return nil
+	m.chartsUpgraded = append(m.chartsUpgraded, opts)
+	return m.upgradeErr
 }
 
 func (m *mockHelmClient) List(ctx context.Context, namespace string) ([]helm.Release, error) {
@@ -40,6 +45,7 @@ func (m *mockHelmClient) List(ctx context.Context, namespace string) ([]helm.Rel
 }
 
 func (m *mockHelmClient) Uninstall(ctx context.Context, opts helm.UninstallOptions) error {
+	m.uninstalls++
 	return nil
 }
 
@@ -93,15 +99,15 @@ func TestBuildHelmValues_Defaults(t *testing.T) {
 	cfg := DefaultConfig()
 	values := buildHelmValues(cfg)
 
-	// Check Contour replicas (official chart uses "replicas" not "replicaCount")
+	// Check the replicaCount key used by the pinned chart.
 	contour, ok := values["contour"].(map[string]interface{})
 	require.True(t, ok)
-	assert.Equal(t, uint64(2), contour["replicas"])
+	assert.Equal(t, uint64(2), contour["replicaCount"])
 
 	// Check Envoy replicas
 	envoy, ok := values["envoy"].(map[string]interface{})
 	require.True(t, ok)
-	assert.Equal(t, uint64(2), envoy["replicas"])
+	assert.Equal(t, uint64(2), envoy["replicaCount"])
 
 	// Check service type
 	service, ok := envoy["service"].(map[string]interface{})
@@ -132,11 +138,11 @@ func TestBuildHelmValues_CustomReplicas(t *testing.T) {
 
 	contour, ok := values["contour"].(map[string]interface{})
 	require.True(t, ok)
-	assert.Equal(t, uint64(5), contour["replicas"])
+	assert.Equal(t, uint64(5), contour["replicaCount"])
 
 	envoy, ok := values["envoy"].(map[string]interface{})
 	require.True(t, ok)
-	assert.Equal(t, uint64(3), envoy["replicas"])
+	assert.Equal(t, uint64(3), envoy["replicaCount"])
 }
 
 func TestBuildHelmValues_NoKubeVIP(t *testing.T) {
@@ -279,12 +285,13 @@ func TestInstall_AlreadyDeployed_CreatesGatewayResources(t *testing.T) {
 	// Verify Helm install was NOT called (already deployed)
 	assert.Empty(t, helmClient.chartsInstalled, "should not reinstall already deployed release")
 
-	// Verify Gateway resources WERE created (backwards compatibility)
-	assert.Len(t, k8sClient.appliedManifests, 4, "should create GatewayClass, ContourConfiguration, Certificate, and Gateway")
-	assert.Contains(t, k8sClient.appliedManifests[0], "kind: GatewayClass")
-	assert.Contains(t, k8sClient.appliedManifests[1], "kind: ContourConfiguration")
-	assert.Contains(t, k8sClient.appliedManifests[2], "kind: Certificate")
-	assert.Contains(t, k8sClient.appliedManifests[3], "kind: Gateway")
+	// Prepare Gateway mode before the upgrade, then reconcile all resources.
+	require.Len(t, k8sClient.appliedManifests, 5)
+	assert.Contains(t, k8sClient.appliedManifests[0], "kind: ContourConfiguration")
+	assert.Contains(t, k8sClient.appliedManifests[1], "kind: GatewayClass")
+	assert.Contains(t, k8sClient.appliedManifests[2], "kind: ContourConfiguration")
+	assert.Contains(t, k8sClient.appliedManifests[3], "kind: Certificate")
+	assert.Contains(t, k8sClient.appliedManifests[4], "kind: Gateway")
 }
 
 func TestInstall_AlreadyDeployed_NoCertManager(t *testing.T) {
@@ -309,12 +316,12 @@ func TestInstall_AlreadyDeployed_NoCertManager(t *testing.T) {
 	err := Install(context.Background(), helmClient, k8sClient, cfg)
 	require.NoError(t, err)
 
-	// Should have 3 manifests: GatewayClass, ContourConfiguration, and Gateway (no Certificate)
-	assert.Len(t, k8sClient.appliedManifests, 3, "should create GatewayClass, ContourConfiguration, and Gateway only")
-	assert.Contains(t, k8sClient.appliedManifests[0], "kind: GatewayClass")
-	assert.Contains(t, k8sClient.appliedManifests[1], "kind: ContourConfiguration")
-	assert.Contains(t, k8sClient.appliedManifests[2], "kind: Gateway")
-	assert.NotContains(t, k8sClient.appliedManifests[2], "protocol: HTTPS", "should not have HTTPS without cert-manager")
+	require.Len(t, k8sClient.appliedManifests, 4)
+	assert.Contains(t, k8sClient.appliedManifests[0], "kind: ContourConfiguration")
+	assert.Contains(t, k8sClient.appliedManifests[1], "kind: GatewayClass")
+	assert.Contains(t, k8sClient.appliedManifests[2], "kind: ContourConfiguration")
+	assert.Contains(t, k8sClient.appliedManifests[3], "kind: Gateway")
+	assert.NotContains(t, k8sClient.appliedManifests[3], "protocol: HTTPS", "should not have HTTPS without cert-manager")
 }
 
 func TestInstall_NilHelmClient(t *testing.T) {
@@ -682,4 +689,41 @@ func TestEnvoyContainerPort_Remap(t *testing.T) {
 	assert.Equal(t, uint64(8080), ContourListener{Port: 80}.EnvoyContainerPort())
 	assert.Equal(t, uint64(8443), ContourListener{Port: 443}.EnvoyContainerPort())
 	assert.Equal(t, uint64(12987), ContourListener{Port: 4987}.EnvoyContainerPort())
+}
+
+func TestUpgradePreservesGatewayModeAndExistingRelease(t *testing.T) {
+	for _, status := range []string{"deployed", "failed"} {
+		t.Run(status, func(t *testing.T) {
+			sentinel := fmt.Errorf("stop after checking upgrade values")
+			hc := &mockHelmClient{listReleases: []helm.Release{{Name: "contour", Status: status}}, upgradeErr: sentinel}
+			kc := &mockK8sClient{serviceMonitorCRDExists: true}
+			err := Install(context.Background(), hc, kc, DefaultConfig())
+			require.ErrorIs(t, err, sentinel)
+			require.Len(t, hc.chartsUpgraded, 1)
+			require.Len(t, kc.appliedManifests, 1)
+			assert.Contains(t, kc.appliedManifests[0], "kind: ContourConfiguration")
+			values := hc.chartsUpgraded[0].Values["contour"].(map[string]interface{})
+			assert.Equal(t, false, values["configPath"])
+			assert.Equal(t, "contour", values["contourConfigName"])
+			assert.Equal(t, 0, hc.uninstalls)
+		})
+	}
+}
+
+func TestUpgradePreparationErrors(t *testing.T) {
+	for _, tc := range []struct {
+		name, status string
+		applyErr     error
+	}{
+		{name: "busy", status: "pending-upgrade"},
+		{name: "configuration error", status: "deployed", applyErr: fmt.Errorf("API unavailable")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			hc := &mockHelmClient{listReleases: []helm.Release{{Name: "contour", Status: tc.status}}}
+			kc := &mockK8sClient{serviceMonitorCRDExists: true, applyManifestErr: tc.applyErr}
+			require.Error(t, Install(context.Background(), hc, kc, DefaultConfig()))
+			assert.Empty(t, hc.chartsUpgraded)
+			assert.Zero(t, hc.uninstalls)
+		})
+	}
 }

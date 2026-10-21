@@ -3,32 +3,47 @@ kind: ValidatingPolicy
 metadata:
   name: disallow-default-namespace
   annotations:
-    policies.kyverno.io/title: Disallow Default Namespace in VPOL
-    policies.kyverno.io/minversion: 1.14.0
-    policies.kyverno.io/category: Multi-Tenancy in VPOL
-    kyverno.io/kubernetes-version: "1.30"
+    policies.kyverno.io/title: Reserve the default namespace
+    policies.kyverno.io/category: Multi-Tenancy
     policies.kyverno.io/severity: medium
-    policies.kyverno.io/subject: Pod
     policies.kyverno.io/description: >-
-      Kubernetes Namespaces are an optional feature that provide a way to segment and
-      isolate cluster resources across multiple applications and users. As a best
-      practice, workloads should be isolated with Namespaces. Namespaces should be required
-      and the default (empty) Namespace should not be used. This policy validates that Pods
-      specify a Namespace name other than `default`. Rule auto-generation is disabled here
-      due to Pod controllers need to specify the `namespace` field under the top-level `metadata`
-      object and not at the Pod template level.
+      Users must create resources in a named application namespace. Kubernetes
+      controllers can maintain the built-in API Service, endpoints, default
+      ServiceAccount, and root CA ConfigMap. Events and policy reports remain
+      available. This policy checks admission requests, including user identity.
 spec:
-  validationActions: [Audit]
+  validationActions: [Deny]
   evaluation:
-    background: 
-           enabled: true
+    background:
+      enabled: false
   matchConstraints:
-        resourceRules:
-          - apiGroups: ['']
-            apiVersions: [v1]
-            operations: [CREATE, UPDATE]
-            resources: [pods]
+    resourceRules:
+      - apiGroups: ['*']
+        apiVersions: ['*']
+        operations: [CREATE, UPDATE]
+        resources: ['*']
+        scope: Namespaced
+  matchConditions:
+    - name: default-namespace
+      expression: "request.namespace == 'default'"
+    - name: persistent-application-resources
+      expression: >-
+        !(request.resource.group in ['', 'events.k8s.io'] && request.resource.resource == 'events') &&
+        !(request.resource.group == 'authorization.k8s.io' && request.resource.resource == 'localsubjectaccessreviews') &&
+        !(request.resource.group == 'wgpolicyk8s.io' && request.resource.resource == 'policyreports') &&
+        !(request.resource.group == 'reports.kyverno.io' && request.resource.resource == 'ephemeralreports')
   validations:
-          - expression: "request.namespace != 'default'"
-            message: "Using 'default' namespace is not allowed."
-       
+    - expression: >-
+        request.namespace != 'default' ||
+        (request.resource.group == '' && object.metadata.name == 'kubernetes' &&
+          request.resource.resource in ['services', 'endpoints'] &&
+          request.userInfo.username == 'system:apiserver') ||
+        (request.resource.group == 'discovery.k8s.io' && request.resource.resource == 'endpointslices' &&
+          object.metadata.name == 'kubernetes' && request.userInfo.username == 'system:apiserver') ||
+        (request.resource.group == '' && request.resource.resource == 'serviceaccounts' &&
+          object.metadata.name == 'default' && request.userInfo.username in
+            ['system:kube-controller-manager', 'system:serviceaccount:kube-system:service-account-controller']) ||
+        (request.resource.group == '' && request.resource.resource == 'configmaps' &&
+          object.metadata.name == 'kube-root-ca.crt' && request.userInfo.username in
+            ['system:kube-controller-manager', 'system:serviceaccount:kube-system:root-ca-cert-publisher'])
+      message: Using 'default' namespace is not allowed. Use an application namespace.

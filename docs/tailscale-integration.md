@@ -124,6 +124,27 @@ The Tailscale Operator integration will be available in a future Foundry release
 
 For now, use Option 1 (Subnet Routes) for HA setups.
 
+## Separate the VIP from the node address
+
+Foundry creates `foundry-vip`, a Linux macvlan interface, on each control plane.
+Kube-vip puts its API and service addresses on that interface. Foundry sets the
+K3s node address and Flannel interface separately. The startup helper creates
+`foundry-vip` before each K3s start, including automatic service restarts.
+
+For a node with a Tailscale InternalIP, Foundry keeps that address and uses
+`tailscale0` for Flannel. The macvlan parent must be an Ethernet interface with
+ARP. Foundry does not create a macvlan on `tailscale0`. A host without a suitable
+Ethernet interface cannot use this conversion.
+
+Keep `allow_cgnat_vip: true` for a CGNAT VIP. The VIP subnet route must point to
+the active VIP holder. Foundry does not install the Tailscale operator or change
+route advertisements. ARP on the Ethernet interface does not advertise a route
+to the tailnet. Test route changes when the VIP moves between nodes.
+
+The Tailscale path has code and interface-selection tests. It has not had a
+live tailnet test. See [VIP network conversion](vip-network-isolation.md) for
+conversion commands and limits.
+
 ## Tailscale Ingress
 
 Foundry does not install the Tailscale Kubernetes Operator. Thus, Foundry does
@@ -146,7 +167,8 @@ Traditional kube-vip assumes Layer 2 networking where the VIP can "float" betwee
 For worker nodes to reach the VIP:
 
 **Single control plane:**
-- VIP = control plane IP → Always routable (it's the node's primary IP)
+- Use a dedicated VIP. The VIP must differ from the node address.
+- Advertise the VIP subnet route from that control plane.
 
 **Multiple control planes:**
 - VIP = dedicated IP → Must be advertised as subnet route

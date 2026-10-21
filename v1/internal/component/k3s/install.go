@@ -359,7 +359,7 @@ func setupKubeVIP(ctx context.Context, executor SSHExecutor, cfg *Config) error 
 	// Determine VIP config
 	vipConfig := &VIPConfig{
 		VIP:           cfg.VIP,
-		Interface:     cfg.Interface,
+		Interface:     VIPInterfaceName,
 		AllowCGNATVIP: cfg.AllowCGNATVIP,
 	}
 

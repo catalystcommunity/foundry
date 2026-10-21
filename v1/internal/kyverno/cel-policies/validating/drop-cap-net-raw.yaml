@@ -13,9 +13,8 @@ metadata:
       Capabilities permit privileged actions without giving full root access. The
       CAP_NET_RAW capability, enabled by default, allows processes in a container to
       forge packets and bind to any interface potentially leading to MitM attacks.
-      This policy ensures that all containers explicitly drop the CAP_NET_RAW
-      ability. Note that this policy also illustrates how to cover drop entries in any
-      case although this may not strictly conform to the Pod Security Standards.
+      Containers must drop ALL, NET_RAW, or CAP_NET_RAW. They must not add
+      ALL, NET_RAW, or CAP_NET_RAW. Capability names are case-insensitive.
 spec:
   validationActions: [Audit]
   evaluation: 
@@ -29,12 +28,15 @@ spec:
             resources: [pods]
   variables:
             - name: mustDropCapabilities
-              expression: "['CAP_NET_RAW','NET_RAW']"
+              expression: "['ALL','CAP_NET_RAW','NET_RAW']"
             - name: allContainers
               expression: "object.spec.containers + object.spec.?initContainers.orValue([]) + object.spec.?ephemeralContainers.orValue([])"
   validations:
             - expression: >-
-                variables.allContainers.all(container, 
-                container.?securityContext.?capabilities.?drop.orValue([]).exists(capability, capability.upperAscii() in variables.mustDropCapabilities))
+                variables.allContainers.all(container,
+                  container.?securityContext.?capabilities.?drop.orValue([]).exists(capability,
+                    capability.upperAscii() in variables.mustDropCapabilities) &&
+                  !container.?securityContext.?capabilities.?add.orValue([]).exists(capability,
+                    capability.upperAscii() in variables.mustDropCapabilities))
               message: >-
-                Containers must drop the `CAP_NET_RAW` capability.
+                Containers must drop ALL or NET_RAW and must not add NET_RAW back.

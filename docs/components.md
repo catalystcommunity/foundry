@@ -71,6 +71,46 @@ Contour provides:
 
 **Deployment**: Helm chart in Kubernetes
 
+Contour and Envoy each use a `512Mi` memory request and limit. Their CPU request
+is `100m`, and their CPU limit is `500m`. Set resource overrides in the stack
+configuration. Omitted resource entries retain the Foundry defaults:
+
+```yaml
+components:
+  contour:
+    values:
+      contour:
+        resources:
+          requests: {cpu: 100m, memory: 512Mi}
+          limits: {cpu: 500m, memory: 512Mi}
+      envoy:
+        resources:
+          requests: {cpu: 100m, memory: 512Mi}
+          limits: {cpu: 500m, memory: 512Mi}
+```
+
+Run `foundry component install contour` to apply these settings to an existing
+release. Stack upgrades also use the saved settings. The chart still controls
+the Envoy shutdown manager and init container resources.
+
+## Kyverno
+
+New configurations enforce six policies: reserve the `default` namespace, reject
+ServiceAccount token Secrets, and restrict seccomp, AppArmor, proc mounts, and
+HTTP probe host overrides. The other 40 policies are disabled. Existing saved
+policy selections remain in effect until an operator changes them.
+
+Set policy states in the stack configuration, then run
+`foundry stack policies apply`. This command updates Kyverno and applies the
+saved selections. It does not upgrade other stack components. Kyverno component
+upgrades must be allowed for this command.
+
+The namespace policy checks creation and updates of namespaced resources.
+Kubernetes can maintain its built-in resources in `default`. Events and policy
+reports remain available. Deletion remains available for cleanup. The policy
+does not scan existing resources in the background because its checks require
+the identity from an admission request.
+
 ## cert-manager
 
 **Purpose**: Automatic TLS certificate management

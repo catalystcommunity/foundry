@@ -274,6 +274,14 @@ func ParseConfig(cfg component.ComponentConfig) (*Config, error) {
 	if values, ok := cfg.GetMap("values"); ok {
 		config.Values = values
 	}
+	if raw, exists := cfg["values"]; exists {
+		if _, ok := raw.(map[string]interface{}); !ok {
+			return nil, fmt.Errorf("values must be a map")
+		}
+	}
+	if err := config.validateResources(); err != nil {
+		return nil, err
+	}
 
 	// Store cluster VIP in the override (used by buildHelmValues)
 	if clusterVIP, ok := cfg.GetString("cluster_vip"); ok {

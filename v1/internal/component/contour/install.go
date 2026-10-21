@@ -26,6 +26,9 @@ func Install(ctx context.Context, helmClient HelmClient, k8sClient K8sClient, cf
 	if cfg == nil {
 		cfg = DefaultConfig()
 	}
+	if err := cfg.validateResources(); err != nil {
+		return err
+	}
 
 	// Validate custom L4 listeners before touching the cluster
 	if err := cfg.ValidateListeners(); err != nil {
@@ -70,47 +73,30 @@ func Install(ctx context.Context, helmClient HelmClient, k8sClient K8sClient, cf
 	}
 
 	if existingRelease != nil {
-		if existingRelease.Status == "deployed" {
-			// Already deployed - upgrade to ensure latest configuration
-			// This is important for applying Gateway API configuration changes
-			fmt.Println("  Upgrading existing Contour deployment...")
-			if err := helmClient.Upgrade(ctx, helm.UpgradeOptions{
-				ReleaseName: "contour",
-				Namespace:   cfg.Namespace,
-				Chart:       contourChart,
-				Version:     cfg.Version,
-				Values:      values,
-				Wait:        true,
-				Timeout:     5 * time.Minute,
-			}); err != nil {
-				return fmt.Errorf("failed to upgrade contour: %w", err)
-			}
-		} else {
-			// Release exists but not deployed (failed, pending, etc.)
-			// Uninstall the failed release so we can reinstall cleanly
-			fmt.Printf("  Removing failed release (status: %s)...\n", existingRelease.Status)
-			if err := helmClient.Uninstall(ctx, helm.UninstallOptions{
-				ReleaseName: "contour",
-				Namespace:   cfg.Namespace,
-			}); err != nil {
-				return fmt.Errorf("failed to uninstall existing release: %w", err)
-			}
-			fmt.Println("  ✓ Failed release removed")
-
-			// Fresh install after removing failed release
-			if err := helmClient.Install(ctx, helm.InstallOptions{
-				ReleaseName:     "contour",
-				Namespace:       cfg.Namespace,
-				Chart:           contourChart,
-				Version:         cfg.Version,
-				Values:          values,
-				CreateNamespace: true,
-				Wait:            true,
-				Timeout:         5 * time.Minute,
-			}); err != nil {
-				return fmt.Errorf("failed to install contour: %w", err)
-			}
+		if existingRelease.Status != "deployed" && existingRelease.Status != "failed" {
+			return fmt.Errorf("Contour release is %s; wait for the current Helm operation before retrying", existingRelease.Status)
 		}
+		if cfg.CreateGateway {
+			// Keep Gateway mode active during the rollout, rather than restore
+			// it only after Helm has waited for all Envoy pods to drain.
+			if err := k8sClient.ApplyManifest(ctx, generateContourConfigurationManifest(cfg.Namespace)); err != nil {
+				return fmt.Errorf("prepare Contour Gateway configuration: %w", err)
+			}
+			selectGatewayMode(values)
+		}
+		fmt.Println("  Upgrading existing Contour deployment...")
+		if err := helmClient.Upgrade(ctx, helm.UpgradeOptions{
+			ReleaseName: "contour",
+			Namespace:   cfg.Namespace,
+			Chart:       contourChart,
+			Version:     cfg.Version,
+			Values:      values,
+			Wait:        true,
+			Timeout:     15 * time.Minute,
+		}); err != nil {
+			return fmt.Errorf("failed to upgrade contour: %w", err)
+		}
+
 	} else {
 		// Fresh install
 		if err := helmClient.Install(ctx, helm.InstallOptions{
@@ -152,6 +138,13 @@ func Install(ctx context.Context, helmClient HelmClient, k8sClient K8sClient, cf
 	return nil
 }
 
+// selectGatewayMode uses the chart's supported configuration selector.
+func selectGatewayMode(values map[string]interface{}) {
+	controller := values["contour"].(map[string]interface{})
+	controller["configPath"] = false
+	controller["contourConfigName"] = "contour"
+}
+
 // patchContourForGatewayAPI patches the Contour deployment to use ContourConfiguration CRD
 // instead of the ConfigMap-based configuration. This is necessary because:
 // 1. The Helm chart adds --config-path by default
@@ -179,7 +172,8 @@ func buildHelmValues(cfg *Config) map[string]interface{} {
 
 	// Configure Contour
 	contourConfig := map[string]interface{}{
-		"replicas": cfg.ReplicaCount,
+		"replicaCount": cfg.ReplicaCount,
+		"resources":    containerResources(cfg.Values, "contour"),
 		// IngressClass configuration
 		"ingressClass": map[string]interface{}{
 			"create":  true,
@@ -219,8 +213,9 @@ func buildHelmValues(cfg *Config) map[string]interface{} {
 	}
 
 	envoyConfig := map[string]interface{}{
-		"replicas": cfg.EnvoyReplicaCount,
-		"service":  serviceConfig,
+		"replicaCount": cfg.EnvoyReplicaCount,
+		"service":      serviceConfig,
+		"resources":    containerResources(cfg.Values, "envoy"),
 	}
 
 	// Expose any custom L4 listeners. Each needs three things wired up:

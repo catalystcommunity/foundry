@@ -1227,12 +1227,7 @@ func installK8sComponent(ctx context.Context, cfg *config.Config, componentName 
 
 	// Pass cluster VIP and domain to Contour for LoadBalancer and Gateway configuration
 	if componentName == "contour" {
-		if cfg.Cluster.VIP != "" {
-			componentConfig["cluster_vip"] = cfg.Cluster.VIP
-		}
-		if cfg.Cluster.PrimaryDomain != "" {
-			componentConfig["gateway_domain"] = cfg.Cluster.PrimaryDomain
-		}
+		componentConfig = buildContourConfig(cfg)
 	}
 
 	// Pass DNS provider config to external-dns
@@ -3415,4 +3410,21 @@ func createZoneIfNotExists(client *dns.Client, zoneConfig dns.ZoneConfig, zoneTy
 		return dns.CreateInfrastructureZone(client, zoneConfig)
 	}
 	return dns.CreateKubernetesZone(client, zoneConfig)
+}
+
+// buildContourConfig retains saved settings and supplies cluster-owned values.
+func buildContourConfig(cfg *config.Config) component.ComponentConfig {
+	result := component.ComponentConfig{}
+	if configured, ok := cfg.Components["contour"]; ok {
+		for key, value := range configured.Config {
+			result[key] = value
+		}
+	}
+	if cfg.Cluster.VIP != "" {
+		result["cluster_vip"] = cfg.Cluster.VIP
+	}
+	if cfg.Cluster.PrimaryDomain != "" {
+		result["gateway_domain"] = cfg.Cluster.PrimaryDomain
+	}
+	return result
 }

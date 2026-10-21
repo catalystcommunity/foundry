@@ -261,11 +261,12 @@ func addNodeToCluster(ctx context.Context, hostname string, nodeRole *k3s.Determ
 	// Step 4: Build K3s config
 	serverURL := fmt.Sprintf("https://%s:6443", cfg.Cluster.VIP)
 	k3sConfig := &k3s.Config{
-		ClusterInit:  false,
-		ServerURL:    serverURL,
-		ClusterToken: tokens.ClusterToken,
-		AgentToken:   tokens.AgentToken,
-		VIP:          cfg.Cluster.VIP,
+		ClusterInit:   false,
+		ServerURL:     serverURL,
+		ClusterToken:  tokens.ClusterToken,
+		AgentToken:    tokens.AgentToken,
+		VIP:           cfg.Cluster.VIP,
+		AllowCGNATVIP: cfg.Cluster.AllowCGNATVIP,
 		TLSSANs: []string{
 			cfg.Cluster.VIP,
 			fmt.Sprintf("%s.%s", cfg.Cluster.Name, cfg.Cluster.PrimaryDomain),
@@ -308,6 +309,16 @@ func addNodeToCluster(ctx context.Context, hostname string, nodeRole *k3s.Determ
 	// Step 5: Join node based on role
 	if nodeRole.IsControlPlane {
 		fmt.Printf("Joining %s as control plane node...\n", hostname)
+		if err := reconcileClusterNetwork(ctx, cfg, false); err != nil {
+			return err
+		}
+		networkHost, err := host.Get(hostname)
+		if err != nil {
+			return err
+		}
+		if err := k3s.PrepareVIPHost(k3s.NetworkHost{Name: hostname, Address: networkHost.Address, Executor: conn}); err != nil {
+			return err
+		}
 		if err := k3s.JoinControlPlane(ctx, conn, serverURL, tokens, k3sConfig); err != nil {
 			return fmt.Errorf("failed to join control plane: %w", err)
 		}
