@@ -105,6 +105,60 @@ func testPolicyExpressionRegressions(t *testing.T, ctx context.Context, client d
 		}
 	})
 
+	t.Run("drop NET_RAW", func(t *testing.T) {
+		name := "drop-cap-net-raw"
+		apply(t, selectOnly(name, StateEnforce))
+		for _, tc := range []struct {
+			name, capabilities string
+			allowed            bool
+		}{
+			{"drop all", "{drop: [ALL]}", true},
+			{"drop net raw", "{drop: [NET_RAW]}", true},
+			{"prefixed name", "{drop: [CAP_NET_RAW]}", true},
+			{"lower case", "{drop: [all]}", true},
+			{"empty add", "{drop: [ALL], add: []}", true},
+			{"other capability", "{drop: [ALL], add: [NET_BIND_SERVICE]}", true},
+			{"add net raw back", "{drop: [ALL], add: [NET_RAW]}", false},
+			{"add prefixed name back", "{drop: [NET_RAW], add: [CAP_NET_RAW]}", false},
+			{"add lower case back", "{drop: [ALL], add: [net_raw]}", false},
+			{"add all back", "{drop: [NET_RAW], add: [ALL]}", false},
+			{"unrelated drop", "{drop: [CHOWN]}", false},
+			{"missing drop", "{add: [NET_BIND_SERVICE]}", false},
+			{"empty drop", "{drop: []}", false},
+			{"empty capabilities", "{}", false},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				checkPod(t, name, "containers: [{name: app, image: nginx:1.27, securityContext: {capabilities: "+tc.capabilities+"}}]", tc.allowed)
+			})
+		}
+		valid := "containers: [{name: app, image: nginx:1.27, securityContext: {capabilities: {drop: [ALL]}}}]"
+		checkPod(t, name, "containers: [{name: app, image: nginx:1.27}]", false)
+		checkPod(t, name, valid+"\ninitContainers: [{name: init, image: busybox:1.36}]", false)
+		checkPod(t, name, valid+"\ninitContainers: [{name: init, image: busybox:1.36, securityContext: {capabilities: {drop: [ALL]}}}]", true)
+		checkPod(t, name, valid+"\ninitContainers: [{name: init, image: busybox:1.36, securityContext: {capabilities: {drop: [ALL], add: [NET_RAW]}}}]", false)
+		for _, allowed := range []bool{true, false} {
+			spec := valid
+			denied := ""
+			if !allowed {
+				spec = "containers: [{name: app, image: nginx:1.27}]"
+				denied = name
+			}
+			deployment := &unstructured.Unstructured{Object: map[string]interface{}{
+				"apiVersion": "apps/v1", "kind": "Deployment", "metadata": map[string]interface{}{"name": "capabilities-check"},
+				"spec": map[string]interface{}{
+					"selector": map[string]interface{}{"matchLabels": map[string]interface{}{"app": "capabilities-check"}},
+					"template": map[string]interface{}{
+						"metadata": map[string]interface{}{"labels": map[string]interface{}{"app": "capabilities-check"}},
+						"spec":     makePod(spec).Object["spec"],
+					},
+				},
+			}}
+			admit(t, schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"}, ns, deployment, denied)
+		}
+		apply(t, selectOnly(name, StateDisabled))
+		checkPod(t, name, "containers: [{name: app, image: nginx:1.27}]", true)
+	})
+
 	t.Run("strict capabilities", func(t *testing.T) {
 		name := "disallow-capabilities-strict"
 		apply(t, selectOnly(name, StateEnforce))

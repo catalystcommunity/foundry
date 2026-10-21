@@ -11,5 +11,6 @@ var Command = &cli.Command{
 		InstallCommand,
 		StatusCommand,
 		ValidateCommand,
+		PoliciesCommand,
 	},
 }

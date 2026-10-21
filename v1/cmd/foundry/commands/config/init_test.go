@@ -7,9 +7,11 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/catalystcommunity/foundry/v1/internal/kyverno"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
+	"gopkg.in/yaml.v3"
 )
 
 func TestInitCommand_NonInteractive(t *testing.T) {
@@ -54,6 +56,22 @@ func TestInitCommand_NonInteractive(t *testing.T) {
 	assert.Contains(t, content, "network:")
 	assert.Contains(t, content, "hosts:")
 	assert.Contains(t, content, "components:")
+
+	var generated struct {
+		Policies []struct {
+			Name  string `yaml:"name"`
+			State string `yaml:"state"`
+		} `yaml:"policies"`
+	}
+	require.NoError(t, yaml.Unmarshal(data, &generated))
+	catalog, err := kyverno.LoadCatalog()
+	require.NoError(t, err)
+	require.Len(t, generated.Policies, len(catalog.Policies))
+	for _, selection := range generated.Policies {
+		policy, ok := catalog.Policy(selection.Name)
+		require.True(t, ok, selection.Name)
+		assert.Equal(t, string(policy.DefaultState), selection.State, selection.Name)
+	}
 }
 
 func TestInitCommand_WithCustomName(t *testing.T) {

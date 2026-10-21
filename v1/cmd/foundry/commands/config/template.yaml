@@ -131,7 +131,7 @@ components:
 # The registry and image verification examples require custom settings.
 policies:
   - name: disallow-host-process
-    state: Enforce
+    state: Disabled
   - name: disallow-proc-mount
     state: Enforce
   - name: disallow-host-probe-hosts
@@ -141,55 +141,55 @@ policies:
   - name: restrict-seccomp
     state: Enforce
   - name: restrict-sysctls
-    state: Enforce
+    state: Disabled
   - name: disallow-container-sock-mounts
-    state: Enforce
+    state: Disabled
   - name: disallow-helm-tiller
-    state: Enforce
+    state: Disabled
   - name: deny-secret-service-account-token-type
     state: Enforce
   - name: restrict-binding-system-groups
-    state: Enforce
+    state: Disabled
   - name: disallow-capabilities
-    state: Audit
+    state: Disabled
   - name: disallow-host-namespaces
-    state: Audit
+    state: Disabled
   - name: disallow-host-path
-    state: Audit
+    state: Disabled
   - name: disallow-host-ports
-    state: Audit
+    state: Disabled
   - name: disallow-privileged-containers
-    state: Audit
+    state: Disabled
   - name: disallow-privilege-escalation
-    state: Audit
+    state: Disabled
   - name: require-run-as-nonroot
-    state: Audit
+    state: Disabled
   - name: disallow-latest-tag
-    state: Audit
+    state: Disabled
   - name: disallow-default-namespace
     state: Enforce
   - name: drop-cap-net-raw
-    state: Audit
+    state: Disabled
   - name: require-requests-limits
-    state: Audit
+    state: Disabled
   - name: require-pod-probes
-    state: Audit
+    state: Disabled
   - name: require-ro-rootfs
-    state: Audit
+    state: Disabled
   - name: restrict-nodeport
-    state: Audit
+    state: Disabled
   - name: restrict-external-ips
-    state: Audit
+    state: Disabled
   - name: restrict-automount-sa-token
-    state: Audit
+    state: Disabled
   - name: secrets-not-from-env-vars
-    state: Audit
+    state: Disabled
   - name: require-ingress-https
-    state: Audit
+    state: Disabled
   - name: restrict-binding-clusteradmin
-    state: Audit
+    state: Disabled
   - name: restrict-clusterrole-csr
-    state: Audit
+    state: Disabled
   - name: disallow-capabilities-strict
     state: Disabled
   - name: require-run-as-non-root-user

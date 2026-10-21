@@ -11,6 +11,7 @@ func Commands() *cli.Command {
 		Usage: "Manage Kubernetes cluster",
 		Commands: []*cli.Command{
 			initCommand(),
+			networkCommand(),
 			nodeCommands(),
 			NewStatusCommand(),
 		},

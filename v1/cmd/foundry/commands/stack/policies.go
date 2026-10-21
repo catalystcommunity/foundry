@@ -9,7 +9,35 @@ import (
 	"github.com/catalystcommunity/foundry/v1/internal/config"
 	"github.com/catalystcommunity/foundry/v1/internal/k8s"
 	"github.com/catalystcommunity/foundry/v1/internal/kyverno"
+	"github.com/urfave/cli/v3"
 )
+
+// PoliciesCommand applies the policy engine configuration and saved selections.
+var PoliciesCommand = &cli.Command{
+	Name:  "policies",
+	Usage: "Manage cluster admission policies",
+	Commands: []*cli.Command{{
+		Name:  "apply",
+		Usage: "Apply Kyverno configuration and saved policy selections",
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			path := cmd.String("config")
+			if path == "" {
+				path = config.DefaultConfigPath()
+			}
+			cfg, err := config.Load(path)
+			if err != nil {
+				return err
+			}
+			if !componentEnabled(cfg, "kyverno") {
+				return fmt.Errorf("Kyverno is disabled; enable it before applying policies")
+			}
+			if !componentUpgradesAllowed(cfg, "kyverno") {
+				return fmt.Errorf("Kyverno chart updates are disabled by components.kyverno.allow_upgrades")
+			}
+			return installK8sComponent(ctx, cfg, "kyverno", nil)
+		},
+	}},
+}
 
 // ApplyPolicies reconciles policies without installing or upgrading any component.
 // Kyverno must already be installed by stack install.

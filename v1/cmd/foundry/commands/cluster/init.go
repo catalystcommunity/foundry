@@ -365,6 +365,10 @@ func ReconcileCluster(ctx context.Context, cfg *config.Config, options Reconcile
 		}
 	}
 
+	// Convert every server before a generated kube-vip manifest can change.
+	if err := reconcileClusterNetwork(ctx, cfg, false); err != nil {
+		return fmt.Errorf("reconcile cluster network: %w", err)
+	}
 	// Install or upgrade the first control plane.
 	reconcileFirstControlPlane := k3s.InstallControlPlane
 	if options.Upgrade {

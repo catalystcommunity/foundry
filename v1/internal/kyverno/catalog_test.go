@@ -22,6 +22,19 @@ func TestCatalogContainsCurrentCELPolicies(t *testing.T) {
 	imagePolicy, ok := catalog.Policy("verify-image")
 	require.True(t, ok)
 	assert.Equal(t, "ImageValidatingPolicy", imagePolicy.Kind)
+
+	enforced := map[string]bool{
+		"disallow-default-namespace": true, "deny-secret-service-account-token-type": true,
+		"restrict-seccomp": true, "restrict-apparmor-profiles": true,
+		"disallow-proc-mount": true, "disallow-host-probe-hosts": true,
+	}
+	for _, policy := range catalog.Policies {
+		want := StateDisabled
+		if enforced[policy.Name] {
+			want = StateEnforce
+		}
+		assert.Equal(t, want, policy.DefaultState, policy.Name)
+	}
 }
 
 func TestResolveSelectionsUsesDefaultsAndCanonicalizesOverrides(t *testing.T) {
@@ -31,6 +44,7 @@ func TestResolveSelectionsUsesDefaultsAndCanonicalizesOverrides(t *testing.T) {
 	resolved, err := catalog.ResolveSelections([]Selection{
 		{Name: "disallow-default-namespace", State: "audit"},
 		{Name: "require-labels", State: "enabled"},
+		{Name: "drop-cap-net-raw", State: "audit"},
 	})
 	require.NoError(t, err)
 	require.Len(t, resolved, len(catalog.Policies))
@@ -41,7 +55,9 @@ func TestResolveSelectionsUsesDefaultsAndCanonicalizesOverrides(t *testing.T) {
 	}
 	assert.Equal(t, StateAudit, states["disallow-default-namespace"])
 	assert.Equal(t, StateEnforce, states["require-labels"])
-	assert.Equal(t, StateAudit, states["disallow-host-path"])
+	assert.Equal(t, StateDisabled, states["disallow-host-path"])
+	assert.Equal(t, StateAudit, states["drop-cap-net-raw"])
+	assert.Equal(t, StateDisabled, states["require-pod-probes"])
 }
 
 func TestResolveSelectionsRejectsUnknownAndDuplicatePolicies(t *testing.T) {
@@ -84,6 +100,7 @@ func TestSensitiveResourcePoliciesDoNotRequireBackgroundReadAccess(t *testing.T)
 	require.NoError(t, err)
 
 	names := []string{
+		"disallow-default-namespace",
 		"deny-secret-service-account-token-type",
 		"restrict-binding-clusteradmin",
 		"restrict-binding-system-groups",

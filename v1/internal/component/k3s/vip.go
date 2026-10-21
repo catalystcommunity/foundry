@@ -164,6 +164,8 @@ spec:
         env:
         - name: vip_interface
           value: "%s"
+        - name: vip_servicesinterface
+          value: "%s"
         - name: vip_arp
           value: "true"
         - name: port
@@ -215,7 +217,7 @@ spec:
         hostPath:
           path: /etc/rancher/k3s/k3s.yaml
           type: FileOrCreate
-`, cfg.Interface, cfg.VIP)
+`, cfg.Interface, cfg.Interface, cfg.VIP)
 
 	return manifest, nil
 }

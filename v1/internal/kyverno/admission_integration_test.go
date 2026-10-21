@@ -116,6 +116,12 @@ func TestPolicyAdmission(t *testing.T) {
 
 	t.Run("defaults and optional RBAC subjects", func(t *testing.T) {
 		apply(t, nil)
+		for _, policy := range catalog.Policies {
+			if policy.DefaultState == StateDisabled {
+				_, err := client.Resource(policyResources[policy.Kind]).Get(ctx, policy.Name, metav1.GetOptions{})
+				require.True(t, apierrors.IsNotFound(err), "disabled policy %s: %v", policy.Name, err)
+			}
+		}
 		admit(t, pods, "default", pod(), "disallow-default-namespace")
 		admit(t, pods, ns, pod(), "")
 		binding := &unstructured.Unstructured{Object: map[string]interface{}{
@@ -125,7 +131,13 @@ func TestPolicyAdmission(t *testing.T) {
 		rbac := schema.GroupVersionResource{Group: "rbac.authorization.k8s.io", Version: "v1", Resource: "rolebindings"}
 		admit(t, rbac, ns, binding, "")
 		binding.Object["subjects"] = []interface{}{map[string]interface{}{"kind": "Group", "apiGroup": "rbac.authorization.k8s.io", "name": "system:masters"}}
+		admit(t, rbac, ns, binding, "")
+		apply(t, selectOnly("restrict-binding-system-groups", StateEnforce))
 		admit(t, rbac, ns, binding, "restrict-binding-system-groups")
+	})
+
+	t.Run("default namespace coverage", func(t *testing.T) {
+		testDefaultNamespaceAdmission(t, ctx, client, restConfig, ns, apply, selectOnly, admit)
 	})
 
 	t.Run("probe checks and controller generation", func(t *testing.T) {

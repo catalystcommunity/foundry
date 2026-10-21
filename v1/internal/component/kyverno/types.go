@@ -3,6 +3,8 @@ package kyverno
 import (
 	"context"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/catalystcommunity/foundry/v1/internal/component"
@@ -27,7 +29,9 @@ type Config struct {
 // DefaultConfig returns the Kyverno release supported by this Foundry build.
 func DefaultConfig() *Config {
 	return &Config{
-		Version: DefaultChartVersion, Namespace: "kyverno", Values: make(map[string]interface{}),
+		Version: DefaultChartVersion, Namespace: "kyverno", Values: map[string]interface{}{
+			"config": map[string]interface{}{"resourceFiltersExclude": []interface{}{"[ReplicaSet,*,*]", "[ReplicaSet/?*,*,*]"}},
+		},
 	}
 }
 
@@ -41,7 +45,41 @@ func ParseConfig(input component.ComponentConfig) (*Config, error) {
 		config.Namespace = strings.TrimSpace(namespace)
 	}
 	if values, ok := input.GetMap("values"); ok {
-		config.Values = values
+		config.Values = maps.Clone(values)
+		settings := map[string]interface{}{}
+		if raw, exists := values["config"]; exists {
+			value, ok := raw.(map[string]interface{})
+			if !ok {
+				return nil, fmt.Errorf("Kyverno values.config must be a map")
+			}
+			settings = maps.Clone(value)
+		}
+		exclusions := []interface{}{}
+		switch value := settings["resourceFiltersExclude"].(type) {
+		case nil:
+		case []interface{}:
+			exclusions = slices.Clone(value)
+		case []string:
+			for _, item := range value {
+				exclusions = append(exclusions, item)
+			}
+		default:
+			return nil, fmt.Errorf("Kyverno values.config.resourceFiltersExclude must be a list")
+		}
+		for _, item := range exclusions {
+			if _, ok := item.(string); !ok {
+				return nil, fmt.Errorf("Kyverno resource filter exclusions must be strings")
+			}
+		}
+		// The chart skips ReplicaSets by default. That would let users create
+		// resources in default without evaluating the namespace policy.
+		for _, required := range []interface{}{"[ReplicaSet,*,*]", "[ReplicaSet/?*,*,*]"} {
+			if !slices.Contains(exclusions, required) {
+				exclusions = append(exclusions, required)
+			}
+		}
+		settings["resourceFiltersExclude"] = exclusions
+		config.Values["config"] = settings
 	}
 	if policies, ok := input["policies"].([]foundrykyverno.Selection); ok {
 		config.Policies = append([]foundrykyverno.Selection(nil), policies...)

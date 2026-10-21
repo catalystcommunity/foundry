@@ -6,7 +6,7 @@ policies:
   - name: disallow-host-process
     title: Disallow HostProcess containers
     description: Prevent Windows containers from running as host processes.
-    defaultState: Enforce
+    defaultState: Disabled
     kind: ValidatingPolicy
     path: validating/disallow-host-process.yaml
     sourcePath: pod-security-vpol/baseline/disallow-host-process/disallow-host-process.yaml
@@ -40,21 +40,21 @@ policies:
   - name: restrict-sysctls
     title: Restrict sysctls
     description: Prevent Pods from configuring unsafe kernel parameters.
-    defaultState: Enforce
+    defaultState: Disabled
     kind: ValidatingPolicy
     path: validating/restrict-sysctls.yaml
     sourcePath: pod-security-vpol/baseline/restrict-sysctls/restrict-sysctls.yaml
   - name: disallow-container-sock-mounts
     title: Disallow container socket mounts
     description: Prevent Pods from mounting common container runtime sockets.
-    defaultState: Enforce
+    defaultState: Disabled
     kind: ValidatingPolicy
     path: validating/disallow-container-sock-mounts.yaml
     sourcePath: best-practices-vpol/disallow-cri-sock-mount/disallow-cri-sock-mount.yaml
   - name: disallow-helm-tiller
     title: Disallow Helm Tiller
     description: Prevent workloads from using the retired privileged Helm Tiller service.
-    defaultState: Enforce
+    defaultState: Disabled
     kind: ValidatingPolicy
     path: validating/disallow-helm-tiller.yaml
     sourcePath: best-practices-vpol/disallow-helm-tiller/disallow-helm-tiller.yaml
@@ -68,63 +68,63 @@ policies:
   - name: restrict-binding-system-groups
     title: Restrict system group bindings
     description: Prevent role bindings from granting access to broad Kubernetes system groups.
-    defaultState: Enforce
+    defaultState: Disabled
     kind: ValidatingPolicy
     path: validating/restrict-binding-system-groups.yaml
     sourcePath: other-vpol/restrict-binding-system-groups/restrict-binding-system-groups.yaml
   - name: disallow-capabilities
     title: Disallow added capabilities
     description: Prevent containers from adding Linux capabilities outside the baseline set.
-    defaultState: Audit
+    defaultState: Disabled
     kind: ValidatingPolicy
     path: validating/disallow-capabilities.yaml
     sourcePath: pod-security-vpol/baseline/disallow-capabilities/disallow-capabilities.yaml
   - name: disallow-host-namespaces
     title: Disallow host namespaces
     description: Prevent Pods from sharing host process, IPC, or network namespaces.
-    defaultState: Audit
+    defaultState: Disabled
     kind: ValidatingPolicy
     path: validating/disallow-host-namespaces.yaml
     sourcePath: pod-security-vpol/baseline/disallow-host-namespaces/disallow-host-namespaces.yaml
   - name: disallow-host-path
     title: Disallow hostPath volumes
     description: Prevent Pods from mounting paths from a node filesystem.
-    defaultState: Audit
+    defaultState: Disabled
     kind: ValidatingPolicy
     path: validating/disallow-host-path.yaml
     sourcePath: pod-security-vpol/baseline/disallow-host-path/disallow-host-path.yaml
   - name: disallow-host-ports
     title: Disallow host ports
     description: Prevent containers from binding directly to node ports.
-    defaultState: Audit
+    defaultState: Disabled
     kind: ValidatingPolicy
     path: validating/disallow-host-ports.yaml
     sourcePath: pod-security-vpol/baseline/disallow-host-ports/disallow-host-ports.yaml
   - name: disallow-privileged-containers
     title: Disallow privileged containers
     description: Prevent containers from running with privileged access.
-    defaultState: Audit
+    defaultState: Disabled
     kind: ValidatingPolicy
     path: validating/disallow-privileged-containers.yaml
     sourcePath: pod-security-vpol/baseline/disallow-privileged-containers/disallow-privileged-containers.yaml
   - name: disallow-privilege-escalation
     title: Disallow privilege escalation
     description: Require containers to disable process privilege escalation.
-    defaultState: Audit
+    defaultState: Disabled
     kind: ValidatingPolicy
     path: validating/disallow-privilege-escalation.yaml
     sourcePath: pod-security-vpol/restricted/disallow-privilege-escalation/disallow-privilege-escalation.yaml
   - name: require-run-as-nonroot
     title: Require non-root containers
     description: Require Pods and containers to declare that they run as non-root.
-    defaultState: Audit
+    defaultState: Disabled
     kind: ValidatingPolicy
     path: validating/require-run-as-nonroot.yaml
     sourcePath: pod-security-vpol/restricted/require-run-as-nonroot/require-run-as-nonroot.yaml
   - name: disallow-latest-tag
     title: Disallow latest image tags
     description: Prevent container images from using the mutable latest tag.
-    defaultState: Audit
+    defaultState: Disabled
     kind: ValidatingPolicy
     path: validating/disallow-latest-tag.yaml
     sourcePath: best-practices-vpol/disallow-latest-tag/disallow-latest-tag.yaml
@@ -138,77 +138,77 @@ policies:
   - name: drop-cap-net-raw
     title: Require NET_RAW to be dropped
     description: Require containers to drop the NET_RAW Linux capability.
-    defaultState: Audit
+    defaultState: Disabled
     kind: ValidatingPolicy
     path: validating/drop-cap-net-raw.yaml
     sourcePath: best-practices-vpol/require-drop-cap-net-raw/require-drop-cap-net-raw.yaml
   - name: require-requests-limits
     title: Require resource requests and limits
     description: Require containers to define CPU and memory requests and limits.
-    defaultState: Audit
+    defaultState: Disabled
     kind: ValidatingPolicy
     path: validating/require-requests-limits.yaml
     sourcePath: best-practices-vpol/require-pod-requests-limits/require-pod-requests-limits.yaml
   - name: require-pod-probes
     title: Require Pod probes
     description: Require each container to define a liveness, readiness, or startup probe.
-    defaultState: Audit
+    defaultState: Disabled
     kind: ValidatingPolicy
     path: validating/require-pod-probes.yaml
     sourcePath: best-practices-vpol/require-probes/require-probes.yaml
   - name: require-ro-rootfs
     title: Require read-only root filesystems
     description: Require containers to use read-only root filesystems.
-    defaultState: Audit
+    defaultState: Disabled
     kind: ValidatingPolicy
     path: validating/require-ro-rootfs.yaml
     sourcePath: best-practices-vpol/require-ro-rootfs/require-ro-rootfs.yaml
   - name: restrict-nodeport
     title: Restrict NodePort Services
     description: Prevent Services from exposing ports directly on every node.
-    defaultState: Audit
+    defaultState: Disabled
     kind: ValidatingPolicy
     path: validating/restrict-nodeport.yaml
     sourcePath: best-practices-vpol/restrict-node-port/restrict-node-port.yaml
   - name: restrict-external-ips
     title: Restrict Service external IPs
     description: Prevent Services from assigning arbitrary external IP addresses.
-    defaultState: Audit
+    defaultState: Disabled
     kind: ValidatingPolicy
     path: validating/restrict-external-ips.yaml
     sourcePath: best-practices-vpol/restrict-service-external-ips/restrict-service-external-ips.yaml
   - name: restrict-automount-sa-token
     title: Restrict Pod token automount
     description: Require Pods to disable automatic ServiceAccount token mounts.
-    defaultState: Audit
+    defaultState: Disabled
     kind: ValidatingPolicy
     path: validating/restrict-automount-sa-token.yaml
     sourcePath: other/restrict-automount-sa-token/restrict-automount-sa-token.yaml
   - name: secrets-not-from-env-vars
     title: Disallow Secrets in environment variables
     description: Prevent containers from loading Secret values through environment variables.
-    defaultState: Audit
+    defaultState: Disabled
     kind: ValidatingPolicy
     path: validating/secrets-not-from-env-vars.yaml
     sourcePath: other-vpol/disallow-secrets-from-env-vars/disallow-secrets-from-env-vars.yaml
   - name: require-ingress-https
     title: Require HTTPS Ingress
     description: Require Ingress resources to configure TLS.
-    defaultState: Audit
+    defaultState: Disabled
     kind: ValidatingPolicy
     path: validating/require-ingress-https.yaml
     sourcePath: other-vpol/require-ingress-https/require-ingress-https.yaml
   - name: restrict-binding-clusteradmin
     title: Restrict cluster-admin bindings
     description: Prevent new bindings to the built-in cluster-admin ClusterRole.
-    defaultState: Audit
+    defaultState: Disabled
     kind: ValidatingPolicy
     path: validating/restrict-binding-clusteradmin.yaml
     sourcePath: other-vpol/restrict-binding-clusteradmin/restrict-binding-clusteradmin.yaml
   - name: restrict-clusterrole-csr
     title: Restrict CSR approval roles
     description: Prevent ClusterRoles from granting certificate approval permissions.
-    defaultState: Audit
+    defaultState: Disabled
     kind: ValidatingPolicy
     path: validating/restrict-clusterrole-csr.yaml
     sourcePath: other/restrict-clusterrole-csr/restrict-clusterrole-csr.yaml

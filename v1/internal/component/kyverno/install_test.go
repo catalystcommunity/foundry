@@ -31,6 +31,24 @@ func TestParseConfigPreservesValuesAndPolicies(t *testing.T) {
 	assert.Equal(t, "policy-system", config.Namespace)
 	assert.Equal(t, policies, config.Policies)
 	assert.Contains(t, config.Values, "admissionController")
+	assert.Equal(t, DefaultConfig().Values["config"], config.Values["config"])
+}
+
+func TestParseConfigKeepsCustomFiltersAndChecksReplicaSets(t *testing.T) {
+	settings := map[string]interface{}{"resourceFiltersExclude": []interface{}{"[Custom,*,*]", "[ReplicaSet,*,*]"}, "generateSuccessEvents": true}
+	values := map[string]interface{}{"config": settings}
+	got, err := ParseConfig(component.ComponentConfig{"values": values})
+	require.NoError(t, err)
+	result := got.Values["config"].(map[string]interface{})
+	assert.Equal(t, []interface{}{"[Custom,*,*]", "[ReplicaSet,*,*]", "[ReplicaSet/?*,*,*]"}, result["resourceFiltersExclude"])
+	assert.Equal(t, true, result["generateSuccessEvents"])
+	assert.Len(t, settings["resourceFiltersExclude"], 2, "parsing must not mutate saved values")
+	for _, invalid := range []interface{}{"invalid", []interface{}{12}} {
+		_, err := ParseConfig(component.ComponentConfig{"values": map[string]interface{}{"config": map[string]interface{}{"resourceFiltersExclude": invalid}}})
+		require.Error(t, err)
+	}
+	_, err = ParseConfig(component.ComponentConfig{"values": map[string]interface{}{"config": "invalid"}})
+	require.ErrorContains(t, err, "must be a map")
 }
 
 func TestInstallHelmReleaseInstallsMissingRelease(t *testing.T) {
